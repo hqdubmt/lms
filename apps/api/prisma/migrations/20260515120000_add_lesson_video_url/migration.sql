@@ -1,0 +1,1 @@
+ALTER TABLE "Lesson" ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;
