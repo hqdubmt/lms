@@ -72,15 +72,23 @@ export async function usersRoutes(app: FastifyInstance) {
     });
   });
 
-  // Get user's schedule (live sessions for their courses/classes)
+  // Get user's schedule (live sessions for their courses/classes + sessions they created as instructor)
   app.get('/schedule', { preHandler: requireAuth }, async (req) => {
-    const { sub } = req.user as { sub: string };
-    const [enrollments, memberships] = await Promise.all([
+    const { sub, role } = req.user as { sub: string; role: string };
+    const [enrollments, memberships, instructorCourses] = await Promise.all([
       prisma.enrollment.findMany({ where: { userId: sub }, select: { courseId: true } }),
       prisma.classMember.findMany({ where: { userId: sub }, select: { classId: true } }),
+      (role === 'INSTRUCTOR' || role === 'ADMIN')
+        ? prisma.course.findMany({ where: { instructorId: sub }, select: { id: true } })
+        : Promise.resolve([]),
     ]);
-    const courseIds = enrollments.map((e) => e.courseId);
-    const classIds = memberships.map((m) => m.classId);
+    const courseIds = [...new Set([
+      ...(enrollments as Array<{ courseId: string }>).map((e) => e.courseId),
+      ...(instructorCourses as Array<{ id: string }>).map((c) => c.id),
+    ])];
+    const classIds = (memberships as Array<{ classId: string }>).map((m) => m.classId);
+
+    if (!courseIds.length && !classIds.length) return [];
 
     return prisma.liveSession.findMany({
       where: {

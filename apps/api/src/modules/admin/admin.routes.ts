@@ -57,11 +57,6 @@ const createLessonSchema = z.object({
   videoUrl: z.string().url().optional().or(z.literal('')),
 });
 
-const enrollSchema = z.object({
-  userIds: z.array(z.string()).min(1),
-  courseId: z.string(),
-});
-
 const bulkEnrollSchema = z.object({
   courseId: z.string(),
   userIds: z.array(z.string()).min(1),
@@ -70,13 +65,14 @@ const bulkEnrollSchema = z.object({
 export async function adminRoutes(app: FastifyInstance) {
   // ─── STATS ────────────────────────────────────────────────
   app.get('/stats', { preHandler: requireAdmin }, async () => {
-    const [totalUsers, totalCourses, totalEnrollments, totalRevenue] = await Promise.all([
-      prisma.user.count(),
+    const [totalStudents, totalInstructors, totalCourses, totalEnrollments, totalRevenue] = await Promise.all([
+      prisma.user.count({ where: { role: 'STUDENT' } }),
+      prisma.user.count({ where: { role: 'INSTRUCTOR' } }),
       prisma.course.count(),
       prisma.enrollment.count(),
       prisma.payment.aggregate({ _sum: { amount: true }, where: { status: 'COMPLETED' } }),
     ]);
-    return { totalUsers, totalCourses, totalEnrollments, totalRevenue: totalRevenue._sum.amount || 0 };
+    return { totalStudents, totalInstructors, totalCourses, totalEnrollments, totalRevenue: totalRevenue._sum.amount || 0 };
   });
 
   // ─── COURSES ──────────────────────────────────────────────
@@ -211,7 +207,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // Xóa video trong MinIO nếu có
     if (lesson.videoKey) {
-      try { await minioClient.removeObject(env.MINIO_BUCKET_VIDEOS, lesson.videoKey); } catch {}
+      try { await minioClient.removeObject(env.MINIO_BUCKET_VIDEOS, lesson.videoKey); } catch { }
     }
 
     await prisma.lesson.delete({ where: { id } });
@@ -237,7 +233,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const key = `lessons/${id}/${crypto.randomBytes(8).toString('hex')}${ext}`;
 
     // Stream directly to MinIO
-    await minioClient.putObject(env.MINIO_BUCKET_VIDEOS, key, data.file, {
+    await minioClient.putObject(env.MINIO_BUCKET_VIDEOS, key, data.file, undefined, {
       'Content-Type': data.mimetype,
     });
 
@@ -250,7 +246,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const lesson = await prisma.lesson.findUniqueOrThrow({ where: { id } });
     if (lesson.videoKey) {
-      try { await minioClient.removeObject(env.MINIO_BUCKET_VIDEOS, lesson.videoKey); } catch {}
+      try { await minioClient.removeObject(env.MINIO_BUCKET_VIDEOS, lesson.videoKey); } catch { }
     }
     await prisma.lesson.update({ where: { id }, data: { videoKey: null, videoDuration: null } });
     return { message: 'Đã xóa video' };
@@ -267,10 +263,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const where: any = { courseId };
     if (q.search) {
-      where.user = { OR: [
-        { name: { contains: q.search, mode: 'insensitive' } },
-        { email: { contains: q.search, mode: 'insensitive' } },
-      ]};
+      where.user = {
+        OR: [
+          { name: { contains: q.search, mode: 'insensitive' } },
+          { email: { contains: q.search, mode: 'insensitive' } },
+        ]
+      };
     }
 
     const [enrollments, total] = await Promise.all([
@@ -315,7 +313,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }).parse(req.body);
 
     const normalized = emails.map((e) => e.toLowerCase().trim());
-    const users = await prisma.user.findMany({
+    const users: Array<{ id: string; email: string; name: string }> = await prisma.user.findMany({
       where: { email: { in: normalized } },
       select: { id: true, email: true, name: true },
     });

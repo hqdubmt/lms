@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { redis } from '../services/redis';
+import { createBullMQConnection } from '../services/redis';
 import { sendMail } from '../services/mail';
 
 export const emailWorker = new Worker(
@@ -9,7 +9,7 @@ export const emailWorker = new Worker(
     await sendMail({ to, subject, html });
     console.log(`Email sent to ${to}`);
   },
-  { connection: redis },
+  { connection: createBullMQConnection() },
 );
 
 emailWorker.on('failed', (job, err) => {

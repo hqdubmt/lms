@@ -10,7 +10,7 @@ import { GraduationCap, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth.store';
 
 const schema = z.object({
   name: z.string().min(2, 'Tên ít nhất 2 ký tự'),
@@ -26,8 +26,8 @@ type FormData = z.infer<typeof schema>;
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { login } = useAuthStore();
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -36,31 +36,24 @@ export default function RegisterPage() {
   const onSubmit = async (data: FormData) => {
     try {
       setError('');
-      await api.post('/auth/register', { email: data.email, password: data.password, name: data.name });
-      setSuccess(true);
+      // Register
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.email, password: data.password, name: data.name }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Đăng ký thất bại');
+      }
+      // Auto-login right after register
+      await login(data.email, data.password);
+      router.push('/dashboard');
     } catch (e: any) {
       setError(e.message || 'Đăng ký thất bại');
     }
   };
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-8 pb-8">
-            <div className="text-5xl mb-4">📧</div>
-            <h2 className="text-xl font-semibold mb-2">Kiểm tra email của bạn</h2>
-            <p className="text-muted-foreground text-sm">
-              Chúng tôi đã gửi OTP xác minh đến email. Vui lòng kiểm tra hộp thư.
-            </p>
-            <Link href="/login">
-              <Button className="mt-6 w-full">Đến trang đăng nhập</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
@@ -99,7 +92,7 @@ export default function RegisterPage() {
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Đăng ký
+              Đăng ký & Đăng nhập
             </Button>
           </form>
 

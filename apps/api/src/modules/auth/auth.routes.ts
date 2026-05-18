@@ -1,14 +1,18 @@
+import crypto from 'crypto';
+import { z } from 'zod';
 import { FastifyInstance } from 'fastify';
 import {
   register, login, createTokens, refreshTokens,
   logout, sendVerificationOtp, verifyEmail,
-  forgotPassword, resetPassword,
+  forgotPassword, resetPassword, googleOAuth,
 } from './auth.service';
 import {
   registerSchema, loginSchema, refreshSchema,
   forgotPasswordSchema, resetPasswordSchema, verifyEmailSchema,
 } from './auth.schema';
 import { requireAuth } from '../../middleware/auth';
+import { env } from '../../config/env';
+import { redis } from '../../services/redis';
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/register', async (req, reply) => {
@@ -27,7 +31,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (msg === 'Account suspended') return reply.status(403).send({ error: 'Tài khoản đã bị khoá' });
       return reply.status(401).send({ error: 'Email hoặc mật khẩu không đúng' });
     }
-    const tokens = await createTokens(app, user.id, user.role, req.headers['user-agent'], req.ip);
+    const tokens = await createTokens(app, user.id, user.role, user.name, req.headers['user-agent'], req.ip);
 
     return reply
       .setCookie('refreshToken', tokens.refreshToken, {
@@ -76,7 +80,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/resend-otp', async (req, reply) => {
-    const { email } = req.body as { email: string };
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const { prisma } = await import('../../services/prisma');
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return reply.status(404).send({ error: 'User not found' });
@@ -94,6 +98,56 @@ export async function authRoutes(app: FastifyInstance) {
     const body = resetPasswordSchema.parse(req.body);
     await resetPassword(body.token, body.password);
     return { message: 'Mật khẩu đã được đặt lại' };
+  });
+
+  app.get('/google', async (req, reply) => {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI) {
+      return reply.status(503).send({ error: 'Google OAuth not configured' });
+    }
+    const state = crypto.randomBytes(16).toString('hex');
+    await redis.setex(`oauth:state:${state}`, 600, '1');
+
+    const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    url.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
+    url.searchParams.set('redirect_uri', env.GOOGLE_REDIRECT_URI);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('scope', 'openid email profile');
+    url.searchParams.set('state', state);
+    url.searchParams.set('access_type', 'online');
+
+    return reply.redirect(url.toString());
+  });
+
+  app.get('/google/callback', async (req, reply) => {
+    const { code, state, error } = req.query as { code?: string; state?: string; error?: string };
+    const frontendLogin = `${env.FRONTEND_URL}/login`;
+
+    if (error || !code || !state) {
+      return reply.redirect(`${frontendLogin}?error=oauth_cancelled`);
+    }
+
+    const valid = await redis.get(`oauth:state:${state}`);
+    if (!valid) return reply.redirect(`${frontendLogin}?error=invalid_state`);
+    await redis.del(`oauth:state:${state}`);
+
+    try {
+      const user = await googleOAuth(code, env.GOOGLE_REDIRECT_URI!);
+      const tokens = await createTokens(app, user.id, user.role, user.name);
+
+      reply.setCookie('refreshToken', tokens.refreshToken, {
+        httpOnly: true,
+        secure: env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60,
+      });
+
+      return reply.redirect(
+        `${env.FRONTEND_URL}/oauth/callback?token=${tokens.accessToken}&role=${user.role}`,
+      );
+    } catch {
+      return reply.redirect(`${frontendLogin}?error=oauth_failed`);
+    }
   });
 
   app.get('/me', { preHandler: requireAuth }, async (req, reply) => {

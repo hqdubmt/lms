@@ -23,6 +23,10 @@ const schema = z.object({
 
   FRONTEND_URL: z.string().default('http://localhost:3000'),
 
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
+
   GOOGLE_GEMINI_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
 

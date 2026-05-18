@@ -33,4 +33,13 @@ export const siteConfig = {
   // VD: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
   //     '/bg-hero.jpg'
   heroBackground: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+
+  // ─── BACKGROUND TOÀN TRANG (body) ────────────────────────
+  // Màu nền bao bên ngoài mọi nội dung — hiện ra ở viền, giữa các khung
+  // Ví dụ:
+  //   '#e8edf2'                                               → xám-xanh nhẹ
+  //   '#1a1a2e'                                               → tối (dark mode ngoài)
+  //   'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)'   → gradient tím
+  //   '#f0f4f8'                                               → xám sáng
+  pageBackground: '#e8edf2',
 };

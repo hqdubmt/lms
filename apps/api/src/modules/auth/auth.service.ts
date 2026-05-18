@@ -16,10 +16,11 @@ export async function register(input: RegisterInput) {
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
   const user = await prisma.user.create({
-    data: { email: input.email, name: input.name, passwordHash },
+    data: { email: input.email, name: input.name, passwordHash, isVerified: true, isActive: true },
   });
 
-  await sendVerificationOtp(user.id, user.email, user.name);
+  // Send OTP if email is configured — don't block registration if mail fails
+  try { await sendVerificationOtp(user.id, user.email, user.name); } catch {}
   return { id: user.id, email: user.email, name: user.name };
 }
 
@@ -38,12 +39,13 @@ export async function createTokens(
   fastify: any,
   userId: string,
   role: string,
+  name?: string,
   userAgent?: string,
   ipAddress?: string,
 ) {
   const accessToken = fastify.jwt.sign(
-    { sub: userId, role },
-    { expiresIn: env.JWT_ACCESS_EXPIRES, secret: env.JWT_ACCESS_SECRET },
+    { sub: userId, role, name },
+    { expiresIn: env.JWT_ACCESS_EXPIRES },
   );
 
   const rawRefresh = crypto.randomBytes(64).toString('hex');
@@ -75,7 +77,7 @@ export async function refreshTokens(fastify: any, rawToken: string) {
   });
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: stored.userId } });
-  return createTokens(fastify, user.id, user.role);
+  return createTokens(fastify, user.id, user.role, user.name);
 }
 
 export async function logout(refreshToken: string) {
@@ -126,4 +128,52 @@ export async function resetPassword(token: string, newPassword: string) {
     prisma.refreshToken.updateMany({ where: { userId }, data: { revokedAt: new Date() } }),
     redis.del(`reset:${token}`),
   ]);
+}
+
+export async function googleOAuth(code: string, redirectUri: string) {
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID!,
+      client_secret: env.GOOGLE_CLIENT_SECRET!,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+
+  if (!tokenRes.ok) throw new Error('Failed to exchange Google code');
+  const { access_token } = await tokenRes.json() as { access_token: string };
+
+  const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${access_token}` },
+  });
+
+  if (!userRes.ok) throw new Error('Failed to get Google user info');
+  const gUser = await userRes.json() as { id: string; email: string; name: string; picture: string };
+
+  let user = await prisma.user.findFirst({
+    where: { OR: [{ googleId: gUser.id }, { email: gUser.email }] },
+  });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email: gUser.email,
+        name: gUser.name,
+        googleId: gUser.id,
+        avatarUrl: gUser.picture,
+        isVerified: true,
+      },
+    });
+  } else if (!user.googleId) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { googleId: gUser.id, avatarUrl: user.avatarUrl || gUser.picture },
+    });
+  }
+
+  if (!user.isActive) throw new Error('Account suspended');
+  return user;
 }

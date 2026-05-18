@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
-import { redis } from '../services/redis';
+import { createBullMQConnection } from '../services/redis';
 
-const connection = redis;
+const connection = createBullMQConnection();
 
 export const emailQueue = new Queue('email', { connection });
 export const videoQueue = new Queue('video', { connection });

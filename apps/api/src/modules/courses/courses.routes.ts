@@ -33,6 +33,19 @@ function slugify(text: string) {
 }
 
 export async function coursesRoutes(app: FastifyInstance) {
+  // Instructor: get own courses (incl. DRAFT)
+  app.get('/mine', { preHandler: requireInstructor }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    return prisma.course.findMany({
+      where: { instructorId: sub },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        category: { select: { name: true } },
+        _count: { select: { enrollments: true, sections: true } },
+      },
+    });
+  });
+
   // Public: list courses
   app.get('/', async (req) => {
     const q = req.query as {
@@ -107,6 +120,62 @@ export async function coursesRoutes(app: FastifyInstance) {
     });
   });
 
+  // Instructor: create live session for own course
+  app.post('/:id/sessions', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const { title, description, startTime, endTime, meetLink } = req.body as {
+      title: string; description?: string;
+      startTime: string; endTime: string; meetLink: string;
+    };
+    const course = await prisma.course.findUniqueOrThrow({ where: { id }, select: { instructorId: true } });
+    if (course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    const session = await prisma.liveSession.create({
+      data: {
+        title, description, meetLink,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        courseId: id,
+        createdBy: sub,
+        status: 'SCHEDULED',
+      },
+      include: {
+        course: { select: { id: true, title: true, slug: true } },
+        creator: { select: { id: true, name: true } },
+      },
+    });
+    return reply.status(201).send(session);
+  });
+
+  // Instructor: update own live session
+  app.patch('/sessions/:sessionId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { sessionId } = req.params as { sessionId: string };
+    const body = req.body as { title?: string; description?: string; startTime?: string; endTime?: string; meetLink?: string; status?: string };
+    const session = await prisma.liveSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (session.course?.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    const data: any = { ...body };
+    if (body.startTime) data.startTime = new Date(body.startTime);
+    if (body.endTime) data.endTime = new Date(body.endTime);
+    return prisma.liveSession.update({ where: { id: sessionId }, data });
+  });
+
+  // Instructor: delete own live session
+  app.delete('/sessions/:sessionId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { sessionId } = req.params as { sessionId: string };
+    const session = await prisma.liveSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (session.course?.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    await prisma.liveSession.delete({ where: { id: sessionId } });
+    return { message: 'Đã xóa buổi học' };
+  });
+
   // Protected: create course
   app.post('/', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
@@ -169,6 +238,111 @@ export async function coursesRoutes(app: FastifyInstance) {
 
     await prisma.course.update({ where: { id }, data: { totalStudents: { increment: 1 } } });
     return reply.status(201).send(enrollment);
+  });
+
+  // Instructor: get full course detail (sections + lessons) for management
+  app.get('/:id/manage', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const course = await prisma.course.findUniqueOrThrow({
+      where: { id },
+      include: {
+        category: { select: { id: true, name: true } },
+        sections: {
+          orderBy: { order: 'asc' },
+          include: { lessons: { orderBy: { order: 'asc' } } },
+        },
+        _count: { select: { enrollments: true } },
+      },
+    });
+    if (course.instructorId !== sub && role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    return course;
+  });
+
+  // Instructor: create section
+  app.post('/:id/sections', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const { title, order } = req.body as { title: string; order?: number };
+    const course = await prisma.course.findUniqueOrThrow({ where: { id }, select: { instructorId: true } });
+    if (course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    const section = await prisma.section.create({ data: { title, order: order ?? 0, courseId: id } });
+    return reply.status(201).send(section);
+  });
+
+  // Instructor: update section
+  app.patch('/sections/:sectionId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { sectionId } = req.params as { sectionId: string };
+    const body = req.body as { title?: string; order?: number };
+    const section = await prisma.section.findUniqueOrThrow({
+      where: { id: sectionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    return prisma.section.update({ where: { id: sectionId }, data: body });
+  });
+
+  // Instructor: delete section
+  app.delete('/sections/:sectionId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { sectionId } = req.params as { sectionId: string };
+    const section = await prisma.section.findUniqueOrThrow({
+      where: { id: sectionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    await prisma.section.delete({ where: { id: sectionId } });
+    return { message: 'Đã xóa chương' };
+  });
+
+  // Instructor: create lesson in section
+  app.post('/sections/:sectionId/lessons', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { sectionId } = req.params as { sectionId: string };
+    const { title, type, order, isFree } = req.body as { title: string; type?: 'VIDEO' | 'TEXT' | 'LIVE'; order?: number; isFree?: boolean };
+    const section = await prisma.section.findUniqueOrThrow({
+      where: { id: sectionId },
+      include: { course: { select: { instructorId: true, id: true } } },
+    });
+    if (section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    const lessonSlug = slugify(title) + '-' + Date.now();
+    const lesson = await prisma.lesson.create({
+      data: { title, slug: lessonSlug, type: type ?? 'VIDEO', order: order ?? 0, isFree: isFree ?? false, sectionId },
+    });
+    const count = await prisma.lesson.count({ where: { section: { courseId: section.course.id } } });
+    await prisma.course.update({ where: { id: section.course.id }, data: { totalLessons: count } });
+    return reply.status(201).send(lesson);
+  });
+
+  // Instructor: update lesson
+  app.patch('/lessons/:lessonId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { lessonId } = req.params as { lessonId: string };
+    const { type, ...rest } = req.body as { title?: string; type?: 'VIDEO' | 'TEXT' | 'LIVE'; order?: number; isFree?: boolean; isPublished?: boolean; textContent?: string; description?: string };
+    const lesson = await prisma.lesson.findUniqueOrThrow({
+      where: { id: lessonId },
+      include: { section: { include: { course: { select: { instructorId: true } } } } },
+    });
+    if (lesson.section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    return prisma.lesson.update({ where: { id: lessonId }, data: { ...rest, ...(type ? { type } : {}) } });
+  });
+
+  // Instructor: delete lesson
+  app.delete('/lessons/:lessonId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { lessonId } = req.params as { lessonId: string };
+    const lesson = await prisma.lesson.findUniqueOrThrow({
+      where: { id: lessonId },
+      include: { section: { include: { course: { select: { instructorId: true, id: true } } } } },
+    });
+    if (lesson.section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Forbidden' });
+    await prisma.lesson.delete({ where: { id: lessonId } });
+    const count = await prisma.lesson.count({ where: { section: { courseId: lesson.section.course.id } } });
+    await prisma.course.update({ where: { id: lesson.section.course.id }, data: { totalLessons: count } });
+    return { message: 'Đã xóa bài học' };
   });
 
   // Get categories

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { formatDuration } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth.store';
 
 interface Lesson {
   id: string; title: string; type: string; order: number;
@@ -51,6 +52,7 @@ export default function LearnPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { accessToken } = useAuthStore();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
@@ -288,7 +290,9 @@ export default function LearnPage() {
                     className="w-full h-full"
                     controls
                     autoPlay={false}
-                    src={activeLesson.videoUrl}
+                    src={activeLesson.videoUrl.startsWith('/api/') && accessToken
+                      ? `${activeLesson.videoUrl}?token=${accessToken}`
+                      : activeLesson.videoUrl}
                     onEnded={markComplete}
                   />
                 </div>

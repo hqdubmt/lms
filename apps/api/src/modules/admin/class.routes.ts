@@ -17,6 +17,21 @@ const grantCourseSchema = z.object({
 });
 
 export async function classRoutes(app: FastifyInstance) {
+  // ─── PUBLIC: list classes (for landing page) ──────────────
+  app.get('/classes/public', async (req) => {
+    const q = req.query as { limit?: string };
+    const limit = Math.min(Number(q.limit) || 20, 50);
+    return prisma.class.findMany({
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, name: true, description: true, createdAt: true,
+        creator: { select: { name: true } },
+        _count: { select: { members: true } },
+      },
+    });
+  });
+
   // ─── LIST ─────────────────────────────────────────────────
   app.get('/classes', { preHandler: requireAdmin }, async (req) => {
     const q = req.query as { page?: string; limit?: string; search?: string };
@@ -113,7 +128,7 @@ export async function classRoutes(app: FastifyInstance) {
     }).parse(req.body);
 
     const normalized = emails.map((e) => e.toLowerCase().trim());
-    const users = await prisma.user.findMany({
+    const users: Array<{ id: string; email: string; name: string; role: string }> = await prisma.user.findMany({
       where: { email: { in: normalized } },
       select: { id: true, email: true, name: true, role: true },
     });
@@ -151,7 +166,7 @@ export async function classRoutes(app: FastifyInstance) {
     const { courseIds } = grantCourseSchema.parse(req.body);
 
     // Lấy tất cả thành viên trong lớp
-    const members = await prisma.classMember.findMany({
+    const members: Array<{ userId: string }> = await prisma.classMember.findMany({
       where: { classId },
       select: { userId: true },
     });

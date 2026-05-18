@@ -23,6 +23,7 @@ import { classRoutes } from './modules/admin/class.routes';
 import { liveSessionsRoutes } from './modules/admin/live-sessions.routes';
 import { uploadRoutes } from './modules/upload/upload.routes';
 import { todoRoutes } from './modules/todo/todo.routes';
+import './workers/email.worker';
 
 const app = Fastify({ logger: env.NODE_ENV === 'development' });
 
