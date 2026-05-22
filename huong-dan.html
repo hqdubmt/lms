@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MasterLMS - Hướng dẫn cài đặt & Kiến trúc</title>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --cyan: #22d3ee;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    header {
+      background: linear-gradient(135deg, var(--primary-dark), #7c3aed);
+      padding: 60px 40px;
+      text-align: center;
+    }
+    header h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: -1px; }
+    header p { font-size: 1.1rem; color: #c4b5fd; margin-top: 8px; }
+    .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 999px;
+      padding: 4px 14px;
+      font-size: 0.8rem;
+      margin: 6px 4px 0;
+    }
+    .container { max-width: 1000px; margin: 0 auto; padding: 40px 24px; }
+    .section { margin-bottom: 48px; }
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      border-left: 4px solid var(--primary);
+      padding-left: 14px;
+      margin-bottom: 20px;
+    }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--cyan); margin-bottom: 10px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface2);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary);
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+    .step-header { display: flex; align-items: center; margin-bottom: 14px; }
+    .step-header h3 { margin: 0; color: var(--text); font-size: 1.1rem; }
+    pre {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 0.88rem;
+      line-height: 1.7;
+      margin-top: 10px;
+    }
+    code { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+    pre code { color: #a5d6ff; }
+    .comment { color: #8b949e; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .tag {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green { background: var(--green); }
+    .dot-blue { background: #60a5fa; }
+    .dot-yellow { background: var(--yellow); }
+    .dot-cyan { background: var(--cyan); }
+    .dot-purple { background: #a78bfa; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: var(--primary);
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    td { padding: 10px 16px; border-bottom: 1px solid var(--surface2); font-size: 0.9rem; }
+    tr:last-child td { border: none; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+    .api-method {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .get { background: #166534; color: #86efac; }
+    .post { background: #1e3a5f; color: #93c5fd; }
+    .patch { background: #713f12; color: #fcd34d; }
+    .arch-box {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      line-height: 2;
+      color: #a5d6ff;
+    }
+    .arch-box .label { color: #f0a500; }
+    .arch-box .arrow { color: var(--muted); }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) {
+      .two-col { grid-template-columns: 1fr; }
+      header h1 { font-size: 2rem; }
+    }
+    footer {
+      text-align: center;
+      padding: 32px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--surface2);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🚀 MasterLMS</h1>
+  <p>Nền tảng học trực tuyến thế hệ mới — Realtime · AI · SaaS</p>
+  <div style="margin-top:16px">
+    <span class="badge">Next.js 15</span>
+    <span class="badge">Fastify</span>
+    <span class="badge">Socket.IO</span>
+    <span class="badge">PostgreSQL</span>
+    <span class="badge">MongoDB</span>
+    <span class="badge">Redis</span>
+    <span class="badge">Docker</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ===== QUICKSTART ===== -->
+  <div class="section">
+    <h2>⚡ Hướng dẫn cài đặt nhanh</h2>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">1</span>
+        <h3>Cài đặt dependencies</h3>
+      </div>
+      <pre><code>cd /home/hqdu/quangdu/lms
+npm install</code></pre>
+    </div>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">2</span>
+        <h3>Cấu hình environment</h3>
+      </div>
+      <pre><code><span class="comment"># API</span>
+cp apps/api/.env.example apps/api/.env
+
+<span class="comment"># Web</span>
+cp apps/web/.env.example apps/web/.env.local
+
+<span class="comment"># Deploy</span>
+cp deploy/backend/.env.example deploy/backend/.env
+cp deploy/frontend/.env.example deploy/frontend/.env</code></pre>
+    </div>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">3</span>
+        <h3>Chạy services (Docker)</h3>
+      </div>
+      <pre><code>cd deploy
+docker compose up -d postgres mongodb redis minio</code></pre>
+    </div>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">4</span>
+        <h3>Database migration &amp; seed</h3>
+      </div>
+      <pre><code>cd apps/api
+npx prisma migrate dev --name init
+npx tsx prisma/seed.ts</code></pre>
+    </div>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">5</span>
+        <h3>Chạy môi trường development</h3>
+      </div>
+      <pre><code><span class="comment"># Terminal 1 — API (port 4000)</span>
+cd apps/api &amp;&amp; npm run dev
+
+<span class="comment"># Terminal 2 — Web (port 3000)</span>
+cd apps/web &amp;&amp; npm run dev</code></pre>
+    </div>
+
+    <div class="card">
+      <div class="step-header">
+        <span class="step-number">6</span>
+        <h3>Deploy production</h3>
+      </div>
+      <pre><code>cd deploy
+cp backend/.env.example backend/.env   <span class="comment"># chỉnh giá trị thực</span>
+cp frontend/.env.example frontend/.env <span class="comment"># chỉnh giá trị thực</span>
+docker compose up -d</code></pre>
+    </div>
+  </div>
+
+  <!-- ===== TAI KHOAN ===== -->
+  <div class="section">
+    <h2>🔑 Tài khoản mặc định (sau seed)</h2>
+    <div class="card" style="padding:0; overflow:hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Email</th>
+            <th>Password</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>👑 Admin</td>
+            <td>admin@masterlms.com</td>
+            <td><code>Admin@123456</code></td>
+          </tr>
+          <tr>
+            <td>🎓 Instructor</td>
+            <td>instructor@masterlms.com</td>
+            <td><code>Instructor@123456</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== YEU CAU ===== -->
+  <div class="section">
+    <h2>📋 Yêu cầu hệ thống</h2>
+    <div class="grid">
+      <div class="tag"><span class="dot dot-green"></span>Node.js &gt;= 20</div>
+      <div class="tag"><span class="dot dot-blue"></span>Docker &amp; Docker Compose</div>
+      <div class="tag"><span class="dot dot-yellow"></span>npm hoặc yarn</div>
+    </div>
+  </div>
+
+  <!-- ===== API ENDPOINTS ===== -->
+  <div class="section">
+    <h2>🌐 API Endpoints chính</h2>
+    <div class="card" style="padding:0; overflow:hidden">
+      <table>
+        <thead>
+          <tr><th>Method</th><th>Endpoint</th><th>Ghi chú</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/auth/register</code></td><td>Đăng ký</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/auth/login</code></td><td>Đăng nhập</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/auth/refresh</code></td><td>Refresh token</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/auth/logout</code></td><td>Đăng xuất</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/auth/me</code></td><td>Thông tin tài khoản</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/courses</code></td><td>Danh sách khoá học</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/courses/:slug</code></td><td>Chi tiết khoá học</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/courses</code></td><td>Tạo khoá học (instructor)</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/courses/:id/enroll</code></td><td>Đăng ký khoá học</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/lessons/:id</code></td><td>Chi tiết bài học</td></tr>
+          <tr><td><span class="api-method patch">PATCH</span></td><td><code>/lessons/:id/progress</code></td><td>Cập nhật tiến độ</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/users/enrollments</code></td><td>Khoá học đã đăng ký</td></tr>
+          <tr><td><span class="api-method get">GET</span></td><td><code>/todos</code></td><td>Danh sách todo</td></tr>
+          <tr><td><span class="api-method post">POST</span></td><td><code>/todos</code></td><td>Tạo todo</td></tr>
+          <tr><td><td><span style="color:var(--cyan)">WS</span></td><td><code>ws://localhost:4000</code></td><td>Socket.IO realtime</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== CAU TRUC DU AN ===== -->
+  <div class="section">
+    <h2>📁 Cấu trúc dự án</h2>
+    <div class="arch-box">
+<span class="label">lms/</span>
+├── <span class="label">apps/</span>
+│   ├── <span class="label">api/</span>              <span class="comment"># Fastify backend</span>
+│   │   ├── src/
+│   │   │   ├── modules/  <span class="comment"># auth, users, courses, lessons, todo, upload</span>
+│   │   │   ├── services/ <span class="comment"># prisma, redis, mongo, minio, mail</span>
+│   │   │   ├── websocket/<span class="comment"># Socket.IO</span>
+│   │   │   ├── queues/   <span class="comment"># BullMQ queues</span>
+│   │   │   └── workers/  <span class="comment"># BullMQ workers</span>
+│   │   └── prisma/       <span class="comment"># Schema + migrations</span>
+│   └── <span class="label">web/</span>              <span class="comment"># Next.js 15 frontend</span>
+│       └── src/
+│           ├── app/      <span class="comment"># App Router pages</span>
+│           ├── components/
+│           ├── stores/   <span class="comment"># Zustand</span>
+│           └── lib/      <span class="comment"># API client, utils</span>
+└── <span class="label">deploy/</span>               <span class="comment"># Docker Compose + configs</span>
+    ├── docker-compose.yml
+    ├── nginx/
+    ├── backend/
+    ├── frontend/
+    └── monitoring/
+    </div>
+  </div>
+
+  <!-- ===== KIEN TRUC TONG THE ===== -->
+  <div class="section">
+    <h2>🏗 Kiến trúc production</h2>
+    <div class="arch-box" style="text-align:center">
+<span class="label">Internet</span>
+<span class="arrow">↓</span>
+Cloudflare CDN + WAF
+<span class="arrow">↓</span>
+Nginx Reverse Proxy
+<span class="arrow">↓</span>
+Frontend Cluster (Next.js)
+<span class="arrow">↓</span>
+API Gateway
+<span class="arrow">↓</span>
+<span class="label">Microservices</span>
+├── Auth Service      ├── Payment Service
+├── Course Service    ├── Notification Service
+├── Todo Service      ├── AI Service
+└── Meeting Service   └── Analytics Service
+<span class="arrow">↓</span>
+Redis Cluster
+<span class="arrow">↓</span>
+<span class="label">Database Layer</span>
+PostgreSQL · MongoDB · MinIO
+    </div>
+  </div>
+
+  <!-- ===== STACK ===== -->
+  <div class="section">
+    <h2>⚙️ Technology Stack</h2>
+    <div class="two-col">
+      <div class="card">
+        <h3>Frontend</h3>
+        <div class="grid" style="margin-top:10px">
+          <div class="tag"><span class="dot dot-blue"></span>Next.js 15</div>
+          <div class="tag"><span class="dot dot-blue"></span>React 19</div>
+          <div class="tag"><span class="dot dot-cyan"></span>TypeScript</div>
+          <div class="tag"><span class="dot dot-cyan"></span>TailwindCSS</div>
+          <div class="tag"><span class="dot dot-purple"></span>ShadCN UI</div>
+          <div class="tag"><span class="dot dot-purple"></span>Framer Motion</div>
+          <div class="tag"><span class="dot dot-yellow"></span>Socket.IO Client</div>
+          <div class="tag"><span class="dot dot-green"></span>PWA</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Backend</h3>
+        <div class="grid" style="margin-top:10px">
+          <div class="tag"><span class="dot dot-green"></span>Node.js</div>
+          <div class="tag"><span class="dot dot-yellow"></span>Fastify</div>
+          <div class="tag"><span class="dot dot-cyan"></span>Prisma ORM</div>
+          <div class="tag"><span class="dot dot-purple"></span>Socket.IO</div>
+          <div class="tag"><span class="dot dot-blue"></span>BullMQ</div>
+          <div class="tag"><span class="dot dot-green"></span>JWT</div>
+          <div class="tag"><span class="dot dot-yellow"></span>Zod</div>
+        </div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <h3>Database</h3>
+        <div class="grid" style="margin-top:10px">
+          <div class="tag"><span class="dot dot-blue"></span>PostgreSQL</div>
+          <div class="tag"><span class="dot dot-green"></span>MongoDB</div>
+          <div class="tag"><span class="dot dot-red" style="background:var(--red)"></span>Redis</div>
+          <div class="tag"><span class="dot dot-yellow"></span>MinIO</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Infrastructure</h3>
+        <div class="grid" style="margin-top:10px">
+          <div class="tag"><span class="dot dot-blue"></span>Docker</div>
+          <div class="tag"><span class="dot dot-green"></span>Nginx</div>
+          <div class="tag"><span class="dot dot-yellow"></span>Cloudflare</div>
+          <div class="tag"><span class="dot dot-purple"></span>GitHub Actions</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MONITORING ===== -->
+  <div class="section">
+    <h2>📊 Monitoring Stack</h2>
+    <div class="grid">
+      <div class="tag"><span class="dot dot-yellow"></span>Prometheus</div>
+      <div class="tag"><span class="dot dot-yellow"></span>Grafana</div>
+      <div class="tag"><span class="dot dot-blue"></span>Loki</div>
+      <div class="tag"><span class="dot dot-red" style="background:var(--red)"></span>Sentry</div>
+      <div class="tag"><span class="dot dot-green"></span>Uptime Kuma</div>
+    </div>
+  </div>
+
+  <!-- ===== VPS ===== -->
+  <div class="section">
+    <h2>🖥 Khuyến nghị VPS</h2>
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:16px">
+      <div class="card">
+        <h3 style="color:var(--green)">Small</h3>
+        <ul style="list-style:none; margin-top:10px; font-size:0.9rem; line-height:2">
+          <li>4 CPU</li>
+          <li>8 GB RAM</li>
+          <li>100 GB SSD</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--cyan)">Medium</h3>
+        <ul style="list-style:none; margin-top:10px; font-size:0.9rem; line-height:2">
+          <li>8 CPU</li>
+          <li>16 GB RAM</li>
+          <li>300 GB SSD</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--yellow)">Large</h3>
+        <ul style="list-style:none; margin-top:10px; font-size:0.9rem; line-height:2">
+          <li>16 CPU</li>
+          <li>32 GB RAM</li>
+          <li>1 TB SSD</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  MasterLMS &copy; 2026 — EdTech SaaS · AI Learning Platform · Mentor System
+</footer>
+
+</body>
+</html>

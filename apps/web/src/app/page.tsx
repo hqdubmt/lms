@@ -99,7 +99,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#f8fafc]">
       {/* Navbar */}
       <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center">
               <GraduationCap className="h-4 w-4 text-white" />
@@ -114,7 +114,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Courses */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
             {Array.from({ length: 10 }).map((_, i) => (

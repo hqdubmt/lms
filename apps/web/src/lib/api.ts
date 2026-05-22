@@ -13,6 +13,10 @@ class ApiClient {
     this.accessToken = token;
   }
 
+  getToken() {
+    return this.accessToken;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       // Chỉ set Content-Type khi có body để tránh Fastify parse body rỗng → 400
@@ -64,6 +68,19 @@ class ApiClient {
   post<T>(path: string, body?: unknown) { return this.request<T>(path, { method: 'POST', body: JSON.stringify(body) }); }
   patch<T>(path: string, body?: unknown) { return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }); }
   delete<T>(path: string) { return this.request<T>(path, { method: 'DELETE' }); }
+
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST', body: formData, headers, credentials: 'include',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || 'Upload thất bại');
+    }
+    return res.json();
+  }
 }
 
 export const api = new ApiClient(API_URL);

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import path from 'path';
 import { prisma } from '../../services/prisma';
@@ -73,6 +73,30 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.payment.aggregate({ _sum: { amount: true }, where: { status: 'COMPLETED' } }),
     ]);
     return { totalStudents, totalInstructors, totalCourses, totalEnrollments, totalRevenue: totalRevenue._sum.amount || 0 };
+  });
+
+  app.get('/module-stats', { preHandler: requireAdmin }, async () => {
+    const [
+      mathTopics, mathExercises, mathUsers, mathAttempts,
+      vietSets, vietExercises, vietUsers, vietAttempts,
+      langSets, langExercises,
+    ] = await Promise.all([
+      prisma.mathTopic.count(),
+      prisma.mathExercise.count(),
+      prisma.mathUserStats.count(),
+      prisma.mathAttempt.count(),
+      prisma.vietSet.count(),
+      prisma.vietExercise.count(),
+      prisma.vietUserStats.count(),
+      prisma.vietAttempt.count(),
+      prisma.vocabSet.count(),
+      prisma.langExercise.count(),
+    ]);
+    return {
+      math: { topics: mathTopics, exercises: mathExercises, users: mathUsers, attempts: mathAttempts },
+      viet: { sets: vietSets, exercises: vietExercises, users: vietUsers, attempts: vietAttempts },
+      language: { sets: langSets, exercises: langExercises },
+    };
   });
 
   // ─── COURSES ──────────────────────────────────────────────
@@ -225,7 +249,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'];
     if (!allowed.includes(data.mimetype)) {
-      await data.file.resume();
+      data.file.resume();
       return reply.status(400).send({ error: 'Chỉ chấp nhận file video (mp4, webm, mov, avi)' });
     }
 
@@ -472,6 +496,24 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { role },
       select: { id: true, name: true, email: true, role: true },
     });
+  });
+
+  // Reset user account to default state
+  app.post('/users/:id/reset', { preHandler: requireAdmin }, async (req) => {
+    const { id } = req.params as { id: string };
+    const generatedPassword = crypto.randomBytes(8).toString('hex');
+    const passwordHash = await bcrypt.hash(generatedPassword, 10);
+    await prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        bio: null,
+        avatarUrl: null,
+        isActive: true,
+        isVerified: true,
+      },
+    });
+    return { message: 'Đã reset tài khoản về mặc định', defaultPassword: generatedPassword };
   });
 
   // Toggle active

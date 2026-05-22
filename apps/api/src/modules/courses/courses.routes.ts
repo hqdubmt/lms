@@ -2,6 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor, requireAdmin } from '../../middleware/auth';
+import { Message } from '../../services/mongo';
+import { extractText, structureWithAI } from '../../services/file-import';
+import { getOrSet, cacheDel, cacheDelPattern } from '../../services/cache';
 
 const createCourseSchema = z.object({
   title: z.string().min(5).max(200),
@@ -56,53 +59,59 @@ export async function coursesRoutes(app: FastifyInstance) {
     const limit = Math.min(Number(q.limit) || 12, 50);
     const skip = (page - 1) * limit;
 
-    const where: any = { status: 'PUBLISHED' };
-    if (q.search) where.title = { contains: q.search, mode: 'insensitive' };
-    if (q.categoryId) where.categoryId = q.categoryId;
-    if (q.level) where.level = q.level;
-    if (q.isFree === 'true') where.isFree = true;
+    const cacheKey = `c:list:${page}:${limit}:${q.search || ''}:${q.categoryId || ''}:${q.level || ''}:${q.isFree || ''}`;
 
-    const [courses, total] = await Promise.all([
-      prisma.course.findMany({
-        where, skip, take: limit,
-        orderBy: { publishedAt: 'desc' },
-        include: {
-          instructor: { select: { name: true, avatarUrl: true } },
-          category: { select: { name: true, slug: true } },
-          _count: { select: { enrollments: true } },
-        },
-      }),
-      prisma.course.count({ where }),
-    ]);
+    return getOrSet(cacheKey, 120, async () => {
+      const where: any = { status: 'PUBLISHED' };
+      if (q.search) where.title = { contains: q.search, mode: 'insensitive' };
+      if (q.categoryId) where.categoryId = q.categoryId;
+      if (q.level) where.level = q.level;
+      if (q.isFree === 'true') where.isFree = true;
 
-    return { courses, total, page, limit };
+      const [courses, total] = await Promise.all([
+        prisma.course.findMany({
+          where, skip, take: limit,
+          orderBy: { publishedAt: 'desc' },
+          include: {
+            instructor: { select: { name: true, avatarUrl: true } },
+            category: { select: { name: true, slug: true } },
+            _count: { select: { enrollments: true } },
+          },
+        }),
+        prisma.course.count({ where }),
+      ]);
+
+      return { courses, total, page, limit };
+    });
   });
 
   // Public: get course by slug
   app.get('/:slug', async (req) => {
     const { slug } = req.params as { slug: string };
-    return prisma.course.findUniqueOrThrow({
-      where: { slug },
-      include: {
-        instructor: { select: { id: true, name: true, avatarUrl: true, bio: true } },
-        category: { select: { name: true, slug: true } },
-        sections: {
-          orderBy: { order: 'asc' },
-          include: {
-            lessons: {
-              orderBy: { order: 'asc' },
-              select: { id: true, title: true, slug: true, type: true, order: true, isFree: true, videoDuration: true },
+    return getOrSet(`c:detail:${slug}`, 300, () =>
+      prisma.course.findUniqueOrThrow({
+        where: { slug },
+        include: {
+          instructor: { select: { id: true, name: true, avatarUrl: true, bio: true } },
+          category: { select: { name: true, slug: true } },
+          sections: {
+            orderBy: { order: 'asc' },
+            include: {
+              lessons: {
+                orderBy: { order: 'asc' },
+                select: { id: true, title: true, slug: true, type: true, order: true, isFree: true, videoDuration: true },
+              },
             },
           },
+          reviews: {
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+            include: { user: { select: { name: true, avatarUrl: true } } },
+          },
+          _count: { select: { enrollments: true, reviews: true } },
         },
-        reviews: {
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: { user: { select: { name: true, avatarUrl: true } } },
-        },
-        _count: { select: { enrollments: true, reviews: true } },
-      },
-    });
+      })
+    );
   });
 
   // Public: get live sessions for a course (slug)
@@ -184,7 +193,12 @@ export async function coursesRoutes(app: FastifyInstance) {
 
     const course = await prisma.course.create({
       data: { ...body, slug, instructorId: sub },
+      include: {
+        category: { select: { name: true } },
+        _count: { select: { enrollments: true, sections: true } },
+      },
     });
+    await cacheDelPattern('c:list:*');
     return reply.status(201).send(course);
   });
 
@@ -199,7 +213,12 @@ export async function coursesRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
 
-    return prisma.course.update({ where: { id }, data: body });
+    const updated = await prisma.course.update({ where: { id }, data: body });
+    await Promise.all([
+      cacheDel(`c:detail:${course.slug}`),
+      cacheDelPattern('c:list:*'),
+    ]);
+    return updated;
   });
 
   // Protected: delete course
@@ -213,6 +232,10 @@ export async function coursesRoutes(app: FastifyInstance) {
     }
 
     await prisma.course.delete({ where: { id } });
+    await Promise.all([
+      cacheDel(`c:detail:${course.slug}`),
+      cacheDelPattern('c:list:*'),
+    ]);
     return { message: 'Khóa học đã bị xóa' };
   });
 
@@ -237,6 +260,8 @@ export async function coursesRoutes(app: FastifyInstance) {
     });
 
     await prisma.course.update({ where: { id }, data: { totalStudents: { increment: 1 } } });
+    // Invalidate course detail cache (enrollment count changed)
+    await cacheDel(`c:detail:${course.slug}`);
     return reply.status(201).send(enrollment);
   });
 
@@ -345,12 +370,131 @@ export async function coursesRoutes(app: FastifyInstance) {
     return { message: 'Đã xóa bài học' };
   });
 
+  // ─── COURSE CHAT ─────────────────────────────────────────────────────────
+
+  // Get chat history (enrolled students + instructor/admin)
+  app.get('/:id/chat', { preHandler: requireAuth }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { before } = req.query as { before?: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+
+    if (!['ADMIN', 'INSTRUCTOR'].includes(role)) {
+      const course = await prisma.course.findUnique({ where: { id }, select: { instructorId: true } });
+      if (course?.instructorId !== sub) {
+        const enrollment = await prisma.enrollment.findFirst({
+          where: { userId: sub, courseId: id, status: 'ACTIVE' },
+        });
+        if (!enrollment) return reply.status(403).send({ error: 'Không có quyền truy cập' });
+      }
+    }
+
+    const query: Record<string, any> = { roomId: `course:${id}` };
+    if (before) query.createdAt = { $lt: new Date(before) };
+
+    const msgs = await Message.find(query).sort({ createdAt: -1 }).limit(50).lean();
+    return msgs.reverse();
+  });
+
+  // Delete a message (instructor of this course or admin)
+  app.delete('/:id/chat/:messageId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id, messageId } = req.params as { id: string; messageId: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+
+    if (role !== 'ADMIN') {
+      const course = await prisma.course.findUnique({ where: { id }, select: { instructorId: true } });
+      if (course?.instructorId !== sub) return reply.status(403).send({ error: 'Không có quyền' });
+    }
+
+    await Message.deleteOne({ _id: messageId, roomId: `course:${id}` });
+    return { message: 'Đã xóa tin nhắn' };
+  });
+
+  // ─── IMPORT FROM FILE ────────────────────────────────────────────────────────
+
+  app.post('/:id/import-file', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+
+    const course = await prisma.course.findUniqueOrThrow({
+      where: { id },
+      select: { instructorId: true, title: true },
+    });
+    if (course.instructorId !== sub && role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    const file = await req.file();
+    if (!file) return reply.status(400).send({ error: 'Không có file' });
+
+    const allowedMimes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/markdown',
+    ];
+    const ext = file.filename.split('.').pop()?.toLowerCase();
+    if (!allowedMimes.includes(file.mimetype) && !['pdf', 'docx', 'txt', 'md'].includes(ext || '')) {
+      return reply.status(400).send({ error: 'Chỉ hỗ trợ PDF, DOCX, TXT, MD' });
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.file) chunks.push(chunk);
+    const buffer = Buffer.concat(chunks);
+
+    if (buffer.length > 20 * 1024 * 1024) {
+      return reply.status(400).send({ error: 'File tối đa 20MB' });
+    }
+
+    const text = await extractText(buffer, file.mimetype, file.filename);
+    if (!text.trim()) return reply.status(400).send({ error: 'Không đọc được nội dung file' });
+
+    const sections = await structureWithAI(text, course.title);
+
+    // Persist sections + lessons into DB
+    const maxOrder = await prisma.section.aggregate({ where: { courseId: id }, _max: { order: true } });
+    let sectionOrder = (maxOrder._max.order ?? -1) + 1;
+
+    const created = [];
+    for (const sec of sections) {
+      const dbSection = await prisma.section.create({
+        data: { title: sec.title, order: sectionOrder++, courseId: id },
+      });
+      const lessons = [];
+      let lessonOrder = 0;
+      for (const les of sec.lessons) {
+        const lessonSlug = slugify(les.title) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        const dbLesson = await prisma.lesson.create({
+          data: {
+            title: les.title,
+            slug: lessonSlug,
+            type: les.type || 'TEXT',
+            order: lessonOrder++,
+            sectionId: dbSection.id,
+            textContent: les.textContent || '',
+            isFree: false,
+            isPublished: false,
+          },
+        });
+        lessons.push(dbLesson);
+      }
+      created.push({ ...dbSection, lessons });
+    }
+
+    // Update totalLessons
+    const count = await prisma.lesson.count({ where: { section: { courseId: id } } });
+    await prisma.course.update({ where: { id }, data: { totalLessons: count } });
+
+    return reply.status(201).send({ sections: created, totalLessons: count });
+  });
+
   // Get categories
   app.get('/meta/categories', async () => {
-    return prisma.category.findMany({
-      where: { parentId: null },
-      include: { children: true, _count: { select: { courses: true } } },
-      orderBy: { name: 'asc' },
-    });
+    return getOrSet('c:categories', 3600, () =>
+      prisma.category.findMany({
+        where: { parentId: null },
+        include: { children: true, _count: { select: { courses: true } } },
+        orderBy: { name: 'asc' },
+      })
+    );
   });
 }

@@ -134,7 +134,7 @@ function SessionFormModal({ courses, editing, onClose, onSaved }: SessionFormPro
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-bold text-gray-900">
               {editing ? 'Chỉnh sửa buổi học' : 'Tạo buổi học mới'}
@@ -479,7 +479,7 @@ export default function SchedulePage() {
   return (
     <div className="min-h-screen bg-[#f8fafc]">
       {/* ── Hero ── */}
-      <div className="px-6 py-7 relative overflow-hidden"
+      <div className="px-4 sm:px-6 py-6 sm:py-7 relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #6d28d9 100%)' }}>
         <div className="absolute right-0 top-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
         <div className="relative z-10 max-w-4xl mx-auto flex items-center justify-between gap-4">
@@ -513,7 +513,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-6 space-y-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-8">
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Pencil, Users, BookOpen } from 'lucide-react';
+import { Plus, Search, Pencil, Users, BookOpen, Trash2, Loader2, X, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,9 @@ export default function AdminCoursesPage() {
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; enrollments: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const limit = 20;
 
   const load = useCallback(async () => {
@@ -58,6 +61,21 @@ export default function AdminCoursesPage() {
 
   const handleSearch = (v: string) => { setSearch(v); setPage(1); };
   const handleStatus = (v: string) => { setStatus(v === status ? '' : v); setPage(1); };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/admin/courses/${deleteTarget.id}`);
+      setCourses(prev => prev.filter(c => c.id !== deleteTarget.id));
+      setTotal(t => t - 1);
+      setDeleteTarget(null);
+    } catch (e: any) {
+      setDeleteError(e.message || 'Xóa khóa học thất bại');
+    }
+    setDeleting(false);
+  };
 
   return (
     <div className="space-y-5">
@@ -137,9 +155,18 @@ export default function AdminCoursesPage() {
                   </td>
                   <td className="px-4 py-3 text-right hidden lg:table-cell text-muted-foreground">{formatDate(course.createdAt)}</td>
                   <td className="px-4 py-3 text-right">
-                    <Link href={`/admin/courses/${course.id}`}>
-                      <Button variant="ghost" size="sm"><Pencil className="h-3.5 w-3.5" /></Button>
-                    </Link>
+                    <div className="flex items-center justify-end gap-1">
+                      <Link href={`/admin/courses/${course.id}`}>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><Pencil className="h-3.5 w-3.5" /></Button>
+                      </Link>
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteTarget({ id: course.id, title: course.title, enrollments: course._count.enrollments })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -156,6 +183,41 @@ export default function AdminCoursesPage() {
             Trang {page} / {Math.ceil(total / limit)}
           </span>
           <Button variant="outline" size="sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>Sau</Button>
+        </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={e => { if (e.target === e.currentTarget) { setDeleteTarget(null); setDeleteError(null); } }}>
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Xóa khóa học?</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  <strong>"{deleteTarget.title}"</strong> sẽ bị xóa vĩnh viễn.
+                </p>
+                {deleteTarget.enrollments > 0 && (
+                  <p className="text-sm text-destructive mt-2 font-medium">
+                    ⚠ Khóa học đang có {deleteTarget.enrollments} học viên đăng ký!
+                  </p>
+                )}
+              </div>
+            </div>
+            {deleteError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex gap-3">
+              <Button variant="destructive" className="flex-1" onClick={handleDelete} disabled={deleting}>
+                {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Xóa vĩnh viễn
+              </Button>
+              <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteError(null); }}>Hủy</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

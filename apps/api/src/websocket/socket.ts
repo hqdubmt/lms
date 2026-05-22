@@ -2,12 +2,13 @@ import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { redis } from '../services/redis';
 import { Message } from '../services/mongo';
+import { prisma } from '../services/prisma';
 import { env } from '../config/env';
 import type { FastifyInstance } from 'fastify';
 
 export function setupSocket(app: FastifyInstance) {
   const io = new Server(app.server, {
-    cors: { origin: env.FRONTEND_URL, credentials: true },
+    cors: { origin: [env.FRONTEND_URL, 'http://localhost:3000'], credentials: true },
     transports: ['websocket', 'polling'],
   });
 
@@ -27,8 +28,10 @@ export function setupSocket(app: FastifyInstance) {
     }
   });
 
-  io.on('connection', (socket) => {
-    const user = (socket as any).user as { sub: string; role: string; name?: string };
+  io.on('connection', async (socket) => {
+    const user = (socket as any).user as { sub: string; role: string; name?: string; avatarUrl?: string };
+    const dbUser = await prisma.user.findUnique({ where: { id: user.sub }, select: { avatarUrl: true } });
+    user.avatarUrl = dbUser?.avatarUrl ?? undefined;
     console.log(`Socket connected: ${user.sub}`);
 
     // Set online status
@@ -48,6 +51,7 @@ export function setupSocket(app: FastifyInstance) {
         roomId: data.roomId,
         userId: user.sub,
         userName: user.name || user.sub,
+        avatarUrl: user.avatarUrl,
         content: data.content,
         type: data.type || 'text',
       });

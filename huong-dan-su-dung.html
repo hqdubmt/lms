@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MasterLMS — Hướng dẫn sử dụng</title>
+<style>
+:root{
+  --indigo:#4f46e5;--indigo-light:#eef2ff;--indigo-dark:#3730a3;
+  --green:#16a34a;--green-light:#dcfce7;
+  --yellow:#ca8a04;--yellow-light:#fef9c3;
+  --red:#dc2626;--red-light:#fee2e2;
+  --gray:#64748b;--gray-light:#f8fafc;
+  --white:#fff;
+  --border:#e2e8f0;
+  --text:#1e293b;--muted:#64748b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;color:var(--text);background:#f1f5f9;line-height:1.6;font-size:15px}
+
+/* ─── NAV ─── */
+.toc-nav{
+  position:fixed;top:0;left:0;width:240px;height:100vh;
+  background:var(--white);border-right:1px solid var(--border);
+  overflow-y:auto;padding:20px 0;z-index:100;
+}
+.toc-nav h2{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.08em;padding:0 20px 10px}
+.toc-nav a{display:block;padding:6px 20px;font-size:13px;color:var(--muted);
+  text-decoration:none;border-left:2px solid transparent;transition:.15s}
+.toc-nav a:hover{color:var(--indigo);background:var(--indigo-light);border-left-color:var(--indigo)}
+.toc-nav .toc-section{margin-top:14px}
+.toc-brand{display:flex;align-items:center;gap:8px;padding:0 20px 20px;
+  border-bottom:1px solid var(--border);margin-bottom:10px}
+.toc-brand-icon{width:32px;height:32px;background:var(--indigo);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:18px}
+.toc-brand span{font-weight:700;font-size:14px}
+
+/* ─── MAIN ─── */
+.main{margin-left:240px;min-height:100vh}
+
+/* ─── HERO ─── */
+.hero{
+  background:linear-gradient(135deg,#1e1b4b 0%,#4338ca 55%,#6d28d9 100%);
+  padding:70px 60px;color:#fff;position:relative;overflow:hidden;
+}
+.hero::before{content:'';position:absolute;right:-80px;top:-80px;width:350px;height:350px;
+  border-radius:50%;background:rgba(255,255,255,.06)}
+.hero::after{content:'';position:absolute;left:200px;bottom:-60px;width:200px;height:200px;
+  border-radius:50%;background:rgba(255,255,255,.04)}
+.hero h1{font-size:2.6rem;font-weight:800;position:relative;z-index:1}
+.hero p{font-size:1.1rem;color:rgba(255,255,255,.7);margin-top:10px;max-width:600px;position:relative;z-index:1}
+.hero-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;position:relative;z-index:1}
+.hero-badge{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);
+  padding:4px 14px;border-radius:999px;font-size:12px}
+
+/* ─── SECTIONS ─── */
+.section{padding:50px 60px;border-bottom:1px solid var(--border)}
+.section:last-child{border:none}
+.section-header{margin-bottom:30px}
+.section-num{display:inline-flex;align-items:center;justify-content:center;
+  width:30px;height:30px;background:var(--indigo);color:#fff;
+  border-radius:50%;font-size:13px;font-weight:700;margin-right:10px}
+.section h2{font-size:1.5rem;font-weight:700;display:flex;align-items:center}
+.section-sub{color:var(--muted);font-size:14px;margin-top:6px;margin-left:40px}
+
+/* ─── SCREEN MOCKUP ─── */
+.screen{
+  background:var(--white);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.07);margin-bottom:24px;
+}
+.screen-bar{
+  background:#f1f5f9;border-bottom:1px solid var(--border);
+  padding:10px 16px;display:flex;align-items:center;gap:8px;
+}
+.screen-dot{width:10px;height:10px;border-radius:50%}
+.screen-url{background:var(--white);border:1px solid var(--border);border-radius:6px;
+  padding:3px 12px;font-size:12px;color:var(--muted);margin-left:8px;flex:1;max-width:320px}
+.screen-body{padding:0}
+
+/* ─── MOCK UI COMPONENTS ─── */
+.mock-navbar{
+  background:rgba(255,255,255,.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);padding:0 24px;
+  height:56px;display:flex;align-items:center;justify-content:space-between;
+}
+.mock-logo{display:flex;align-items:center;gap:8px}
+.mock-logo-icon{width:32px;height:32px;background:var(--indigo);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.mock-logo span{font-weight:700;font-size:14px}
+.mock-btn{background:var(--indigo);color:#fff;padding:6px 16px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;border:none}
+.mock-btn-outline{background:transparent;color:var(--indigo);padding:6px 16px;border-radius:8px;
+  font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--indigo)}
+
+.course-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:20px 24px}
+.course-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--white)}
+.course-thumb{
+  aspect-ratio:16/9;
+  background:linear-gradient(135deg,#eef2ff,#f5f3ff);
+  display:flex;align-items:center;justify-content:center;font-size:28px;position:relative;
+}
+.badge-free{position:absolute;top:8px;left:8px;background:#16a34a;color:#fff;
+  font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
+.badge-level{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.4);color:#fff;
+  font-size:10px;padding:2px 8px;border-radius:999px}
+.course-info{padding:12px}
+.course-title{font-size:12px;font-weight:600;line-height:1.4;color:var(--text);margin-bottom:6px}
+.course-instructor{font-size:11px;color:var(--muted)}
+.course-meta{display:flex;justify-content:space-between;margin-top:8px;
+  padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+.course-price{color:var(--indigo);font-weight:700}
+
+/* ─── LOGIN FORM ─── */
+.login-wrap{min-height:300px;background:var(--gray-light);
+  display:flex;align-items:center;justify-content:center;padding:30px}
+.login-card{background:var(--white);border:1px solid var(--border);border-radius:16px;
+  padding:28px;width:340px}
+.login-card h3{font-size:18px;font-weight:700;text-align:center;margin-bottom:4px}
+.login-card p{font-size:13px;color:var(--muted);text-align:center;margin-bottom:20px}
+.form-group{margin-bottom:14px}
+.form-label{font-size:13px;font-weight:500;display:block;margin-bottom:4px}
+.form-input{width:100%;border:1px solid var(--border);border-radius:8px;
+  padding:8px 12px;font-size:13px;outline:none;color:var(--text)}
+.google-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+  border:1px solid var(--border);border-radius:8px;padding:9px;font-size:13px;
+  font-weight:500;background:var(--white);cursor:pointer;margin-bottom:14px}
+.divider{text-align:center;font-size:12px;color:var(--muted);margin:14px 0;position:relative}
+.divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--border)}
+.divider::before{left:0}.divider::after{right:0}
+
+/* ─── DASHBOARD ─── */
+.dash-layout{display:grid;grid-template-columns:1fr;gap:0}
+.dash-topbar{background:var(--white);border-bottom:1px solid var(--border);
+  padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+.dash-topbar-left p:first-child{font-size:11px;color:var(--muted)}
+.dash-topbar-left p:last-child{font-size:13px;font-weight:600}
+.dash-hero{
+  background:linear-gradient(135deg,#1e1b4b,#4338ca,#6d28d9);
+  padding:24px;color:#fff;position:relative;overflow:hidden;margin:16px;border-radius:20px;
+}
+.dash-hero h2{font-size:20px;font-weight:700}
+.dash-hero p{font-size:12px;color:rgba(255,255,255,.65);margin-top:4px}
+.progress-mini{background:rgba(255,255,255,.2);border-radius:999px;height:6px;width:180px;margin-top:10px}
+.progress-mini-fill{background:#fff;border-radius:999px;height:100%;width:65%}
+.quick-btns{display:flex;gap:8px;margin-top:12px}
+.quick-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);
+  color:#fff;font-size:12px;padding:6px 14px;border-radius:10px}
+
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:0 16px}
+.stat-card{background:var(--white);border:1px solid var(--border);border-radius:14px;
+  padding:16px;display:flex;align-items:center;gap:12px}
+.stat-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;
+  justify-content:center;font-size:20px;flex-shrink:0}
+.stat-label{font-size:11px;color:var(--muted)}
+.stat-value{font-size:22px;font-weight:700;line-height:1.2}
+.stat-sub{font-size:11px;color:var(--muted)}
+
+.dash-section{padding:16px}
+.dash-section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.dash-section-header h3{font-size:15px;font-weight:700}
+.dash-section-header a{font-size:12px;color:var(--indigo)}
+.course-progress-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.cp-card{background:var(--white);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.cp-thumb{aspect-ratio:16/9;background:linear-gradient(135deg,#eef2ff,#f5f3ff);
+  display:flex;align-items:center;justify-content:center;font-size:24px}
+.cp-info{padding:12px}
+.cp-title{font-size:12px;font-weight:600;margin-bottom:8px}
+.cp-prog-bar{background:#f1f5f9;border-radius:999px;height:6px;overflow:hidden}
+.cp-prog-fill{background:linear-gradient(90deg,#6366f1,#a855f7);height:100%;border-radius:999px}
+.cp-prog-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+
+.session-row{background:var(--white);border:1px solid var(--border);border-radius:12px;
+  padding:14px 16px;display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.session-icon{width:40px;height:40px;background:var(--indigo-light);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.session-info{flex:1}
+.session-title{font-size:13px;font-weight:600}
+.session-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.session-live{background:#dc2626;color:#fff;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:999px;margin-left:8px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.session-btn{background:var(--indigo-light);color:var(--indigo);font-size:12px;
+  font-weight:600;padding:6px 12px;border-radius:8px}
+
+/* ─── ADMIN ─── */
+.admin-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 24px;background:var(--white)}
+.admin-tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--muted);
+  border-bottom:2px solid transparent;cursor:pointer}
+.admin-tab.active{color:var(--indigo);border-bottom-color:var(--indigo)}
+.admin-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:20px 24px}
+.admin-stat{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:18px}
+.admin-stat-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+.admin-stat-value{font-size:28px;font-weight:800;color:var(--text)}
+.admin-stat-trend{font-size:11px;color:var(--green);margin-top:4px}
+
+.table-wrap{padding:0 24px 20px}
+.mock-table{width:100%;border-collapse:collapse;font-size:13px}
+.mock-table th{background:#f8fafc;padding:10px 12px;text-align:left;font-weight:600;
+  font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)}
+.mock-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.mock-table tr:last-child td{border:none}
+.chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600}
+.chip-green{background:var(--green-light);color:var(--green)}
+.chip-yellow{background:var(--yellow-light);color:var(--yellow)}
+.chip-gray{background:#f1f5f9;color:var(--muted)}
+.chip-red{background:var(--red-light);color:var(--red)}
+
+/* ─── COURSE DETAIL ─── */
+.course-detail-layout{display:grid;grid-template-columns:1fr 320px;gap:24px;padding:24px}
+.course-detail-main{}
+.cd-cover{
+  aspect-ratio:16/9;background:linear-gradient(135deg,#312e81,#4f46e5);
+  border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:60px;margin-bottom:16px;
+}
+.cd-title{font-size:20px;font-weight:700;margin-bottom:8px}
+.cd-meta{display:flex;gap:12px;font-size:13px;color:var(--muted);flex-wrap:wrap;margin-bottom:16px}
+.cd-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.cd-tab{padding:10px 16px;font-size:13px;font-weight:500;color:var(--muted);
+  border-bottom:2px solid transparent;cursor:pointer}
+.cd-tab.active{color:var(--indigo);border-bottom-color:var(--indigo)}
+.section-item{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.section-header-row{background:#f8fafc;padding:12px 16px;font-size:13px;font-weight:600;
+  display:flex;justify-content:space-between}
+.lesson-row{padding:10px 16px;display:flex;align-items:center;gap-12px;gap:10px;
+  border-top:1px solid var(--border);font-size:13px;color:var(--muted)}
+.lesson-icon{width:28px;height:28px;border-radius:6px;background:var(--indigo-light);
+  display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+
+.enroll-card{background:var(--white);border:1px solid var(--border);border-radius:14px;
+  padding:20px;position:sticky;top:80px}
+.enroll-price{font-size:28px;font-weight:800;color:var(--indigo);margin-bottom:14px}
+.enroll-features{list-style:none;font-size:13px;margin-bottom:16px}
+.enroll-features li{padding:5px 0;display:flex;align-items:center;gap:8px;color:var(--muted)}
+.enroll-features li::before{content:'✓';color:var(--green);font-weight:700}
+.enroll-btn{width:100%;background:var(--indigo);color:#fff;border:none;
+  padding:12px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}
+
+/* ─── LEARN PAGE ─── */
+.learn-layout{display:grid;grid-template-columns:1fr 300px;height:500px}
+.learn-player{background:#000;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;color:rgba(255,255,255,.5);gap:10px}
+.learn-player .play-btn{width:60px;height:60px;background:rgba(255,255,255,.15);
+  border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px}
+.learn-sidebar{background:var(--white);border-left:1px solid var(--border);overflow-y:auto}
+.learn-sidebar-header{padding:14px 16px;border-bottom:1px solid var(--border);
+  font-size:13px;font-weight:700}
+.learn-lesson{padding:10px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;font-size:12px;cursor:pointer}
+.learn-lesson.active{background:var(--indigo-light);color:var(--indigo)}
+.learn-lesson-done{color:var(--green)}
+.learn-progress{height:3px;background:var(--indigo);width:45%}
+
+/* ─── INSTRUCTOR ─── */
+.instructor-form{padding:20px 24px;background:var(--white)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.form-field{display:flex;flex-direction:column;gap:4px}
+.form-field label{font-size:13px;font-weight:500}
+.form-field input,.form-field select,.form-field textarea{
+  border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;
+  outline:none;color:var(--text);background:var(--white)}
+.form-field textarea{height:80px;resize:vertical}
+
+/* ─── STEPS ─── */
+.steps{counter-reset:step;display:flex;flex-direction:column;gap:0}
+.step{display:flex;gap:16px;position:relative;padding-bottom:24px}
+.step:last-child{padding-bottom:0}
+.step::before{content:'';position:absolute;left:17px;top:36px;bottom:0;
+  width:2px;background:var(--border)}
+.step:last-child::before{display:none}
+.step-circle{width:36px;height:36px;border-radius:50%;background:var(--indigo);
+  color:#fff;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:14px;flex-shrink:0;z-index:1}
+.step-content{flex:1;padding-top:6px}
+.step-title{font-weight:700;font-size:15px;margin-bottom:4px}
+.step-desc{font-size:14px;color:var(--muted);line-height:1.6}
+
+/* ─── TIPS ─── */
+.tip{background:var(--indigo-light);border-left:3px solid var(--indigo);
+  border-radius:0 8px 8px 0;padding:12px 16px;font-size:13px;
+  color:var(--indigo-dark);margin:16px 0}
+.warn{background:#fffbeb;border-left:3px solid #f59e0b;
+  border-radius:0 8px 8px 0;padding:12px 16px;font-size:13px;
+  color:#92400e;margin:16px 0}
+
+/* ─── INFO TABLE ─── */
+.info-table{width:100%;border-collapse:collapse;font-size:14px;margin:16px 0}
+.info-table th{background:var(--gray-light);padding:10px 14px;text-align:left;
+  font-weight:600;font-size:13px;border:1px solid var(--border)}
+.info-table td{padding:10px 14px;border:1px solid var(--border)}
+.info-table tr:nth-child(even) td{background:#fafafa}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:900px){
+  .toc-nav{display:none}
+  .main{margin-left:0}
+  .section{padding:30px 20px}
+  .hero{padding:40px 20px}
+  .course-grid{grid-template-columns:repeat(2,1fr)}
+  .stat-grid,.admin-stat-grid{grid-template-columns:repeat(2,1fr)}
+  .course-detail-layout{grid-template-columns:1fr}
+  .learn-layout{grid-template-columns:1fr;height:auto}
+  .form-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR NAV ═══ -->
+<nav class="toc-nav">
+  <div class="toc-brand">
+    <div class="toc-brand-icon">🎓</div>
+    <span>MasterLMS</span>
+  </div>
+  <h2>Mục lục</h2>
+  <div class="toc-section">
+    <a href="#overview">Tổng quan ứng dụng</a>
+    <a href="#landing">Trang chủ</a>
+    <a href="#login">Đăng nhập / Đăng ký</a>
+    <a href="#dashboard">Dashboard học viên</a>
+    <a href="#courses">Danh sách khoá học</a>
+    <a href="#course-detail">Chi tiết khoá học</a>
+    <a href="#learn">Học bài</a>
+    <a href="#schedule">Lịch học</a>
+    <a href="#settings">Cài đặt tài khoản</a>
+    <a href="#instructor">Dành cho Giảng viên</a>
+    <a href="#admin">Trang Quản trị</a>
+    <a href="#accounts">Tài khoản mặc định</a>
+    <a href="#urls">Danh sách URL</a>
+  </div>
+</nav>
+
+<!-- ═══ MAIN CONTENT ═══ -->
+<main class="main">
+
+  <!-- HERO -->
+  <div class="hero">
+    <h1>🎓 MasterLMS</h1>
+    <p>Hướng dẫn sử dụng đầy đủ — Giao diện thực tế từ source code</p>
+    <div class="hero-badges">
+      <span class="hero-badge">Next.js 15</span>
+      <span class="hero-badge">Fastify API</span>
+      <span class="hero-badge">Socket.IO Realtime</span>
+      <span class="hero-badge">3 cấp độ: Học viên · Giảng viên · Admin</span>
+    </div>
+  </div>
+
+  <!-- ═══ TỔNG QUAN ═══ -->
+  <div class="section" id="overview">
+    <div class="section-header">
+      <h2><span class="section-num">0</span> Tổng quan ứng dụng</h2>
+      <p class="section-sub">MasterLMS có 3 vai trò người dùng với giao diện và quyền hạn khác nhau</p>
+    </div>
+
+    <table class="info-table">
+      <thead>
+        <tr><th>Vai trò</th><th>Trang chính</th><th>Quyền hạn</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>🎓 <strong>Học viên (Student)</strong></td>
+          <td><code>/dashboard</code></td>
+          <td>Xem khoá học, đăng ký học, theo dõi tiến độ, tham gia buổi học live</td>
+        </tr>
+        <tr>
+          <td>👨‍🏫 <strong>Giảng viên (Instructor)</strong></td>
+          <td><code>/instructor/courses</code></td>
+          <td>Tạo và quản lý khoá học, thêm bài học, xem học viên đăng ký</td>
+        </tr>
+        <tr>
+          <td>👑 <strong>Quản trị (Admin)</strong></td>
+          <td><code>/admin</code></td>
+          <td>Toàn quyền: quản lý users, khoá học, lớp học, phiên học, thống kê</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="tip">
+      <strong>Luồng sử dụng:</strong> Truy cập <code>http://localhost:3000</code> → Xem khoá học (không cần đăng nhập) → Đăng nhập → Đăng ký học → Học bài
+    </div>
+  </div>
+
+  <!-- ═══ TRANG CHỦ ═══ -->
+  <div class="section" id="landing">
+    <div class="section-header">
+      <h2><span class="section-num">1</span> Trang chủ (Landing Page)</h2>
+      <p class="section-sub">URL: <code>http://localhost:3000</code> — Không cần đăng nhập</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000</div>
+      </div>
+      <div class="screen-body">
+        <!-- Navbar -->
+        <div class="mock-navbar">
+          <div class="mock-logo">
+            <div class="mock-logo-icon">🎓</div>
+            <span>MasterLMS</span>
+          </div>
+          <button class="mock-btn">Đăng nhập</button>
+        </div>
+        <!-- Course grid -->
+        <div class="course-grid">
+          <div class="course-card">
+            <div class="course-thumb">📘<span class="badge-free">Miễn phí</span><span class="badge-level">Cơ bản</span></div>
+            <div class="course-info">
+              <div class="course-title">Lập trình Python cơ bản đến nâng cao</div>
+              <div class="course-instructor">Nguyễn Văn A</div>
+              <div class="course-meta"><span>12 bài · 320 học viên</span><span class="course-price">Miễn phí</span></div>
+            </div>
+          </div>
+          <div class="course-card">
+            <div class="course-thumb">⚛️<span class="badge-level">Trung cấp</span></div>
+            <div class="course-info">
+              <div class="course-title">React & Next.js 15 từ A đến Z</div>
+              <div class="course-instructor">Trần Thị B</div>
+              <div class="course-meta"><span>24 bài · 500 học viên</span><span class="course-price">299.000₫</span></div>
+            </div>
+          </div>
+          <div class="course-card">
+            <div class="course-thumb">🐳<span class="badge-level">Nâng cao</span></div>
+            <div class="course-info">
+              <div class="course-title">Docker & Kubernetes Production</div>
+              <div class="course-instructor">Lê Văn C</div>
+              <div class="course-meta"><span>18 bài · 180 học viên</span><span class="course-price">499.000₫</span></div>
+            </div>
+          </div>
+          <div class="course-card">
+            <div class="course-thumb">🤖<span class="badge-free">Miễn phí</span><span class="badge-level">Cơ bản</span></div>
+            <div class="course-info">
+              <div class="course-title">AI & Machine Learning cơ bản</div>
+              <div class="course-instructor">Phạm Thị D</div>
+              <div class="course-meta"><span>15 bài · 750 học viên</span><span class="course-price">Miễn phí</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Xem danh sách khoá học</div>
+          <div class="step-desc">Tất cả khoá học hiển thị dạng lưới với thumbnail, tên giảng viên, số bài học, học viên và giá. Khoá miễn phí có badge xanh lá.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Nhấp vào khoá học để xem chi tiết</div>
+          <div class="step-desc">Click vào bất kỳ course card nào → chuyển đến trang <code>/course/[slug]</code> để xem nội dung đầy đủ.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Nhấn "Đăng nhập" để truy cập đầy đủ</div>
+          <div class="step-desc">Góc trên bên phải có nút <strong>Đăng nhập</strong> màu tím. Sau khi đăng nhập, chuyển đến dashboard tương ứng với vai trò.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ĐĂNG NHẬP ═══ -->
+  <div class="section" id="login">
+    <div class="section-header">
+      <h2><span class="section-num">2</span> Đăng nhập / Đăng ký</h2>
+      <p class="section-sub">URL: <code>/login</code> · <code>/register</code></p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/login</div>
+      </div>
+      <div class="login-wrap">
+        <div class="login-card">
+          <div style="text-align:center;font-size:36px;margin-bottom:12px">🎓</div>
+          <h3>Đăng nhập</h3>
+          <p>Chào mừng bạn trở lại MasterLMS</p>
+
+          <button class="google-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Đăng nhập với Google
+          </button>
+
+          <div class="divider">Hoặc</div>
+
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" type="email" placeholder="email@example.com" value="admin@masterlms.com"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mật khẩu</label>
+            <input class="form-input" type="password" placeholder="••••••••" value="••••••••••••"/>
+          </div>
+          <button class="mock-btn" style="width:100%;padding:10px;border-radius:8px;font-size:14px">Đăng nhập</button>
+          <div style="text-align:center;font-size:13px;color:var(--muted);margin-top:14px">
+            Chưa có tài khoản? <span style="color:var(--indigo);font-weight:600">Đăng ký ngay</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Đăng nhập bằng Google (khuyến nghị)</div>
+          <div class="step-desc">Nhấn nút <strong>"Đăng nhập với Google"</strong> → redirect sang Google OAuth → tự động tạo tài khoản nếu chưa có.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Đăng nhập bằng Email / Mật khẩu</div>
+          <div class="step-desc">Nhập email + mật khẩu → nhấn <strong>Đăng nhập</strong>. Admin → chuyển <code>/admin</code>. Học viên/Giảng viên → chuyển <code>/dashboard</code>.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Đăng ký tài khoản mới</div>
+          <div class="step-desc">Nhấn <strong>"Đăng ký ngay"</strong> → truy cập <code>/register</code> → điền họ tên, email, mật khẩu → xác nhận email.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="warn">
+      <strong>Lưu ý:</strong> Sau khi đăng nhập, hệ thống tự động chuyển hướng dựa trên vai trò: <code>ADMIN</code> → <code>/admin</code>, các vai trò khác → <code>/dashboard</code>.
+    </div>
+  </div>
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <div class="section" id="dashboard">
+    <div class="section-header">
+      <h2><span class="section-num">3</span> Dashboard Học viên</h2>
+      <p class="section-sub">URL: <code>/dashboard</code> — Trang tổng quan cá nhân sau khi đăng nhập</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/dashboard</div>
+      </div>
+      <!-- Top bar -->
+      <div class="dash-topbar">
+        <div class="dash-topbar-left">
+          <p>Thứ Ba, ngày 20 tháng 5 năm 2026</p>
+          <p>Chào buổi sáng, Quang 👋</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div style="background:#f1f5f9;border-radius:8px;padding:7px 12px;font-size:12px;color:var(--muted)">🔍 Tìm khoá học</div>
+          <div style="background:#f1f5f9;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center">🔔</div>
+        </div>
+      </div>
+
+      <!-- Hero banner -->
+      <div style="padding:16px">
+        <div class="dash-hero">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <p style="font-size:11px;color:rgba(255,255,255,.6)">Học viên</p>
+              <h2>Nguyễn Văn Quang</h2>
+              <p style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">Bạn đang học 3 khoá · Tiến độ trung bình 65%</p>
+              <div style="margin-top:10px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.6);margin-bottom:4px"><span>Tiến độ trung bình</span><span style="color:#fff">65%</span></div>
+                <div class="progress-mini"><div class="progress-mini-fill"></div></div>
+              </div>
+            </div>
+            <div style="width:56px;height:56px;background:rgba(255,255,255,.1);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px">Q</div>
+          </div>
+          <div class="quick-btns">
+            <div class="quick-btn">📚 Khoá học của tôi</div>
+            <div class="quick-btn">📅 Lịch học</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#eef2ff;color:var(--indigo)">📚</div>
+          <div><div class="stat-label">Khoá đang học</div><div class="stat-value">3</div><div class="stat-sub">5 khoá đã đăng ký</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#dcfce7;color:#16a34a">🏆</div>
+          <div><div class="stat-label">Đã hoàn thành</div><div class="stat-value">2</div><div class="stat-sub">khoá học</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#fff7ed;color:#ea580c">⏱</div>
+          <div><div class="stat-label">Giờ học tích lũy</div><div class="stat-value">48h</div><div class="stat-sub">tổng nội dung</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#faf5ff;color:#9333ea">📈</div>
+          <div><div class="stat-label">Tiến độ TB</div><div class="stat-value">65%</div><div class="stat-sub">các khoá đang học</div></div>
+        </div>
+      </div>
+
+      <!-- Continue learning -->
+      <div class="dash-section">
+        <div class="dash-section-header">
+          <h3>Tiếp tục học</h3>
+          <a href="#">Xem tất cả →</a>
+        </div>
+        <div class="course-progress-grid">
+          <div class="cp-card">
+            <div class="cp-thumb">📘</div>
+            <div class="cp-info">
+              <div class="cp-title">Lập trình Python cơ bản</div>
+              <div class="cp-prog-label"><span>Tiến độ</span><span style="color:var(--indigo);font-weight:600">72%</span></div>
+              <div class="cp-prog-bar"><div class="cp-prog-fill" style="width:72%"></div></div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px"><span>12 bài học</span><span style="color:var(--indigo);font-weight:600">Tiếp tục →</span></div>
+            </div>
+          </div>
+          <div class="cp-card">
+            <div class="cp-thumb">⚛️</div>
+            <div class="cp-info">
+              <div class="cp-title">React & Next.js 15</div>
+              <div class="cp-prog-label"><span>Tiến độ</span><span style="color:var(--indigo);font-weight:600">35%</span></div>
+              <div class="cp-prog-bar"><div class="cp-prog-fill" style="width:35%"></div></div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px"><span>24 bài học</span><span style="color:var(--indigo);font-weight:600">Tiếp tục →</span></div>
+            </div>
+          </div>
+          <div class="cp-card">
+            <div class="cp-thumb">🐳</div>
+            <div class="cp-info">
+              <div class="cp-title">Docker & Kubernetes</div>
+              <div class="cp-prog-label"><span>Tiến độ</span><span style="color:var(--indigo);font-weight:600">0%</span></div>
+              <div class="cp-prog-bar"><div class="cp-prog-fill" style="width:0%"></div></div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px"><span>18 bài học</span><span style="color:var(--indigo);font-weight:600">Bắt đầu →</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div class="dash-section">
+        <div class="dash-section-header">
+          <h3>Lịch học sắp tới</h3>
+          <a href="#">Xem lịch →</a>
+        </div>
+        <div class="session-row">
+          <div class="session-icon">🔴</div>
+          <div class="session-info">
+            <div class="session-title">Buổi Q&A Python nâng cao <span class="session-live">LIVE</span></div>
+            <div class="session-meta">Lớp Python · Hôm nay · 19:00 – 20:30</div>
+          </div>
+          <div class="session-btn" style="background:#fee2e2;color:#dc2626">🔴 Vào học ngay</div>
+        </div>
+        <div class="session-row">
+          <div class="session-icon">📹</div>
+          <div class="session-info">
+            <div class="session-title">Workshop React Hooks</div>
+            <div class="session-meta">Lớp React · T4, 21/05 · 20:00 – 21:30</div>
+          </div>
+          <div class="session-btn">📹 Meet</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:20px;font-size:14px;font-weight:600">Các thành phần trên dashboard:</p>
+    <table class="info-table" style="margin-top:10px">
+      <thead><tr><th>Thành phần</th><th>Mô tả</th></tr></thead>
+      <tbody>
+        <tr><td>🌅 <strong>Hero banner</strong></td><td>Hiển thị tên, số khoá đang học, tiến độ trung bình, quick links</td></tr>
+        <tr><td>📊 <strong>4 thẻ thống kê</strong></td><td>Khoá đang học, hoàn thành, tổng giờ học, tiến độ trung bình</td></tr>
+        <tr><td>📚 <strong>Tiếp tục học</strong></td><td>3 khoá đang học hoặc chưa bắt đầu, có thanh progress %</td></tr>
+        <tr><td>📅 <strong>Lịch học sắp tới</strong></td><td>Buổi live LIVE (màu đỏ) và sắp tới, nút vào meeting</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══ COURSE LIST ═══ -->
+  <div class="section" id="courses">
+    <div class="section-header">
+      <h2><span class="section-num">4</span> Danh sách khoá học</h2>
+      <p class="section-sub">URL: <code>/courses</code> — Tab khác nhau theo vai trò</p>
+    </div>
+
+    <div class="tip">Trang <code>/courses</code> thông minh: Học viên thấy khoá đã đăng ký + tìm thêm. Giảng viên thấy tab quản lý khoá của mình.</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Tab "Đang học" (Học viên)</div>
+          <div class="step-desc">Hiển thị tất cả khoá đã đăng ký, kèm thanh tiến độ, trạng thái (Đang học / Hoàn thành). Có ô tìm kiếm để lọc.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Tab "Khám phá" (Học viên)</div>
+          <div class="step-desc">Xem tất cả khoá học trên hệ thống, lọc theo cấp độ, tìm kiếm, nhấn để xem chi tiết và đăng ký.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Tab "Khoá của tôi" (Giảng viên)</div>
+          <div class="step-desc">Xem danh sách khoá do giảng viên tạo với trạng thái (Nháp/Công khai/Lưu trữ), số học viên đăng ký.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">4</div>
+        <div class="step-content">
+          <div class="step-title">Nút "+ Tạo khoá học" (Giảng viên)</div>
+          <div class="step-desc">Góc trên phải, nhấn để mở form tạo khoá học mới ở trang <code>/instructor/courses/new</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ COURSE DETAIL ═══ -->
+  <div class="section" id="course-detail">
+    <div class="section-header">
+      <h2><span class="section-num">5</span> Trang Chi tiết Khoá học</h2>
+      <p class="section-sub">URL: <code>/course/[slug]</code> — Xem thông tin và đăng ký</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/course/lap-trinh-python</div>
+      </div>
+      <div style="background:var(--gray-light)">
+        <div class="course-detail-layout">
+          <!-- Left -->
+          <div class="course-detail-main">
+            <div class="cd-cover">📘</div>
+            <div class="cd-title">Lập trình Python cơ bản đến nâng cao</div>
+            <div class="cd-meta">
+              <span>🎓 Nguyễn Văn A</span>
+              <span>📚 12 bài học</span>
+              <span>⏱ 8 giờ 30 phút</span>
+              <span>👥 320 học viên</span>
+              <span class="chip chip-green">Cơ bản</span>
+            </div>
+            <div class="cd-tabs">
+              <div class="cd-tab active">Nội dung khoá học</div>
+              <div class="cd-tab">Giảng viên</div>
+            </div>
+            <!-- Sections -->
+            <div class="section-item">
+              <div class="section-header-row"><span>Chương 1: Giới thiệu Python</span><span>3 bài · 45 phút</span></div>
+              <div class="lesson-row"><div class="lesson-icon">▶</div><span>Bài 1: Python là gì?</span><span style="margin-left:auto;font-size:11px">10 phút · Miễn phí</span></div>
+              <div class="lesson-row"><div class="lesson-icon">▶</div><span>Bài 2: Cài đặt môi trường</span><span style="margin-left:auto;font-size:11px">15 phút · Miễn phí</span></div>
+              <div class="lesson-row" style="opacity:.5"><div class="lesson-icon">🔒</div><span>Bài 3: Biến và kiểu dữ liệu</span><span style="margin-left:auto;font-size:11px">20 phút</span></div>
+            </div>
+            <div class="section-item">
+              <div class="section-header-row"><span>Chương 2: Cấu trúc dữ liệu</span><span>4 bài · 1h 20 phút</span></div>
+              <div class="lesson-row" style="opacity:.5"><div class="lesson-icon">🔒</div><span>Bài 4: List và Tuple</span><span style="margin-left:auto;font-size:11px">25 phút</span></div>
+              <div class="lesson-row" style="opacity:.5"><div class="lesson-icon">🔒</div><span>Bài 5: Dictionary và Set</span><span style="margin-left:auto;font-size:11px">30 phút</span></div>
+            </div>
+          </div>
+          <!-- Right sidebar -->
+          <div>
+            <div class="enroll-card">
+              <div class="enroll-price">Miễn phí</div>
+              <ul class="enroll-features">
+                <li>12 bài học video</li>
+                <li>8 giờ 30 phút nội dung</li>
+                <li>Truy cập trọn đời</li>
+                <li>Chứng chỉ hoàn thành</li>
+                <li>2 bài học miễn phí thử</li>
+              </ul>
+              <button class="enroll-btn">Đăng ký học ngay</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps" style="margin-top:16px">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Xem nội dung chương trình</div>
+          <div class="step-desc">Tab <strong>"Nội dung khoá học"</strong> liệt kê tất cả chương và bài học. Bài miễn phí có thể xem thử không cần đăng ký. Bài khóa hiển thị icon 🔒.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Nhấn "Đăng ký học ngay"</div>
+          <div class="step-desc">Sidebar phải hiển thị giá (Miễn phí hoặc giá tiền) + danh sách quyền lợi. Nhấn nút đăng ký → đối với khoá miễn phí, chuyển thẳng vào học.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Xem thông tin Giảng viên</div>
+          <div class="step-desc">Tab <strong>"Giảng viên"</strong> hiển thị avatar, tên, bio và các khoá khác của giảng viên.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ LEARN ═══ -->
+  <div class="section" id="learn">
+    <div class="section-header">
+      <h2><span class="section-num">6</span> Trang Học bài</h2>
+      <p class="section-sub">URL: <code>/learn/[slug]</code> — Giao diện học tập chính</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/learn/lap-trinh-python</div>
+      </div>
+      <!-- Progress bar top -->
+      <div class="learn-progress"></div>
+      <div class="learn-layout">
+        <!-- Player -->
+        <div class="learn-player">
+          <div class="play-btn">▶</div>
+          <span style="font-size:13px">Bài 3: Biến và kiểu dữ liệu</span>
+          <span style="font-size:11px">20:00 / 20:00</span>
+        </div>
+        <!-- Sidebar -->
+        <div class="learn-sidebar">
+          <div class="learn-sidebar-header">📋 Nội dung khoá học</div>
+          <div style="padding:8px 0">
+            <div style="padding:8px 16px;font-size:11px;font-weight:600;color:var(--muted)">CHƯƠNG 1: GIỚI THIỆU</div>
+            <div class="learn-lesson learn-lesson-done">
+              <span style="color:var(--green)">✓</span>
+              <span>Bài 1: Python là gì?</span>
+              <span style="margin-left:auto;font-size:10px">10 phút</span>
+            </div>
+            <div class="learn-lesson learn-lesson-done">
+              <span style="color:var(--green)">✓</span>
+              <span>Bài 2: Cài đặt môi trường</span>
+              <span style="margin-left:auto;font-size:10px">15 phút</span>
+            </div>
+            <div class="learn-lesson active">
+              <span>▶</span>
+              <span>Bài 3: Biến và kiểu dữ liệu</span>
+              <span style="margin-left:auto;font-size:10px">20 phút</span>
+            </div>
+            <div style="padding:8px 16px;font-size:11px;font-weight:600;color:var(--muted);margin-top:4px">CHƯƠNG 2: DỮ LIỆU</div>
+            <div class="learn-lesson">
+              <span style="color:var(--muted)">○</span>
+              <span>Bài 4: List và Tuple</span>
+              <span style="margin-left:auto;font-size:10px">25 phút</span>
+            </div>
+            <div class="learn-lesson">
+              <span style="color:var(--muted)">○</span>
+              <span>Bài 5: Dictionary và Set</span>
+              <span style="margin-left:auto;font-size:10px">30 phút</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps" style="margin-top:16px">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Video player bên trái</div>
+          <div class="step-desc">Phát video bài học. Thanh tiến độ màu tím ở trên cùng cho biết % khoá học đã hoàn thành.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Sidebar danh sách bài học</div>
+          <div class="step-desc">Bên phải liệt kê tất cả chương và bài. ✓ = đã học xong · ▶ = đang học · ○ = chưa học. Click để chuyển bài.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Tự động cập nhật tiến độ</div>
+          <div class="step-desc">Khi xem xong video, hệ thống gọi API <code>PATCH /lessons/:id/progress</code> để lưu tiến độ. Dashboard tự cập nhật %.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SCHEDULE ═══ -->
+  <div class="section" id="schedule">
+    <div class="section-header">
+      <h2><span class="section-num">7</span> Lịch học</h2>
+      <p class="section-sub">URL: <code>/schedule</code> — Xem buổi học live và Google Meet</p>
+    </div>
+    <div class="tip">Lịch học hiển thị tất cả buổi học trực tuyến sắp diễn ra. Buổi đang <strong>LIVE</strong> có nút màu đỏ "Vào học ngay" để mở Google Meet.</div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Xem danh sách buổi học</div>
+          <div class="step-desc">Mỗi buổi hiển thị: tên buổi học, lớp/khoá liên kết, thời gian bắt đầu–kết thúc, trạng thái (SCHEDULED / LIVE / ENDED).</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Tham gia buổi học LIVE</div>
+          <div class="step-desc">Khi buổi đang diễn ra, nhấn nút <strong>"Vào học ngay"</strong> → mở Google Meet link ở tab mới.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SETTINGS ═══ -->
+  <div class="section" id="settings">
+    <div class="section-header">
+      <h2><span class="section-num">8</span> Cài đặt tài khoản</h2>
+      <p class="section-sub">URL: <code>/settings</code> — Cập nhật hồ sơ cá nhân</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Cập nhật thông tin cá nhân</div>
+          <div class="step-desc">Thay đổi tên hiển thị, avatar, bio. Nhấn Lưu để cập nhật.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Đổi mật khẩu</div>
+          <div class="step-desc">Nhập mật khẩu cũ, mật khẩu mới, xác nhận mật khẩu mới. Không áp dụng với tài khoản đăng nhập Google.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ INSTRUCTOR ═══ -->
+  <div class="section" id="instructor">
+    <div class="section-header">
+      <h2><span class="section-num">9</span> Dành cho Giảng viên</h2>
+      <p class="section-sub">URL: <code>/instructor/courses/[id]</code> — Quản lý và tạo khoá học</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/instructor/courses/new</div>
+      </div>
+      <div class="instructor-form">
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">Tạo khoá học mới</h3>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Tên khoá học *</label>
+            <input type="text" value="Lập trình Python cơ bản"/>
+          </div>
+          <div class="form-field">
+            <label>Cấp độ</label>
+            <select><option>Cơ bản</option><option>Trung cấp</option><option>Nâng cao</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Giá (VNĐ)</label>
+            <input type="number" value="0"/>
+          </div>
+          <div class="form-field">
+            <label>Trạng thái</label>
+            <select><option>Nháp</option><option>Công khai</option><option>Lưu trữ</option></select>
+          </div>
+        </div>
+        <div class="form-field" style="margin-bottom:14px">
+          <label>Mô tả khoá học</label>
+          <textarea>Khoá học Python toàn diện từ cơ bản đến nâng cao...</textarea>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="mock-btn">Lưu khoá học</button>
+          <button class="mock-btn-outline">Xem trước</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps" style="margin-top:20px">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Tạo khoá học</div>
+          <div class="step-desc">Vào <code>/courses</code> → nhấn <strong>"+ Tạo khoá học"</strong> → điền tên, mô tả, cấp độ, giá (0 = miễn phí), thumbnail.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Thêm chương và bài học</div>
+          <div class="step-desc">Vào trang quản lý khoá (<code>/instructor/courses/[id]</code>) → thêm Section (chương) → thêm Lesson (bài học) vào từng chương.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Upload video bài học</div>
+          <div class="step-desc">Mỗi bài học hỗ trợ 3 loại: VIDEO (upload file) · TEXT (soạn nội dung) · LIVE (buổi học trực tiếp). Đánh dấu "Miễn phí" để cho phép xem thử.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">4</div>
+        <div class="step-content">
+          <div class="step-title">Xuất bản khoá học</div>
+          <div class="step-desc">Đổi trạng thái từ <span class="chip chip-yellow">Nháp</span> → <span class="chip chip-green">Công khai</span> để học viên có thể tìm thấy và đăng ký.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ADMIN ═══ -->
+  <div class="section" id="admin">
+    <div class="section-header">
+      <h2><span class="section-num">10</span> Trang Quản trị (Admin)</h2>
+      <p class="section-sub">URL: <code>/admin</code> — Toàn quyền quản lý hệ thống</p>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#ff5f57"></div>
+        <div class="screen-dot" style="background:#febc2e"></div>
+        <div class="screen-dot" style="background:#28c840"></div>
+        <div class="screen-url">localhost:3000/admin</div>
+      </div>
+
+      <!-- Admin tabs -->
+      <div class="admin-tabs">
+        <div class="admin-tab active">📊 Tổng quan</div>
+        <div class="admin-tab">📚 Khoá học</div>
+        <div class="admin-tab">🏫 Lớp học</div>
+        <div class="admin-tab">👥 Người dùng</div>
+      </div>
+
+      <!-- Stats -->
+      <div class="admin-stat-grid">
+        <div class="admin-stat">
+          <div class="admin-stat-label">👥 Tổng người dùng</div>
+          <div class="admin-stat-value">1,284</div>
+          <div class="admin-stat-trend">↑ +12 tuần này</div>
+        </div>
+        <div class="admin-stat">
+          <div class="admin-stat-label">📚 Khoá học</div>
+          <div class="admin-stat-value">47</div>
+          <div class="admin-stat-trend">↑ +3 tháng này</div>
+        </div>
+        <div class="admin-stat">
+          <div class="admin-stat-label">📝 Đăng ký học</div>
+          <div class="admin-stat-value">3,891</div>
+          <div class="admin-stat-trend">↑ +156 tuần này</div>
+        </div>
+        <div class="admin-stat">
+          <div class="admin-stat-label">💰 Doanh thu</div>
+          <div class="admin-stat-value">48.5M₫</div>
+          <div class="admin-stat-trend">↑ +8.2M tháng này</div>
+        </div>
+      </div>
+
+      <!-- Users table -->
+      <div class="table-wrap">
+        <div style="font-size:14px;font-weight:700;margin:16px 0 10px">Người dùng gần đây</div>
+        <table class="mock-table">
+          <thead>
+            <tr><th>Tên</th><th>Email</th><th>Vai trò</th><th>Đã đăng ký</th><th>Trạng thái</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Nguyễn Văn Quang</td>
+              <td>quang@example.com</td>
+              <td><span class="chip chip-gray">Học viên</span></td>
+              <td>5 khoá</td>
+              <td><span class="chip chip-green">Hoạt động</span></td>
+            </tr>
+            <tr>
+              <td>Trần Thị Bình</td>
+              <td>binh@example.com</td>
+              <td><span class="chip" style="background:#f0f9ff;color:#0369a1">Giảng viên</span></td>
+              <td>—</td>
+              <td><span class="chip chip-green">Hoạt động</span></td>
+            </tr>
+            <tr>
+              <td>Lê Văn Cường</td>
+              <td>cuong@example.com</td>
+              <td><span class="chip chip-gray">Học viên</span></td>
+              <td>2 khoá</td>
+              <td><span class="chip chip-red">Bị khóa</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="steps" style="margin-top:20px">
+      <div class="step">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <div class="step-title">Tab Tổng quan (Overview)</div>
+          <div class="step-desc">4 thẻ thống kê: tổng users, khoá học, lượt đăng ký, doanh thu. Danh sách khoá học và người dùng gần đây.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <div class="step-title">Tab Khoá học</div>
+          <div class="step-desc">Tất cả khoá học với bộ lọc trạng thái. Có thể xem chi tiết, thêm khoá học mới, xóa khoá.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <div class="step-title">Tab Lớp học (Classes)</div>
+          <div class="step-desc">Tạo và quản lý lớp học nhóm. Mỗi lớp có danh sách thành viên, có thể thêm/xóa thành viên.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-circle">4</div>
+        <div class="step-content">
+          <div class="step-title">Tab Người dùng</div>
+          <div class="step-desc">Tìm kiếm user theo email/tên. Thay đổi vai trò (Student/Instructor/Admin), khoá/mở tài khoản, xóa user.</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:16px;font-size:14px">Ngoài ra Admin còn có:</p>
+    <ul style="margin-top:8px;padding-left:20px;font-size:14px;color:var(--muted);line-height:2">
+      <li><code>/admin/sessions</code> — Quản lý buổi học live (tạo, sửa, xóa phiên Google Meet)</li>
+      <li><code>/admin/courses/new</code> — Tạo khoá học mới với đầy đủ thông tin</li>
+      <li><code>/admin/classes/[id]</code> — Xem chi tiết lớp học, danh sách thành viên</li>
+    </ul>
+  </div>
+
+  <!-- ═══ TÀI KHOẢN ═══ -->
+  <div class="section" id="accounts">
+    <div class="section-header">
+      <h2><span class="section-num">11</span> Tài khoản mặc định (sau seed)</h2>
+      <p class="section-sub">Dùng để đăng nhập và test ngay sau khi chạy <code>npx tsx prisma/seed.ts</code></p>
+    </div>
+    <table class="info-table">
+      <thead>
+        <tr><th>Vai trò</th><th>Email</th><th>Mật khẩu</th><th>Trang chính</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>👑 <strong>Admin</strong></td>
+          <td><code>admin@masterlms.com</code></td>
+          <td><code>Admin@123456</code></td>
+          <td><code>/admin</code></td>
+        </tr>
+        <tr>
+          <td>👨‍🏫 <strong>Instructor</strong></td>
+          <td><code>instructor@masterlms.com</code></td>
+          <td><code>Instructor@123456</code></td>
+          <td><code>/dashboard</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="warn">Đổi mật khẩu mặc định ngay khi deploy lên môi trường production!</div>
+  </div>
+
+  <!-- ═══ URLS ═══ -->
+  <div class="section" id="urls">
+    <div class="section-header">
+      <h2><span class="section-num">12</span> Danh sách URL toàn bộ ứng dụng</h2>
+      <p class="section-sub">Tất cả các trang trong hệ thống MasterLMS</p>
+    </div>
+    <table class="info-table">
+      <thead><tr><th>URL</th><th>Trang</th><th>Ai dùng</th></tr></thead>
+      <tbody>
+        <tr><td><code>/</code></td><td>Trang chủ — danh sách khoá học</td><td>Tất cả</td></tr>
+        <tr><td><code>/login</code></td><td>Đăng nhập</td><td>Tất cả</td></tr>
+        <tr><td><code>/register</code></td><td>Đăng ký tài khoản</td><td>Tất cả</td></tr>
+        <tr><td><code>/course/[slug]</code></td><td>Chi tiết khoá học</td><td>Tất cả</td></tr>
+        <tr><td><code>/dashboard</code></td><td>Dashboard học viên</td><td>Đã đăng nhập</td></tr>
+        <tr><td><code>/courses</code></td><td>Khoá học của tôi + khám phá</td><td>Đã đăng nhập</td></tr>
+        <tr><td><code>/learn/[slug]</code></td><td>Giao diện học bài video</td><td>Đã đăng ký khoá</td></tr>
+        <tr><td><code>/schedule</code></td><td>Lịch học — buổi live</td><td>Đã đăng nhập</td></tr>
+        <tr><td><code>/settings</code></td><td>Cài đặt hồ sơ cá nhân</td><td>Đã đăng nhập</td></tr>
+        <tr><td><code>/instructor/courses/[id]</code></td><td>Quản lý khoá học</td><td>Giảng viên</td></tr>
+        <tr><td><code>/admin</code></td><td>Dashboard quản trị</td><td>Admin</td></tr>
+        <tr><td><code>/admin/users</code></td><td>Quản lý người dùng</td><td>Admin</td></tr>
+        <tr><td><code>/admin/courses</code></td><td>Quản lý khoá học</td><td>Admin</td></tr>
+        <tr><td><code>/admin/classes</code></td><td>Quản lý lớp học</td><td>Admin</td></tr>
+        <tr><td><code>/admin/sessions</code></td><td>Quản lý buổi học live</td><td>Admin</td></tr>
+        <tr><td><code>/oauth/callback</code></td><td>Callback Google OAuth</td><td>Hệ thống</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip" style="margin-top:20px">
+      <strong>API chạy tại:</strong> <code>http://localhost:4000</code> &nbsp;|&nbsp;
+      <strong>Web chạy tại:</strong> <code>http://localhost:3000</code> &nbsp;|&nbsp;
+      <strong>WebSocket:</strong> <code>ws://localhost:4000</code> (Socket.IO)
+    </div>
+  </div>
+
+</main>
+
+<script>
+// Active nav link on scroll
+const links = document.querySelectorAll('.toc-nav a');
+const sections = document.querySelectorAll('.section[id]');
+function onScroll(){
+  let cur='';
+  sections.forEach(s=>{
+    if(window.scrollY >= s.offsetTop - 80) cur = s.id;
+  });
+  links.forEach(l=>{
+    l.style.color = l.getAttribute('href')==='#'+cur ? 'var(--indigo)' : '';
+    l.style.background = l.getAttribute('href')==='#'+cur ? 'var(--indigo-light)' : '';
+    l.style.borderLeftColor = l.getAttribute('href')==='#'+cur ? 'var(--indigo)' : 'transparent';
+  });
+}
+window.addEventListener('scroll', onScroll);
+</script>
+</body>
+</html>

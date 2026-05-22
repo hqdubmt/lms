@@ -17,6 +17,9 @@ export async function uploadRoutes(app: FastifyInstance) {
     const allowed = ['jpg', 'jpeg', 'png', 'webp'];
     if (!allowed.includes(ext)) return reply.status(400).send({ error: 'Chỉ hỗ trợ JPG, PNG, WebP' });
 
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedMimes.includes(data.mimetype)) return reply.status(400).send({ error: 'MIME type không hợp lệ' });
+
     const key = `avatars/${sub}/${crypto.randomBytes(8).toString('hex')}.${ext}`;
 
     await minioClient.putObject(env.MINIO_BUCKET_AVATARS, key, data.file, undefined as any, {
@@ -28,12 +31,22 @@ export async function uploadRoutes(app: FastifyInstance) {
     return { avatarUrl };
   });
 
-  // Serve avatar files proxied through API (avoids MinIO public access requirement)
+  // Serve avatar files proxied through API — public but restricted to avatars bucket only
   app.get('/avatar-file/*', async (req, reply) => {
     const wildcard = (req.params as any)['*'] as string;
     const parts = wildcard.split('/');
     const bucket = parts[0];
     const objectKey = parts.slice(1).join('/');
+
+    // Only allow access to the avatars bucket
+    if (bucket !== env.MINIO_BUCKET_AVATARS) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    // Prevent path traversal
+    if (objectKey.includes('..') || objectKey.startsWith('/')) {
+      return reply.status(400).send({ error: 'Invalid path' });
+    }
 
     try {
       const stream = await minioClient.getObject(bucket, objectKey);
@@ -59,9 +72,16 @@ export async function uploadRoutes(app: FastifyInstance) {
     return { url, key };
   });
 
-  app.post('/avatar-confirm', { preHandler: requireAuth }, async (req) => {
+  app.post('/avatar-confirm', { preHandler: requireAuth }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
     const { key } = req.body as { key: string };
+
+    // Ensure key belongs to this user's avatar folder and has no path traversal
+    const expectedPrefix = `avatars/${sub}/`;
+    if (!key.startsWith(expectedPrefix) || key.includes('..')) {
+      return reply.status(400).send({ error: 'Invalid key' });
+    }
+
     const avatarUrl = `/api/upload/avatar-file/${env.MINIO_BUCKET_AVATARS}/${key}`;
     await prisma.user.update({ where: { id: sub }, data: { avatarUrl } });
     return { avatarUrl };

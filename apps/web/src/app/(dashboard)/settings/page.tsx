@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   User, Lock, Bell, Camera, CheckCircle2, AlertCircle,
   Eye, EyeOff, Save, Loader2, Shield, Mail, AtSign,
-  FileText, ChevronRight,
+  FileText, ChevronRight, Monitor, Smartphone, LogOut,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api';
@@ -264,6 +264,130 @@ function ProfileTab({ profile, onUpdate }: { profile: Profile; onUpdate: (p: Par
 
 // ─── Security Tab ─────────────────────────────────────────────────────────────
 
+// ─── Active Sessions ──────────────────────────────────────────────────────────
+
+interface Session {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
+function parseDevice(ua: string | null) {
+  if (!ua) return { label: 'Thiết bị không xác định', Icon: Monitor };
+  const u = ua.toLowerCase();
+  if (u.includes('mobile') || u.includes('android') || u.includes('iphone')) return { label: 'Thiết bị di động', Icon: Smartphone };
+  if (u.includes('chrome')) return { label: 'Chrome', Icon: Monitor };
+  if (u.includes('firefox')) return { label: 'Firefox', Icon: Monitor };
+  if (u.includes('safari')) return { label: 'Safari', Icon: Monitor };
+  return { label: 'Trình duyệt', Icon: Monitor };
+}
+
+function ActiveSessionsSection() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokingAll, setRevokingAll] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.get<Session[]>('/auth/sessions');
+      setSessions(data);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const revokeOne = async (id: string) => {
+    setRevoking(id);
+    try {
+      await api.delete(`/auth/sessions/${id}`);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      setToast({ type: 'success', msg: 'Đã đăng xuất phiên' });
+    } catch (e: any) {
+      setToast({ type: 'error', msg: e.message || 'Thất bại' });
+    }
+    setRevoking(null);
+  };
+
+  const revokeAll = async () => {
+    setRevokingAll(true);
+    try {
+      await api.delete('/auth/sessions');
+      setSessions((prev) => prev.filter((s) => s.isCurrent));
+      setToast({ type: 'success', msg: 'Đã đăng xuất tất cả thiết bị khác' });
+    } catch (e: any) {
+      setToast({ type: 'error', msg: e.message || 'Thất bại' });
+    }
+    setRevokingAll(false);
+  };
+
+  const otherSessions = sessions.filter((s) => !s.isCurrent);
+
+  return (
+    <Section title="Phiên đăng nhập" desc="Quản lý các thiết bị đang đăng nhập tài khoản">
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {sessions.map((session) => {
+            const { label, Icon } = parseDevice(session.userAgent);
+            return (
+              <div key={session.id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
+                <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0', session.isCurrent ? 'bg-green-100' : 'bg-gray-100')}>
+                  <Icon className={cn('h-5 w-5', session.isCurrent ? 'text-green-600' : 'text-gray-500')} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">{label}</p>
+                    {session.isCurrent && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">Hiện tại</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {session.ipAddress || 'IP không rõ'} · {new Date(session.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                {!session.isCurrent && (
+                  <button
+                    onClick={() => revokeOne(session.id)}
+                    disabled={revoking === session.id}
+                    className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 shrink-0"
+                  >
+                    {revoking === session.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <LogOut className="h-3 w-3" />}
+                    Đăng xuất
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {sessions.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">Không có phiên nào</p>
+          )}
+          {otherSessions.length > 0 && (
+            <div className="pt-3">
+              <button
+                onClick={revokeAll}
+                disabled={revokingAll}
+                className="flex items-center gap-2 text-sm font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl transition-colors disabled:opacity-60"
+              >
+                {revokingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                Đăng xuất tất cả thiết bị khác ({otherSessions.length})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
+    </Section>
+  );
+}
+
 function SecurityTab() {
   const [current, setCurrent] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -378,35 +502,20 @@ function SecurityTab() {
 
       <Section title="Bảo mật tài khoản" desc="Quản lý các thiết lập bảo mật">
         <div className="space-y-1">
-          {[
-            {
-              icon: Shield,
-              title: 'Xác thực 2 bước (2FA)',
-              desc: 'Thêm lớp bảo mật bằng mã OTP khi đăng nhập',
-              badge: 'Sắp ra mắt',
-              badgeCls: 'bg-indigo-100 text-indigo-600',
-            },
-            {
-              icon: Lock,
-              title: 'Phiên đăng nhập',
-              desc: 'Quản lý các thiết bị đang đăng nhập tài khoản',
-              badge: 'Sắp ra mắt',
-              badgeCls: 'bg-indigo-100 text-indigo-600',
-            },
-          ].map((item) => (
-            <div key={item.title} className="flex items-center gap-4 py-3.5 border-b border-gray-50 last:border-0">
-              <div className="h-10 w-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                <item.icon className="h-5 w-5 text-gray-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="text-xs text-muted-foreground">{item.desc}</p>
-              </div>
-              <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full shrink-0', item.badgeCls)}>{item.badge}</span>
+          <div className="flex items-center gap-4 py-3.5 border-b border-gray-50">
+            <div className="h-10 w-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+              <Shield className="h-5 w-5 text-gray-500" />
             </div>
-          ))}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Xác thực 2 bước (2FA)</p>
+              <p className="text-xs text-muted-foreground">Thêm lớp bảo mật bằng mã OTP khi đăng nhập</p>
+            </div>
+            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-600">Sắp ra mắt</span>
+          </div>
         </div>
       </Section>
+
+      <ActiveSessionsSection />
 
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
     </div>
@@ -504,7 +613,7 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-[#f8fafc]">
       {/* ── Hero ── */}
       <div
-        className="px-6 py-7 relative overflow-hidden"
+        className="px-4 sm:px-6 py-6 sm:py-7 relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #6d28d9 100%)' }}
       >
         <div className="absolute right-0 top-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
@@ -514,7 +623,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-6">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
         <div className="flex flex-col sm:flex-row gap-6">
           {/* ── Sidebar tabs ── */}
           <aside className="sm:w-52 shrink-0">

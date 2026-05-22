@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, UserCheck, UserX, UserPlus, X, Loader2, Upload, Download, CheckCircle2, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Search, UserCheck, UserX, UserPlus, X, Loader2, Upload, Download, CheckCircle2, AlertCircle, KeyRound, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +51,11 @@ export default function AdminUsersPage() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; results: { email: string; status: string; reason?: string }[] } | null>(null);
   const limit = 20;
+
+  // Reset account modal
+  const [resetAccountTarget, setResetAccountTarget] = useState<{ id: string; name: string } | null>(null);
+  const [resettingAccount, setResettingAccount] = useState(false);
+  const [resetAccountResult, setResetAccountResult] = useState<{ defaultPassword: string } | null>(null);
 
   // Reset password modal
   const [resetTarget, setResetTarget] = useState<{ id: string; name: string } | null>(null);
@@ -176,6 +181,17 @@ export default function AdminUsersPage() {
       setResetError(err.message || 'Có lỗi xảy ra');
     }
     setResetting(false);
+  };
+
+  const handleResetAccount = async () => {
+    if (!resetAccountTarget) return;
+    setResettingAccount(true);
+    try {
+      const res = await api.post<{ defaultPassword: string }>(`/admin/users/${resetAccountTarget.id}/reset`, {});
+      setResetAccountResult({ defaultPassword: res.defaultPassword });
+      setUsers((prev) => prev.map((u) => u.id === resetAccountTarget.id ? { ...u, isActive: true, isVerified: true } : u));
+    } catch { }
+    setResettingAccount(false);
   };
 
   const handleToggleActive = async (userId: string) => {
@@ -427,6 +443,13 @@ export default function AdminUsersPage() {
                         <KeyRound className="h-4 w-4" />
                       </Button>
                       <Button
+                        variant="ghost" size="sm" className="h-8 w-8 p-0 text-amber-500 hover:text-amber-600"
+                        title="Reset tài khoản về mặc định"
+                        onClick={() => { setResetAccountTarget({ id: user.id, name: user.name }); setResetAccountResult(null); }}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                      <Button
                         variant="ghost" size="sm"
                         disabled={busy[user.id]}
                         className={`h-8 w-8 p-0 ${user.isActive ? 'text-destructive hover:text-destructive' : 'text-green-600 hover:text-green-600'}`}
@@ -452,6 +475,62 @@ export default function AdminUsersPage() {
             Trang {page} / {Math.ceil(total / limit)}
           </span>
           <Button variant="outline" size="sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>Sau</Button>
+        </div>
+      )}
+
+      {/* Reset account modal */}
+      {resetAccountTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setResetAccountTarget(null); setResetAccountResult(null); } }}>
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2">
+                <RotateCcw className="h-4 w-4 text-amber-500" />Reset tài khoản về mặc định
+              </h2>
+              <button onClick={() => { setResetAccountTarget(null); setResetAccountResult(null); }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {!resetAccountResult ? (
+              <>
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 space-y-1">
+                  <p className="font-medium">Sẽ thực hiện các thao tác sau với <strong>{resetAccountTarget.name}</strong>:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-xs mt-1">
+                    <li>Đặt lại mật khẩu về <strong>123456</strong></li>
+                    <li>Xóa ảnh đại diện và thông tin cá nhân</li>
+                    <li>Kích hoạt lại tài khoản (nếu đang bị khóa)</li>
+                  </ul>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+                    onClick={handleResetAccount}
+                    disabled={resettingAccount}
+                  >
+                    {resettingAccount && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <RotateCcw className="h-4 w-4 mr-2" />Xác nhận reset
+                  </Button>
+                  <Button variant="outline" onClick={() => { setResetAccountTarget(null); setResetAccountResult(null); }}>Hủy</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg bg-green-50 border border-green-200 p-4 space-y-2">
+                  <p className="text-sm text-green-700 font-medium flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" />Reset tài khoản thành công!
+                  </p>
+                  <div className="text-sm text-green-800">
+                    Mật khẩu mặc định:{' '}
+                    <code className="bg-green-100 border border-green-300 px-2 py-0.5 rounded font-mono font-bold">
+                      {resetAccountResult.defaultPassword}
+                    </code>
+                  </div>
+                  <p className="text-xs text-green-600">Hãy thông báo cho người dùng đổi mật khẩu sau khi đăng nhập.</p>
+                </div>
+                <Button className="w-full" variant="outline" onClick={() => { setResetAccountTarget(null); setResetAccountResult(null); }}>Đóng</Button>
+              </>
+            )}
+          </div>
         </div>
       )}
 

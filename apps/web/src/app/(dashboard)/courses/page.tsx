@@ -6,7 +6,7 @@ import {
   BookOpen, Play, Clock, Search, Loader2,
   GraduationCap, Plus, Users, LayoutList, Eye, Edit3,
   CheckCircle2, AlertCircle, Archive, ChevronRight,
-  TrendingUp, Star, ArrowRight, Filter,
+  TrendingUp, Star, ArrowRight, Filter, Trash2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDuration } from '@/lib/utils';
@@ -370,6 +370,8 @@ function InstructorView() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'all' | 'PUBLISHED' | 'DRAFT'>('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; enrollments: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api.get<MyCourse[]>('/courses/mine')
@@ -377,6 +379,17 @@ function InstructorView() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDeleteCourse = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/courses/${deleteTarget.id}`);
+      setCourses((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch {}
+    setDeleting(false);
+  };
 
   const filtered = courses
     .filter((c) => tab === 'all' || c.status === tab)
@@ -500,7 +513,7 @@ function InstructorView() {
                   <div className="flex gap-2">
                     <Link
                       href={`/learn/${course.slug}`}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-xs border border-gray-200 rounded-xl py-2 hover:bg-gray-50 transition-colors font-medium"
+                      className="flex items-center justify-center gap-1.5 text-xs border border-gray-200 rounded-xl py-2 px-3 hover:bg-gray-50 transition-colors font-medium"
                     >
                       <Eye className="h-3.5 w-3.5" />Xem trước
                     </Link>
@@ -510,6 +523,13 @@ function InstructorView() {
                     >
                       <Edit3 className="h-3.5 w-3.5" />Quản lý
                     </Link>
+                    <button
+                      onClick={() => setDeleteTarget({ id: course.id, title: course.title, enrollments: course._count.enrollments })}
+                      className="flex items-center justify-center h-full px-3 rounded-xl border border-red-200 text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Xóa khoá học"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -527,6 +547,51 @@ function InstructorView() {
           }}
         />
       )}
+
+      {/* Delete course confirm modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Xóa khóa học?</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  <strong>"{deleteTarget.title}"</strong> sẽ bị xóa vĩnh viễn cùng toàn bộ nội dung.
+                </p>
+                {deleteTarget.enrollments > 0 && (
+                  <p className="text-sm text-red-600 mt-2 font-semibold">
+                    ⚠ Đang có {deleteTarget.enrollments} học viên đăng ký!
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 mt-2">Hành động này không thể hoàn tác.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteCourse}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-60"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Xóa vĩnh viễn
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

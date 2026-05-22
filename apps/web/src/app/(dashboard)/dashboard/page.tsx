@@ -257,7 +257,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#f8fafc]">
       {/* ── Top bar ── */}
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
           <p className="text-xs text-muted-foreground capitalize">{getTodayStr()}</p>
           <p className="text-sm font-semibold text-gray-800">{getGreeting()}, {user?.name?.split(' ').pop()} 👋</p>
@@ -274,7 +274,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6 sm:space-y-8">
 
         {/* ── Hero welcome ── */}
         <div
@@ -336,11 +336,11 @@ export default function DashboardPage() {
 
         {/* ── Stats ── */}
         {loading ? (
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
           </div>
         ) : (
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               icon={BookOpen}
               label="Khoá đang học"

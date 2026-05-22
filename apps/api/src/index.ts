@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import cluster from 'cluster';
+import os from 'os';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -23,69 +25,105 @@ import { classRoutes } from './modules/admin/class.routes';
 import { liveSessionsRoutes } from './modules/admin/live-sessions.routes';
 import { uploadRoutes } from './modules/upload/upload.routes';
 import { todoRoutes } from './modules/todo/todo.routes';
-import './workers/email.worker';
+import { languageRoutes } from './modules/language/language.routes';
+import { mathRoutes } from './modules/math/math.routes';
+import { vietRoutes } from './modules/viet/viet.routes';
+import { aiRoutes } from './modules/ai/ai.routes';
 
-const app = Fastify({ logger: env.NODE_ENV === 'development' });
+const NUM_WORKERS = os.cpus().length;
 
-async function bootstrap() {
-  // Plugins
-  await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: env.FRONTEND_URL, credentials: true });
-  await app.register(cookie);
-  await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
-  await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } });
-  await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
+if (cluster.isPrimary) {
+  console.log(`[Primary ${process.pid}] Forking ${NUM_WORKERS} workers`);
+  for (let i = 0; i < NUM_WORKERS; i++) cluster.fork();
 
-  // Cho phép body rỗng với Content-Type: application/json (tránh 400 trên DELETE/GET)
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
-    if (!body || (body as string).trim() === '') { done(null, {}); return; }
-    try { done(null, JSON.parse(body as string)); } catch (e: any) { done(e, undefined); }
-  });
-
-  // Routes
-  await app.register(authRoutes, { prefix: '/auth' });
-  await app.register(usersRoutes, { prefix: '/users' });
-  await app.register(coursesRoutes, { prefix: '/courses' });
-  await app.register(lessonsRoutes, { prefix: '/lessons' });
-  await app.register(uploadRoutes, { prefix: '/upload' });
-  await app.register(todoRoutes, { prefix: '/todos' });
-  await app.register(adminRoutes, { prefix: '/admin' });
-  await app.register(classRoutes, { prefix: '/admin' });
-  await app.register(liveSessionsRoutes, { prefix: '/admin' });
-
-  // Health check
-  app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
-
-  // Error handler
-  app.setErrorHandler((err, req, reply) => {
-    app.log.error(err);
-    if (err.name === 'ZodError') {
-      return reply.status(400).send({ error: 'Validation error', details: err.message });
+  cluster.on('exit', (worker) => {
+    if (!worker.exitedAfterDisconnect) {
+      console.log(`[Primary] Worker ${worker.process.pid} died — restarting`);
+      cluster.fork();
     }
-    const status = err.statusCode || 500;
-    reply.status(status).send({ error: err.message || 'Internal server error' });
+  });
+} else {
+  // BullMQ workers: each process runs its own instance (parallel job processing)
+  import('./workers/email.worker');
+  import('./workers/video.worker');
+
+  const app = Fastify({ logger: env.NODE_ENV === 'development' });
+
+  process.on('SIGTERM', async () => {
+    await app.close();
+    await prisma.$disconnect();
+    process.exit(0);
   });
 
-  // Connect services
-  await redis.connect();
-  await connectMongo();
-  await initMinioBuckets();
+  async function bootstrap() {
+    // Redis must connect first — used by rate limiter and Socket.IO adapter
+    await redis.connect();
 
-  // Socket.IO
-  setupSocket(app);
+    await app.register(helmet, {
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+        },
+      },
+    });
 
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
-  console.log(`🚀 MasterLMS API running on port ${env.PORT}`);
+    const allowedOrigins = [env.FRONTEND_URL, 'http://localhost:3000'].filter(Boolean);
+    await app.register(cors, { origin: allowedOrigins, credentials: true });
+    await app.register(cookie);
+
+    // Redis-backed rate limit: shared counter across all worker processes
+    await app.register(rateLimit, {
+      max: 200,
+      timeWindow: '1 minute',
+      redis,
+      keyGenerator: (req) => req.ip,
+      errorResponseBuilder: () => ({ error: 'Too many requests, please try again later.' }),
+    });
+
+    await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } });
+    await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
+
+    app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+      if (!body || (body as string).trim() === '') { done(null, {}); return; }
+      try { done(null, JSON.parse(body as string)); } catch (e: any) { done(e, undefined); }
+    });
+
+    await app.register(authRoutes, { prefix: '/auth' });
+    await app.register(usersRoutes, { prefix: '/users' });
+    await app.register(coursesRoutes, { prefix: '/courses' });
+    await app.register(lessonsRoutes, { prefix: '/lessons' });
+    await app.register(uploadRoutes, { prefix: '/upload' });
+    await app.register(todoRoutes, { prefix: '/todos' });
+    await app.register(languageRoutes, { prefix: '/language' });
+    await app.register(mathRoutes, { prefix: '/math' });
+    await app.register(vietRoutes, { prefix: '/viet' });
+    await app.register(aiRoutes, { prefix: '/ai' });
+    await app.register(adminRoutes, { prefix: '/admin' });
+    await app.register(classRoutes, { prefix: '/admin' });
+    await app.register(liveSessionsRoutes, { prefix: '/admin' });
+
+    app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
+    app.setErrorHandler((err, _req, reply) => {
+      app.log.error(err);
+      if (err.name === 'ZodError') {
+        return reply.status(400).send({ error: 'Validation error', details: err.message });
+      }
+      const status = err.statusCode || 500;
+      reply.status(status).send({ error: err.message || 'Internal server error' });
+    });
+
+    await connectMongo();
+    await initMinioBuckets();
+    setupSocket(app);
+
+    await app.listen({ port: env.PORT, host: '0.0.0.0' });
+    console.log(`[Worker ${process.pid}] MasterLMS API running on port ${env.PORT}`);
+  }
+
+  bootstrap().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await app.close();
-  await prisma.$disconnect();
-  process.exit(0);
-});
-
-bootstrap().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});

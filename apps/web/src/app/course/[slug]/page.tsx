@@ -107,10 +107,10 @@ export default function CourseDetailPage() {
   const freeLessons = course.sections.flatMap((s) => s.lessons).filter((l) => l.isFree).length;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
+    <div className="min-h-screen bg-[#f8fafc] pb-20 lg:pb-0">
       {/* ── Top nav ── */}
       <nav className="sticky top-0 z-50 bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-4">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
           <button onClick={() => router.back()}
             className="h-8 w-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors shrink-0">
             <ArrowLeft className="h-4 w-4 text-gray-600" />
@@ -132,8 +132,8 @@ export default function CourseDetailPage() {
       <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #4338ca 70%, #6d28d9 100%)' }}
         className="text-white relative overflow-hidden">
         <div className="absolute right-0 top-0 w-80 h-80 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
-        <div className="max-w-6xl mx-auto px-6 py-12 relative z-10">
-          <div className="flex flex-col lg:flex-row gap-8 items-start">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12 relative z-10">
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
             {/* Left */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -182,8 +182,8 @@ export default function CourseDetailPage() {
               </div>
             </div>
 
-            {/* Right — Enroll card */}
-            <div className="w-full lg:w-80 shrink-0">
+            {/* Right — Enroll card (hidden on mobile, shown on desktop) */}
+            <div className="hidden lg:block w-80 shrink-0">
               <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
                 {/* Thumbnail */}
                 <div className="aspect-video bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center relative">
@@ -241,7 +241,7 @@ export default function CourseDetailPage() {
       </div>
 
       {/* ── Body ── */}
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="lg:max-w-[calc(100%-320px-2rem)]">
           {/* Tabs */}
           <div className="flex gap-1 bg-white border border-gray-100 rounded-xl p-1 w-fit mb-6 shadow-sm">
@@ -332,6 +332,23 @@ export default function CourseDetailPage() {
             </div>
           )}
         </div>
+      </div>
+      {/* ── Mobile sticky enroll bar ── */}
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-100 px-4 py-3 flex items-center gap-3 shadow-lg">
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-bold text-gray-900">
+            {course.isFree ? <span className="text-green-600">Miễn phí</span> : `${Number(course.price).toLocaleString('vi-VN')} ₫`}
+          </div>
+          <div className="text-xs text-gray-400">{totalLessons} bài · {course.sections.length} chương</div>
+        </div>
+        <button
+          onClick={handleEnroll}
+          disabled={enrolling}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition-all disabled:opacity-60 shrink-0"
+        >
+          {enrolling ? <Loader2 className="h-4 w-4 animate-spin" /> : <GraduationCap className="h-4 w-4" />}
+          {isEnrolled ? 'Tiếp tục học' : course.isFree ? 'Đăng ký miễn phí' : 'Đăng ký'}
+        </button>
       </div>
     </div>
   );

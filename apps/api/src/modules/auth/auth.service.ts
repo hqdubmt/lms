@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { prisma } from '../../services/prisma';
 import { redis } from '../../services/redis';
@@ -8,7 +8,7 @@ import type { RegisterInput, LoginInput } from './auth.schema';
 
 const OTP_TTL = 60 * 10; // 10 minutes
 const RESET_TTL = 60 * 30; // 30 minutes
-const BCRYPT_ROUNDS = 12;
+const BCRYPT_ROUNDS = 10;
 
 export async function register(input: RegisterInput) {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });

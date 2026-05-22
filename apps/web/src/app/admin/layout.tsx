@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, BookOpen, Users, GraduationCap,
-  LogOut, ChevronRight, School,
+  LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -17,22 +17,183 @@ const navItems = [
   { href: '/admin/courses', label: 'Khóa học', icon: BookOpen },
   { href: '/admin/classes', label: 'Lớp học', icon: School },
   { href: '/admin/users', label: 'Người dùng', icon: Users },
+  { href: '/admin/language', label: 'Ngoại ngữ', icon: Globe },
+  { href: '/admin/math', label: 'Toán học', icon: Calculator },
+  { href: '/admin/viet', label: 'Tiếng Việt', icon: BookType },
 ];
+
+const COLLAPSED_KEY = 'admin_sidebar_collapsed';
+
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+
+function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="relative group/tip flex">
+      {children}
+      <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50
+          opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150">
+        <div className="bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Desktop Sidebar ──────────────────────────────────────────────────────────
+
+function DesktopSidebar({
+  user, pathname, collapsed, onToggle, onLogout,
+}: {
+  user: any; pathname: string; collapsed: boolean; onToggle: () => void; onLogout: () => void;
+}) {
+  const hasBg = !!siteConfig.adminSidebarBackground;
+  const bgStyle = siteConfig.adminSidebarBackground
+    ? { background: siteConfig.adminSidebarBackground }
+    : undefined;
+
+  return (
+    <aside
+      className={cn(
+        'hidden lg:flex flex-col shrink-0 border-r transition-all duration-300 relative',
+        collapsed ? 'w-[60px]' : 'w-64',
+        hasBg ? 'border-white/10' : 'border-border',
+      )}
+      style={bgStyle}
+    >
+      {/* ── Toggle tab — sticks out on the right edge ── */}
+      <button
+        onClick={onToggle}
+        title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+        className={cn(
+          'absolute top-1/2 -translate-y-1/2 -right-5 z-10',
+          'w-5 h-10 rounded-r-lg',
+          'flex items-center justify-center',
+          'transition-all duration-200',
+          hasBg
+            ? 'bg-[#1e293b] hover:bg-[#334155] border border-l-0 border-white/10 text-white/50 hover:text-white'
+            : 'bg-white hover:bg-gray-50 border border-l-0 border-border text-muted-foreground hover:text-foreground shadow-sm',
+        )}
+      >
+        <ChevronLeft className={cn(
+          'h-3 w-3 transition-transform duration-300',
+          collapsed && 'rotate-180',
+        )} />
+      </button>
+
+      {/* Logo */}
+      <div className={cn('h-16 flex items-center border-b shrink-0 overflow-hidden px-3', hasBg ? 'border-white/10' : 'border-border')}>
+        {collapsed ? (
+          <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center mx-auto', hasBg ? 'bg-white/10' : 'bg-primary/10')}>
+            <GraduationCap className={cn('h-4 w-4', hasBg ? 'text-white' : 'text-primary')} />
+          </div>
+        ) : siteConfig.logoUrl ? (
+          <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain" />
+        ) : (
+          <div className="flex items-center gap-2 overflow-hidden w-full">
+            <GraduationCap className={cn('h-6 w-6 shrink-0', hasBg ? 'text-white' : 'text-primary')} />
+            <span className={cn('font-bold text-base truncate', hasBg ? 'text-white' : '')}>{siteConfig.name}</span>
+            <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-auto shrink-0">Admin</span>
+          </div>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+        {navItems.map((item) => {
+          const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+
+          const linkEl = (
+            <Link
+              href={item.href}
+              className={cn(
+                'flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+                collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-3 py-2.5 w-full',
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : hasBg
+                    ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && (
+                <>
+                  {item.label}
+                  {active && <ChevronRight className="h-4 w-4 ml-auto" />}
+                </>
+              )}
+            </Link>
+          );
+
+          return collapsed
+            ? <Tooltip key={item.href} label={item.label}>{linkEl}</Tooltip>
+            : <div key={item.href}>{linkEl}</div>;
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className={cn('p-2 border-t space-y-1 shrink-0', hasBg ? 'border-white/10' : 'border-border')}>
+        {!collapsed && (
+          <div className={cn('px-3 py-2 text-xs truncate', hasBg ? 'text-white/50' : 'text-muted-foreground')}>{user.email}</div>
+        )}
+        {collapsed ? (
+          <Tooltip label="Đăng xuất">
+            <button
+              onClick={onLogout}
+              className={cn(
+                'w-10 h-10 mx-auto flex items-center justify-center rounded-lg transition-colors',
+                hasBg ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
+              )}
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </Tooltip>
+        ) : (
+          <button
+            onClick={onLogout}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              hasBg ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
+            )}
+          >
+            <LogOut className="h-4 w-4" />
+            Đăng xuất
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ─── Main Layout ──────────────────────────────────────────────────────────────
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, accessToken, fetchMe, logout } = useAuthStore();
   const pathname = usePathname();
   const router = useRouter();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    if (!user && accessToken) {
-      fetchMe();
-    } else if (!user && !accessToken) {
-      router.replace('/login');
-    } else if (user && user.role !== 'ADMIN') {
-      router.replace('/dashboard');
-    }
+    const saved = localStorage.getItem(COLLAPSED_KEY);
+    if (saved === 'true') setCollapsed(true);
+  }, []);
+
+  const handleToggle = () => {
+    setCollapsed((prev) => {
+      localStorage.setItem(COLLAPSED_KEY, String(!prev));
+      return !prev;
+    });
+  };
+
+  useEffect(() => {
+    if (!user && accessToken) fetchMe();
+    else if (!user && !accessToken) router.replace('/login');
+    else if (user && user.role !== 'ADMIN') router.replace('/dashboard');
   }, [user, accessToken, fetchMe, router]);
+
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
   if (!user || user.role !== 'ADMIN') {
     return (
@@ -42,52 +203,61 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
+  const handleLogout = async () => { await logout(); router.push('/login'); };
+
+  const hasBg = !!siteConfig.adminSidebarBackground;
+  const drawerStyle = siteConfig.adminSidebarBackground
+    ? { background: siteConfig.adminSidebarBackground }
+    : { background: '#fff', borderRight: '1px solid #e2e8f0' };
 
   return (
-    <div className="min-h-screen flex bg-muted/20">
-      {/* Sidebar */}
+    <div className="min-h-screen flex bg-muted/20 overflow-x-clip">
+
+      {/* Desktop collapsible sidebar */}
+      <DesktopSidebar
+        user={user}
+        pathname={pathname}
+        collapsed={collapsed}
+        onToggle={handleToggle}
+        onLogout={handleLogout}
+      />
+
+      {/* Mobile overlay */}
+      {drawerOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setDrawerOpen(false)} />
+      )}
+
+      {/* Mobile drawer */}
       <aside
-        className="w-64 border-r flex flex-col shrink-0"
-        style={siteConfig.adminSidebarBackground
-          ? { background: siteConfig.adminSidebarBackground }
-          : undefined}
+        className={cn(
+          'fixed top-0 left-0 h-full w-64 z-50 flex flex-col transition-transform duration-300 lg:hidden',
+          drawerOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+        style={drawerStyle}
       >
-        <div className={cn(
-          'h-16 flex items-center gap-2 px-6 border-b',
-          siteConfig.adminSidebarBackground ? 'border-white/10' : '',
-        )}>
-          {siteConfig.logoUrl ? (
-            <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain" />
-          ) : (
-            <>
-              <GraduationCap className={cn('h-6 w-6', siteConfig.adminSidebarBackground ? 'text-white' : 'text-primary')} />
-              <span className={cn('font-bold text-lg', siteConfig.adminSidebarBackground ? 'text-white' : '')}>{siteConfig.name}</span>
-            </>
-          )}
+        <button onClick={() => setDrawerOpen(false)} className="absolute top-3 right-3 h-8 w-8 rounded-lg bg-black/10 flex items-center justify-center">
+          <X className="h-4 w-4" />
+        </button>
+
+        {/* Logo */}
+        <div className={cn('h-16 flex items-center gap-2 px-6 border-b shrink-0', hasBg ? 'border-white/10' : 'border-border')}>
+          <GraduationCap className={cn('h-6 w-6', hasBg ? 'text-white' : 'text-primary')} />
+          <span className={cn('font-bold text-lg', hasBg ? 'text-white' : '')}>{siteConfig.name}</span>
           <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-auto">Admin</span>
         </div>
 
+        {/* Nav */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-            const hasBg = !!siteConfig.adminSidebarBackground;
             return (
-              <Link
-                key={item.href}
-                href={item.href}
+              <Link key={item.href} href={item.href} onClick={() => setDrawerOpen(false)}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-primary text-primary-foreground'
-                    : hasBg
-                      ? 'text-white/70 hover:bg-white/10 hover:text-white'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                )}
-              >
+                  active ? 'bg-primary text-primary-foreground'
+                    : hasBg ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                )}>
                 <item.icon className="h-4 w-4 shrink-0" />
                 {item.label}
                 {active && <ChevronRight className="h-4 w-4 ml-auto" />}
@@ -96,26 +266,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        <div className={cn('p-3 border-t space-y-1', siteConfig.adminSidebarBackground ? 'border-white/10' : '')}>
-          <div className={cn('px-3 py-2 text-xs truncate', siteConfig.adminSidebarBackground ? 'text-white/50' : 'text-muted-foreground')}>{user.email}</div>
-          <button
-            onClick={handleLogout}
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              siteConfig.adminSidebarBackground
-                ? 'text-white/60 hover:bg-white/10 hover:text-white'
-                : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
-            )}
-          >
-            <LogOut className="h-4 w-4" />
-            Đăng xuất
+        {/* Footer */}
+        <div className={cn('p-3 border-t space-y-1 shrink-0', hasBg ? 'border-white/10' : 'border-border')}>
+          <div className={cn('px-3 py-2 text-xs truncate', hasBg ? 'text-white/50' : 'text-muted-foreground')}>{user.email}</div>
+          <button onClick={handleLogout}
+            className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              hasBg ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive')}>
+            <LogOut className="h-4 w-4" />Đăng xuất
           </button>
         </div>
       </aside>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <div className="flex-1 flex flex-col overflow-hidden min-h-screen">
+
+        {/* Mobile top bar */}
+        <header className="lg:hidden sticky top-0 z-30 h-12 bg-white border-b flex items-center px-4 gap-3 shrink-0">
+          <button onClick={() => setDrawerOpen(true)} className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
+            <Menu className="h-4 w-4 text-gray-700" />
+          </button>
+          <GraduationCap className="h-5 w-5 text-primary" />
+          <span className="font-bold text-sm">{siteConfig.name}</span>
+          <span className="text-xs bg-primary text-white px-2 py-0.5 rounded ml-auto">Admin</span>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6 pb-16 lg:pb-6">{children}</main>
+
+        {/* Mobile bottom nav */}
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t flex items-center justify-around h-14 px-1">
+          {navItems.map((item) => {
+            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            return (
+              <Link key={item.href} href={item.href}
+                className={cn('flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-colors min-w-0', active ? 'text-primary' : 'text-gray-400')}>
+                <item.icon className={cn('h-5 w-5', active && 'stroke-[2.5px]')} />
+                <span className="text-[10px] font-medium truncate">{item.label}</span>
+                {active && <span className="h-1 w-1 rounded-full bg-primary" />}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
     </div>
   );

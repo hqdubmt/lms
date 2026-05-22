@@ -4,14 +4,14 @@ RUN apk add --no-cache libc6-compat
 
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci --only=production
+COPY prisma ./prisma
+RUN npm ci --only=production && npx prisma generate
 
 FROM base AS builder
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npx prisma generate
-RUN npm run build
+RUN npx prisma generate && npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
@@ -21,4 +21,4 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
 EXPOSE 4000
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

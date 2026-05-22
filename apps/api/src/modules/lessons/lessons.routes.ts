@@ -4,6 +4,7 @@ import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
 import { minioClient } from '../../services/minio';
 import { env } from '../../config/env';
+import { videoQueue } from '../../queues';
 
 const updateProgressSchema = z.object({
   isCompleted: z.boolean().optional(),
@@ -47,10 +48,11 @@ export async function lessonsRoutes(app: FastifyInstance) {
     const hasAccess = await checkLessonAccess(sub, role, id);
     if (!hasAccess) return reply.status(403).send({ error: 'Bạn chưa có quyền truy cập bài học này' });
 
-    // Prefer MinIO proxy for uploaded files; fall back to external videoUrl saved in DB
+    // Prefer HLS endpoint for transcoded videos; raw stream for originals; external URL as fallback
     let videoUrl: string | null = lesson.videoUrl || null;
-    const videoKey = lesson.videoHlsKey || lesson.videoKey;
-    if (videoKey) {
+    if (lesson.videoHlsKey) {
+      videoUrl = `/api/lessons/${id}/hls/master.m3u8`;
+    } else if (lesson.videoKey) {
       videoUrl = `/api/lessons/${id}/video`;
     }
 
@@ -185,7 +187,7 @@ export async function lessonsRoutes(app: FastifyInstance) {
 
     const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'];
     if (!allowed.includes(data.mimetype)) {
-      await data.file.resume();
+      data.file.resume();
       return reply.status(400).send({ error: 'Chỉ chấp nhận file video (mp4, webm, mov, avi)' });
     }
 
@@ -196,8 +198,51 @@ export async function lessonsRoutes(app: FastifyInstance) {
       'Content-Type': data.mimetype,
     } as any);
 
-    await prisma.lesson.update({ where: { id }, data: { videoKey: key } });
-    return { key, message: 'Upload thành công' };
+    // isPublished: true ngay để học viên xem được qua raw stream; HLS sẽ thay thế sau
+    await prisma.lesson.update({ where: { id }, data: { videoKey: key, isPublished: true } });
+
+    // Dispatch HLS transcoding job (background, không blocking)
+    let jobId: string | undefined;
+    try {
+      const job = await videoQueue.add('process', {
+        lessonId: id,
+        videoKey: key,
+        bucket: env.MINIO_BUCKET_VIDEOS,
+        mimetype: data.mimetype,
+      }, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 50,
+        removeOnFail: 20,
+      });
+      jobId = job.id;
+    } catch {
+      // Queue unavailable — raw stream still works
+    }
+
+    return { key, jobId, message: 'Upload thành công – video sẵn sàng phát.' };
+  });
+
+  // Get video processing status
+  app.get('/:id/video-status', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const lesson = await prisma.lesson.findUnique({
+      where: { id },
+      select: { videoKey: true, videoHlsKey: true, isPublished: true, videoDuration: true },
+    });
+    if (!lesson) return reply.status(404).send({ error: 'Lesson not found' });
+
+    const jobs = await videoQueue.getJobs(['active', 'waiting', 'delayed']);
+    const activeJob = jobs.find((j) => j.data?.lessonId === id);
+
+    return {
+      hasOriginal: !!lesson.videoKey,
+      hasHls: !!lesson.videoHlsKey,
+      isPublished: lesson.isPublished,
+      duration: lesson.videoDuration,
+      processing: !!activeJob,
+      progress: activeJob ? (activeJob.progress as number | null) : null,
+    };
   });
 
   // Instructor: save video key after upload
@@ -205,5 +250,174 @@ export async function lessonsRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { videoKey } = req.body as { videoKey: string };
     return prisma.lesson.update({ where: { id }, data: { videoKey } });
+  });
+
+  // Stream HLS files (m3u8 + .ts segments) with auth — called by HLS player
+  // Token passed via ?token= for <video src> compatibility
+  app.get('/:id/hls/*', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const hlsPath = (req.params as any)['*'] as string;
+    const query = req.query as { token?: string };
+
+    let sub: string;
+    let role: string;
+    try {
+      if (query.token) {
+        const decoded = (app as any).jwt.verify(query.token) as { sub: string; role: string };
+        sub = decoded.sub;
+        role = decoded.role;
+      } else {
+        await req.jwtVerify();
+        const u = req.user as { sub: string; role: string };
+        sub = u.sub;
+        role = u.role;
+      }
+    } catch {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+
+    const hasAccess = await checkLessonAccess(sub, role, id);
+    if (!hasAccess) return reply.status(403).send({ error: 'Không có quyền truy cập' });
+
+    const lesson = await prisma.lesson.findUnique({ where: { id }, select: { videoHlsKey: true } });
+    if (!lesson?.videoHlsKey) return reply.status(404).send({ error: 'Video chưa được xử lý' });
+
+    // Build the MinIO key: replace master.m3u8 with the requested file
+    const hlsBase = lesson.videoHlsKey.replace('/master.m3u8', '');
+    const minioKey = `${hlsBase}/${hlsPath}`;
+    const bucket = env.MINIO_BUCKET_VIDEOS;
+
+    try {
+      const stream = await minioClient.getObject(bucket, minioKey);
+      const ext = hlsPath.split('.').pop() || '';
+      const contentTypes: Record<string, string> = {
+        m3u8: 'application/x-mpegURL',
+        ts: 'video/mp2t',
+      };
+      reply.header('Content-Type', contentTypes[ext] || 'application/octet-stream');
+      reply.header('Cache-Control', ext === 'm3u8' ? 'no-cache' : 'public, max-age=3600');
+      return reply.send(stream);
+    } catch {
+      return reply.status(404).send({ error: 'File không tồn tại' });
+    }
+  });
+
+  // ─── QUIZ ────────────────────────────────────────────────────────────────────
+
+  const quizSchema = z.object({
+    question: z.string().min(1).max(1000),
+    options: z.array(z.string().min(1)).min(2).max(6),
+    answer: z.number().int().min(0),
+    explanation: z.string().max(2000).optional(),
+    order: z.number().int().min(0).optional(),
+  });
+
+  // Get quizzes of a lesson (students see without correct answer; instructors see full)
+  app.get('/:id/quizzes', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+
+    const hasAccess = await checkLessonAccess(sub, role, id);
+    if (!hasAccess) return reply.status(403).send({ error: 'Không có quyền truy cập' });
+
+    const quizzes = await prisma.quiz.findMany({
+      where: { lessonId: id },
+      orderBy: { order: 'asc' },
+    });
+
+    // Students only see questions + options; answer hidden until they submit
+    const isInstructor = role === 'ADMIN' || role === 'INSTRUCTOR';
+    if (isInstructor) return quizzes;
+
+    return quizzes.map(({ answer: _a, explanation: _e, ...q }) => q);
+  });
+
+  // Instructor: create quiz question
+  app.post('/:id/quizzes', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const body = quizSchema.parse(req.body);
+
+    const lesson = await prisma.lesson.findUniqueOrThrow({
+      where: { id },
+      include: { section: { include: { course: { select: { instructorId: true } } } } },
+    });
+    if (lesson.section.course.instructorId !== sub && role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    const maxOrder = await prisma.quiz.aggregate({ where: { lessonId: id }, _max: { order: true } });
+    const order = body.order ?? (maxOrder._max.order ?? -1) + 1;
+
+    const quiz = await prisma.quiz.create({ data: { ...body, order, lessonId: id } });
+    return reply.status(201).send(quiz);
+  });
+
+  // Instructor: update quiz question
+  app.patch('/quizzes/:quizId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { quizId } = req.params as { quizId: string };
+    const body = quizSchema.partial().parse(req.body);
+
+    const quiz = await prisma.quiz.findUniqueOrThrow({
+      where: { id: quizId },
+      include: { lesson: { include: { section: { include: { course: { select: { instructorId: true } } } } } } },
+    });
+    if (quiz.lesson.section.course.instructorId !== sub && role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    return prisma.quiz.update({ where: { id: quizId }, data: body });
+  });
+
+  // Instructor: delete quiz question
+  app.delete('/quizzes/:quizId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { quizId } = req.params as { quizId: string };
+
+    const quiz = await prisma.quiz.findUniqueOrThrow({
+      where: { id: quizId },
+      include: { lesson: { include: { section: { include: { course: { select: { instructorId: true } } } } } } },
+    });
+    if (quiz.lesson.section.course.instructorId !== sub && role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+
+    await prisma.quiz.delete({ where: { id: quizId } });
+    return { message: 'Đã xóa câu hỏi' };
+  });
+
+  // Student: submit quiz answers — returns score + correct answers + explanations
+  app.post('/:id/quizzes/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const { answers } = req.body as { answers: Record<string, number> }; // { quizId: selectedIndex }
+
+    const hasAccess = await checkLessonAccess(sub, role, id);
+    if (!hasAccess) return reply.status(403).send({ error: 'Không có quyền truy cập' });
+
+    const quizzes = await prisma.quiz.findMany({ where: { lessonId: id }, orderBy: { order: 'asc' } });
+    if (quizzes.length === 0) return reply.status(400).send({ error: 'Bài học này không có câu hỏi nào' });
+
+    let correct = 0;
+    const results = quizzes.map((q) => {
+      const selected = answers[q.id] ?? -1;
+      const isCorrect = selected === q.answer;
+      if (isCorrect) correct++;
+      return { id: q.id, selected, correct: q.answer, isCorrect, explanation: q.explanation ?? null };
+    });
+
+    const score = Math.round((correct / quizzes.length) * 100);
+
+    // Auto-mark lesson complete if score >= 80%
+    if (score >= 80) {
+      await prisma.lessonProgress.upsert({
+        where: { userId_lessonId: { userId: sub, lessonId: id } },
+        update: { isCompleted: true, completedAt: new Date() },
+        create: { userId: sub, lessonId: id, isCompleted: true, completedAt: new Date() },
+      });
+    }
+
+    return { score, correct, total: quizzes.length, results };
   });
 }

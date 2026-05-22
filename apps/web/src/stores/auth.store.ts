@@ -71,9 +71,22 @@ export const useAuthStore = create<AuthState>()(
         if (!accessToken) return;
         try {
           const user = await api.get<User>('/auth/me');
-          set({ user });
-        } catch {
-          set({ user: null, accessToken: null });
+          // If api client refreshed the token during the call, sync it to the store
+          const freshToken = api.getToken();
+          if (freshToken && freshToken !== accessToken) {
+            set({ user, accessToken: freshToken });
+            setAuthCookie(freshToken);
+          } else {
+            set({ user });
+          }
+        } catch (err: any) {
+          // Only clear session on true authentication failure (both tokens invalid).
+          // Don't clear on network errors, server errors, etc.
+          if (err?.message === 'Unauthorized') {
+            api.setToken(null);
+            set({ user: null, accessToken: null });
+            clearAuthCookie();
+          }
         }
       },
     }),

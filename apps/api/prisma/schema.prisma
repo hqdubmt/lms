@@ -25,19 +25,35 @@ model User {
   telegramId       String?          @unique
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
-  certificates     Certificate[]
-  classesCreated   Class[]          @relation("ClassCreator")
-  classMemberships ClassMember[]
-  coursesCreated   Course[]         @relation("InstructorCourses")
-  enrollments      Enrollment[]
-  progress         LessonProgress[]
-  sessionsCreated  LiveSession[]    @relation("SessionCreator")
-  notifications    Notification[]
-  payments         Payment[]
-  refreshTokens    RefreshToken[]
-  reviews          Review[]
-  subscription     Subscription?
-  todoItems        TodoItem[]
+  certificates        Certificate[]
+  classesCreated      Class[]              @relation("ClassCreator")
+  classMemberships    ClassMember[]
+  coursesCreated      Course[]             @relation("InstructorCourses")
+  enrollments         Enrollment[]
+  progress            LessonProgress[]
+  sessionsCreated     LiveSession[]        @relation("SessionCreator")
+  notifications       Notification[]
+  payments            Payment[]
+  refreshTokens       RefreshToken[]
+  reviews             Review[]
+  subscription        Subscription?
+  todoItems           TodoItem[]
+  vocabSetsCreated    VocabSet[]           @relation("VocabSetCreator")
+  vocabProgresses     VocabProgress[]      @relation("VocabProgressUser")
+  vocabItemProgresses VocabItemProgress[]  @relation("VocabItemProgressUser")
+  exercisesCreated    LangExercise[]       @relation("ExerciseCreator")
+  exerciseAttempts    ExerciseAttempt[]    @relation("ExerciseAttemptUser")
+  langStats           LangUserStats?       @relation("LangUserStatsUser")
+  mathTopicsCreated   MathTopic[]          @relation("MathTopicCreator")
+  mathExercisesCreated MathExercise[]      @relation("MathExerciseCreator")
+  mathAttempts        MathAttempt[]        @relation("MathAttemptUser")
+  conceptProgresses   ConceptProgress[]    @relation("ConceptProgressUser")
+  mathStats           MathUserStats?       @relation("MathUserStatsUser")
+  vietSetsCreated     VietSet[]            @relation("VietSetCreator")
+  vietItemProgresses  VietItemProgress[]   @relation("VietItemProgressUser")
+  vietExercisesCreated VietExercise[]      @relation("VietExerciseCreator")
+  vietAttempts        VietAttempt[]        @relation("VietAttemptUser")
+  vietStats           VietUserStats?       @relation("VietUserStatsUser")
 
   @@index([email])
   @@index([role])
@@ -99,17 +115,25 @@ model Course {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   certificates  Certificate[]
-  category      Category?     @relation(fields: [categoryId], references: [id])
-  instructor    User          @relation("InstructorCourses", fields: [instructorId], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  instructor    User           @relation("InstructorCourses", fields: [instructorId], references: [id])
   enrollments   Enrollment[]
   liveSessions  LiveSession[]
+  payments      Payment[]
   reviews       Review[]
   sections      Section[]
+  vocabSets     VocabSet[]
+  langExercises LangExercise[]
+  mathTopics    MathTopic[]
+  mathExercises MathExercise[]
+  vietSets      VietSet[]
+  vietExercises VietExercise[]
 
   @@index([instructorId])
   @@index([categoryId])
   @@index([status])
   @@index([slug])
+  @@index([status, publishedAt])
 }
 
 model Section {
@@ -188,6 +212,7 @@ model Enrollment {
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
+  @@index([status])
 }
 
 model LessonProgress {
@@ -251,6 +276,7 @@ model Payment {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status])
@@ -344,7 +370,7 @@ model LiveSession {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   class       Class?            @relation(fields: [classId], references: [id])
-  course      Course?           @relation(fields: [courseId], references: [id])
+  course      Course?           @relation(fields: [courseId], references: [id], onDelete: SetNull)
   creator     User              @relation("SessionCreator", fields: [createdBy], references: [id])
 
   @@index([status])
@@ -420,4 +446,465 @@ enum SubscriptionStatus {
   EXPIRED
   CANCELLED
   TRIAL
+}
+
+// ─── Language Learning Module ──────────────────────────────────────────────────
+
+model VocabSet {
+  id          String          @id @default(uuid())
+  title       String
+  description String?
+  language    String          // "en", "ja", "ko", "fr", "zh", etc.
+  targetLang  String          @default("vi")
+  level       String          @default("A1")
+  coverUrl    String?
+  videoUrl    String?
+  isPublic    Boolean         @default(true)
+  createdBy   String
+  courseId    String?
+  items       VocabItem[]
+  progresses  VocabProgress[]
+  creator     User            @relation("VocabSetCreator", fields: [createdBy], references: [id])
+  course      Course?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([createdBy])
+  @@index([language])
+}
+
+model VocabItem {
+  id           String              @id @default(uuid())
+  setId        String
+  word         String
+  translation  String
+  pronunciation String?
+  audioUrl     String?
+  imageUrl     String?
+  example      String?
+  exampleTrans String?
+  notes        String?
+  order        Int                 @default(0)
+  set          VocabSet            @relation(fields: [setId], references: [id], onDelete: Cascade)
+  progresses   VocabItemProgress[]
+  createdAt    DateTime            @default(now())
+
+  @@index([setId])
+}
+
+model VocabProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  setId       String
+  wordsLearned Int      @default(0)
+  lastStudied DateTime  @default(now())
+  user        User      @relation("VocabProgressUser", fields: [userId], references: [id], onDelete: Cascade)
+  set         VocabSet  @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, setId])
+  @@index([userId])
+}
+
+model VocabItemProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  itemId      String
+  interval    Int       @default(1)
+  easeFactor  Float     @default(2.5)
+  repetitions Int       @default(0)
+  nextReview  DateTime  @default(now())
+  lastReview  DateTime?
+  isLearned   Boolean   @default(false)
+  user        User      @relation("VocabItemProgressUser", fields: [userId], references: [id], onDelete: Cascade)
+  item        VocabItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId, nextReview])
+  @@index([userId, isLearned])
+}
+
+model LangExercise {
+  id          String              @id @default(uuid())
+  title       String
+  description String?
+  type        LangExerciseType
+  language    String
+  level       String              @default("A1")
+  timeLimit   Int?
+  isPublic    Boolean             @default(true)
+  createdBy   String
+  courseId    String?
+  questions   ExerciseQuestion[]
+  attempts    ExerciseAttempt[]
+  creator     User                @relation("ExerciseCreator", fields: [createdBy], references: [id])
+  course      Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([createdBy])
+  @@index([language, type])
+}
+
+model ExerciseQuestion {
+  id          String       @id @default(uuid())
+  exerciseId  String
+  content     String
+  audioUrl    String?
+  imageUrl    String?
+  options     Json?
+  answer      Json
+  explanation String?
+  order       Int          @default(0)
+  points      Int          @default(1)
+  exercise    LangExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
+}
+
+model ExerciseAttempt {
+  id          String       @id @default(uuid())
+  userId      String
+  exerciseId  String
+  answers     Json
+  score       Float
+  timeTaken   Int?
+  xpEarned    Int          @default(0)
+  completedAt DateTime     @default(now())
+  user        User         @relation("ExerciseAttemptUser", fields: [userId], references: [id], onDelete: Cascade)
+  exercise    LangExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([exerciseId])
+}
+
+model LangUserStats {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  xp          Int       @default(0)
+  level       Int       @default(1)
+  streak      Int       @default(0)
+  longestStreak Int     @default(0)
+  lastStudied DateTime?
+  wordsLearned Int      @default(0)
+  exercisesDone Int     @default(0)
+  user        User      @relation("LangUserStatsUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([xp])
+}
+
+enum LangExerciseType {
+  MULTIPLE_CHOICE
+  FILL_BLANK
+  MATCHING
+  WORD_ORDER
+  DICTATION
+}
+
+// ─── MATH MODULE ──────────────────────────────────────────────────────────────
+
+enum MathSubject {
+  ARITHMETIC
+  ALGEBRA
+  GEOMETRY
+  TRIGONOMETRY
+  CALCULUS
+  STATISTICS
+  NUMBER_THEORY
+  COMBINATORICS
+}
+
+enum MathExerciseType {
+  MULTIPLE_CHOICE
+  FILL_BLANK
+  TRUE_FALSE
+  CALCULATION
+  PROOF_STEP
+}
+
+model MathTopic {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+  subject     MathSubject    @default(ARITHMETIC)
+  grade       Int            @default(1)
+  level       String         @default("beginner")
+  coverUrl    String?
+  videoUrl    String?
+  isPublic    Boolean        @default(true)
+  createdBy   String
+  courseId    String?
+  concepts    MathConcept[]
+  exercises   MathExercise[]
+  creator     User           @relation("MathTopicCreator", fields: [createdBy], references: [id])
+  course      Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([createdBy])
+  @@index([subject])
+  @@index([grade])
+}
+
+model MathConcept {
+  id          String            @id @default(uuid())
+  topicId     String
+  name        String
+  definition  String
+  formula     String?
+  example     String?
+  solution    String?
+  hints       String[]
+  imageUrl    String?
+  order       Int               @default(0)
+  topic       MathTopic         @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  progresses  ConceptProgress[]
+  createdAt   DateTime          @default(now())
+
+  @@index([topicId])
+}
+
+model ConceptProgress {
+  id          String      @id @default(uuid())
+  userId      String
+  conceptId   String
+  interval    Int         @default(1)
+  easeFactor  Float       @default(2.5)
+  repetitions Int         @default(0)
+  nextReview  DateTime    @default(now())
+  lastReview  DateTime?
+  isLearned   Boolean     @default(false)
+  user        User        @relation("ConceptProgressUser", fields: [userId], references: [id], onDelete: Cascade)
+  concept     MathConcept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conceptId])
+  @@index([userId, nextReview])
+  @@index([userId, isLearned])
+}
+
+model MathExercise {
+  id          String           @id @default(uuid())
+  title       String
+  description String?
+  type        MathExerciseType
+  subject     MathSubject      @default(ARITHMETIC)
+  grade       Int              @default(1)
+  level       String           @default("beginner")
+  timeLimit   Int?
+  isPublic    Boolean          @default(true)
+  createdBy   String
+  topicId     String?
+  courseId    String?
+  questions   MathQuestion[]
+  attempts    MathAttempt[]
+  creator     User             @relation("MathExerciseCreator", fields: [createdBy], references: [id])
+  topic       MathTopic?       @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  course      Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([createdBy])
+  @@index([topicId])
+  @@index([courseId])
+}
+
+model MathQuestion {
+  id          String       @id @default(uuid())
+  exerciseId  String
+  content     String
+  imageUrl    String?
+  options     Json?
+  answer      Json
+  solution    String?
+  hints       String[]
+  difficulty  Int          @default(1)
+  order       Int          @default(0)
+  points      Int          @default(1)
+  exercise    MathExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
+}
+
+model MathAttempt {
+  id          String       @id @default(uuid())
+  userId      String
+  exerciseId  String
+  answers     Json
+  score       Float
+  timeTaken   Int?
+  xpEarned    Int          @default(0)
+  completedAt DateTime     @default(now())
+  user        User         @relation("MathAttemptUser", fields: [userId], references: [id], onDelete: Cascade)
+  exercise    MathExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([exerciseId])
+}
+
+model MathUserStats {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  xp              Int       @default(0)
+  level           Int       @default(1)
+  streak          Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastStudied     DateTime?
+  conceptsLearned Int       @default(0)
+  exercisesDone   Int       @default(0)
+  user            User      @relation("MathUserStatsUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([xp])
+}
+
+// ─── TIẾNG VIỆT MODULE ────────────────────────────────────────────────────────
+
+enum VietCategory {
+  CHINH_TA        // Chính tả
+  TU_VUNG         // Từ vựng
+  NGU_PHAP        // Ngữ pháp
+  THANH_NGU       // Thành ngữ
+  TUC_NGU         // Tục ngữ
+  VAN_HOC         // Văn học
+  TAP_DOC         // Tập đọc / Đọc hiểu
+  CA_DAO          // Ca dao
+}
+
+enum VietExerciseType {
+  MULTIPLE_CHOICE   // Trắc nghiệm
+  FILL_BLANK        // Điền từ / Điền vào chỗ trống
+  SPELLING          // Chính tả (gõ đúng chữ)
+  MATCHING          // Ghép cặp (từ ↔ nghĩa)
+  WORD_ORDER        // Sắp xếp câu
+  READING           // Đọc hiểu (passage + questions)
+}
+
+model VietSet {
+  id          String        @id @default(uuid())
+  title       String
+  description String?
+  category    VietCategory  @default(TU_VUNG)
+  grade       Int           @default(1)      // Lớp 1-12
+  level       String        @default("co_ban")
+  coverUrl    String?
+  videoUrl    String?
+  isPublic    Boolean       @default(true)
+  createdBy   String
+  courseId    String?
+  items       VietItem[]
+  exercises   VietExercise[]
+  creator     User          @relation("VietSetCreator", fields: [createdBy], references: [id])
+  course      Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([createdBy])
+  @@index([category])
+  @@index([grade])
+}
+
+model VietItem {
+  id           String            @id @default(uuid())
+  setId        String
+  word         String            // Từ / thành ngữ / câu
+  meaning      String            // Nghĩa / định nghĩa
+  example      String?           // Ví dụ đặt câu
+  note         String?           // Ghi chú thêm (nguồn gốc, cách dùng)
+  imageUrl     String?
+  audioUrl     String?
+  order        Int               @default(0)
+  set          VietSet           @relation(fields: [setId], references: [id], onDelete: Cascade)
+  progresses   VietItemProgress[]
+  createdAt    DateTime          @default(now())
+
+  @@index([setId])
+}
+
+model VietItemProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  itemId      String
+  interval    Int       @default(1)
+  easeFactor  Float     @default(2.5)
+  repetitions Int       @default(0)
+  nextReview  DateTime  @default(now())
+  lastReview  DateTime?
+  isLearned   Boolean   @default(false)
+  user        User      @relation("VietItemProgressUser", fields: [userId], references: [id], onDelete: Cascade)
+  item        VietItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId, nextReview])
+  @@index([userId, isLearned])
+}
+
+model VietExercise {
+  id          String          @id @default(uuid())
+  title       String
+  description String?
+  type        VietExerciseType
+  category    VietCategory    @default(TU_VUNG)
+  grade       Int             @default(1)
+  level       String          @default("co_ban")
+  passage     String?         // Đoạn văn cho bài đọc hiểu
+  timeLimit   Int?
+  isPublic    Boolean         @default(true)
+  createdBy   String
+  setId       String?
+  courseId    String?
+  questions   VietQuestion[]
+  attempts    VietAttempt[]
+  creator     User            @relation("VietExerciseCreator", fields: [createdBy], references: [id])
+  set         VietSet?        @relation(fields: [setId], references: [id], onDelete: SetNull)
+  course      Course?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([createdBy])
+  @@index([setId])
+  @@index([courseId])
+}
+
+model VietQuestion {
+  id          String       @id @default(uuid())
+  exerciseId  String
+  content     String
+  imageUrl    String?
+  options     Json?
+  answer      Json
+  explanation String?
+  order       Int          @default(0)
+  points      Int          @default(1)
+  exercise    VietExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
+}
+
+model VietAttempt {
+  id          String       @id @default(uuid())
+  userId      String
+  exerciseId  String
+  answers     Json
+  score       Float
+  timeTaken   Int?
+  xpEarned    Int          @default(0)
+  completedAt DateTime     @default(now())
+  user        User         @relation("VietAttemptUser", fields: [userId], references: [id], onDelete: Cascade)
+  exercise    VietExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([exerciseId])
+}
+
+model VietUserStats {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  xp            Int       @default(0)
+  level         Int       @default(1)
+  streak        Int       @default(0)
+  longestStreak Int       @default(0)
+  lastStudied   DateTime?
+  wordsLearned  Int       @default(0)
+  exercisesDone Int       @default(0)
+  user          User      @relation("VietUserStatsUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([xp])
 }

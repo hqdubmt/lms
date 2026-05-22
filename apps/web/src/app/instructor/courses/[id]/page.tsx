@@ -7,7 +7,8 @@ import {
   ArrowLeft, Plus, Trash2, Edit3, ChevronDown, ChevronRight,
   Play, FileText, Video, Save, Loader2, BookOpen, Users,
   CheckCircle2, Circle, Eye, Globe, Archive, AlertCircle,
-  GripVertical, X, Upload, Link as LinkIcon,
+  GripVertical, X, Upload, Link as LinkIcon, FileUp, Sparkles,
+  Languages, BookMarked, Unlink, HelpCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
@@ -104,6 +105,223 @@ function InlineEdit({ value, onSave, className }: { value: string; onSave: (v: s
   );
 }
 
+// ─── Quiz Manager ────────────────────────────────────────────────────────────
+
+interface QuizItem {
+  id: string; question: string; options: string[]; answer: number;
+  explanation?: string; order: number;
+}
+
+function QuizManager({ lessonId }: { lessonId: string }) {
+  const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<QuizItem | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const emptyForm = (): Omit<QuizItem, 'id' | 'order'> => ({
+    question: '', options: ['', '', '', ''], answer: 0, explanation: '',
+  });
+  const [form, setForm] = useState(emptyForm());
+
+  useEffect(() => {
+    api.get<QuizItem[]>(`/lessons/${lessonId}/quizzes`)
+      .then(setQuizzes).catch(() => setQuizzes([]))
+      .finally(() => setLoading(false));
+  }, [lessonId]);
+
+  const startCreate = () => { setForm(emptyForm()); setEditing(null); setCreating(true); };
+  const startEdit = (q: QuizItem) => {
+    setForm({ question: q.question, options: [...q.options], answer: q.answer, explanation: q.explanation ?? '' });
+    setEditing(q);
+    setCreating(false);
+  };
+  const cancel = () => { setCreating(false); setEditing(null); };
+
+  const handleSave = async () => {
+    if (!form.question.trim() || form.options.filter((o) => o.trim()).length < 2) return;
+    const payload = {
+      question: form.question.trim(),
+      options: form.options.filter((o) => o.trim()),
+      answer: form.answer,
+      explanation: form.explanation?.trim() || undefined,
+    };
+    setSaving(true);
+    try {
+      if (editing) {
+        const updated = await api.patch<QuizItem>(`/lessons/quizzes/${editing.id}`, payload);
+        setQuizzes((prev) => prev.map((q) => q.id === editing.id ? updated : q));
+      } else {
+        const created = await api.post<QuizItem>(`/lessons/${lessonId}/quizzes`, payload);
+        setQuizzes((prev) => [...prev, created]);
+      }
+      cancel();
+    } catch {}
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Xóa câu hỏi này?')) return;
+    setDeleting(id);
+    try {
+      await api.delete(`/lessons/quizzes/${id}`);
+      setQuizzes((prev) => prev.filter((q) => q.id !== id));
+    } catch {}
+    setDeleting(null);
+  };
+
+  return (
+    <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+          <HelpCircle className="h-3.5 w-3.5 text-indigo-500" />
+          Câu hỏi kiểm tra ({quizzes.length})
+        </span>
+        {!creating && !editing && (
+          <button onClick={startCreate}
+            className="h-6 px-2 rounded-lg flex items-center gap-1 text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
+            <Plus className="h-3 w-3" />Thêm câu hỏi
+          </button>
+        )}
+      </div>
+
+      {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+
+      {/* Quiz list */}
+      {!loading && quizzes.length === 0 && !creating && (
+        <p className="text-xs text-muted-foreground">Chưa có câu hỏi nào</p>
+      )}
+      {!loading && quizzes.map((q, qi) => (
+        <div key={q.id} className={cn('rounded-xl border bg-white p-3 space-y-2', editing?.id === q.id ? 'ring-2 ring-indigo-300' : '')}>
+          {editing?.id !== q.id ? (
+            <div className="flex items-start gap-2">
+              <span className="text-xs font-bold text-indigo-600 shrink-0 mt-0.5">{qi + 1}.</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium leading-snug">{q.question}</p>
+                <div className="mt-1.5 space-y-0.5">
+                  {q.options.map((opt, oi) => (
+                    <div key={oi} className={cn('text-[11px] flex items-center gap-1.5 px-2 py-0.5 rounded-lg',
+                      oi === q.answer ? 'bg-green-50 text-green-700 font-semibold' : 'text-muted-foreground',
+                    )}>
+                      <span className={cn('h-4 w-4 rounded-full border flex items-center justify-center text-[9px] font-bold shrink-0',
+                        oi === q.answer ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300',
+                      )}>{String.fromCharCode(65 + oi)}</span>
+                      {opt}
+                    </div>
+                  ))}
+                </div>
+                {q.explanation && (
+                  <p className="text-[11px] text-blue-600 mt-1">Giải thích: {q.explanation}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => startEdit(q)} className="h-6 w-6 rounded-lg hover:bg-gray-100 flex items-center justify-center">
+                  <Edit3 className="h-3 w-3 text-gray-500" />
+                </button>
+                <button onClick={() => handleDelete(q.id)} disabled={deleting === q.id}
+                  className="h-6 w-6 rounded-lg hover:bg-red-50 flex items-center justify-center">
+                  {deleting === q.id ? <Loader2 className="h-3 w-3 animate-spin text-red-400" /> : <Trash2 className="h-3 w-3 text-red-400" />}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ))}
+
+      {/* Create / Edit form */}
+      {(creating || editing) && (
+        <div className="rounded-xl border-2 border-indigo-200 bg-white p-4 space-y-3">
+          <p className="text-xs font-semibold text-indigo-700">{editing ? 'Sửa câu hỏi' : 'Thêm câu hỏi mới'}</p>
+
+          {/* Question */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-600 block mb-1">Câu hỏi *</label>
+            <textarea
+              value={form.question}
+              onChange={(e) => setForm((p) => ({ ...p, question: e.target.value }))}
+              placeholder="Nhập câu hỏi..."
+              rows={2}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+            />
+          </div>
+
+          {/* Options */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-600 block mb-1">Các đáp án (tối thiểu 2, tối đa 6)</label>
+            <div className="space-y-1.5">
+              {form.options.map((opt, oi) => (
+                <div key={oi} className="flex items-center gap-2">
+                  <button
+                    onClick={() => setForm((p) => ({ ...p, answer: oi }))}
+                    className={cn('h-5 w-5 rounded-full border-2 flex items-center justify-center text-[9px] font-bold shrink-0 transition-colors',
+                      form.answer === oi ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300 hover:border-green-300',
+                    )}
+                    title="Chọn đáp án đúng"
+                  >
+                    {String.fromCharCode(65 + oi)}
+                  </button>
+                  <input
+                    value={opt}
+                    onChange={(e) => {
+                      const opts = [...form.options];
+                      opts[oi] = e.target.value;
+                      setForm((p) => ({ ...p, options: opts }));
+                    }}
+                    placeholder={`Đáp án ${String.fromCharCode(65 + oi)}`}
+                    className="flex-1 h-7 rounded-lg border border-gray-200 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  />
+                  {form.options.length > 2 && (
+                    <button
+                      onClick={() => {
+                        const opts = form.options.filter((_, i) => i !== oi);
+                        setForm((p) => ({ ...p, options: opts, answer: Math.min(p.answer, opts.length - 1) }));
+                      }}
+                      className="h-5 w-5 rounded flex items-center justify-center text-gray-400 hover:text-red-500"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {form.options.length < 6 && (
+                <button onClick={() => setForm((p) => ({ ...p, options: [...p.options, ''] }))}
+                  className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1">
+                  <Plus className="h-3 w-3" />Thêm đáp án
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">Click vào vòng tròn màu xanh để chọn đáp án đúng</p>
+          </div>
+
+          {/* Explanation */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-600 block mb-1">Giải thích (tuỳ chọn)</label>
+            <input
+              value={form.explanation ?? ''}
+              onChange={(e) => setForm((p) => ({ ...p, explanation: e.target.value }))}
+              placeholder="Giải thích tại sao đáp án đúng..."
+              className="w-full h-7 rounded-lg border border-gray-200 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleSave} disabled={saving || !form.question.trim()}
+              className="h-7 px-3 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5">
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {editing ? 'Cập nhật' : 'Lưu câu hỏi'}
+            </button>
+            <button onClick={cancel} className="h-7 px-3 text-xs text-gray-600 hover:bg-gray-100 rounded-lg">
+              Huỷ
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Lesson Row ───────────────────────────────────────────────────────────────
 
 function LessonRow({
@@ -117,7 +335,9 @@ function LessonRow({
   const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [uploadError, setUploadError] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
 
   const handleDelete = async () => {
     if (!confirm(`Xóa bài "${lesson.title}"?`)) return;
@@ -144,20 +364,34 @@ function LessonRow({
   const handleUploadVideo = (file: File) => {
     setUploading(true);
     setUploadPct(0);
+    setUploadError('');
     const formData = new FormData();
     formData.append('file', file);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/lessons/${lesson.id}/upload-video`);
+    // Upload thẳng vào API server để tránh Next.js proxy buffer toàn bộ file
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+    xhr.open('POST', `${apiBase}/lessons/${lesson.id}/upload-video`);
     if (accessToken) xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100)); };
     xhr.onload = () => {
       setUploading(false);
       if (xhr.status < 300) {
-        const res = JSON.parse(xhr.responseText);
-        onUpdate(lesson.id, { videoKey: res.key });
+        try {
+          const res = JSON.parse(xhr.responseText);
+          onUpdate(lesson.id, { videoKey: res.key, isPublished: true });
+        } catch {
+          setUploadError('Upload thành công nhưng không đọc được phản hồi.');
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          setUploadError(err.error || `Lỗi ${xhr.status}`);
+        } catch {
+          setUploadError(`Upload thất bại (${xhr.status})`);
+        }
       }
     };
-    xhr.onerror = () => setUploading(false);
+    xhr.onerror = () => { setUploading(false); setUploadError('Lỗi kết nối – không thể tải video lên.'); };
     xhr.send(formData);
   };
 
@@ -205,6 +439,14 @@ function LessonRow({
             </button>
           )}
           <button
+            onClick={() => setQuizOpen(!quizOpen)}
+            className={cn('h-6 px-2 rounded-lg flex items-center gap-1 text-[10px] font-semibold transition-colors',
+              quizOpen ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-indigo-50 text-indigo-600',
+            )}
+          >
+            <HelpCircle className="h-3 w-3" />Quiz
+          </button>
+          <button
             onClick={toggleFree}
             className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors',
               lesson.isFree ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-green-200',
@@ -232,6 +474,9 @@ function LessonRow({
         </div>
       </div>
 
+      {/* Quiz management panel */}
+      {quizOpen && <QuizManager lessonId={lesson.id} />}
+
       {/* Video upload panel */}
       {expanded && lesson.type === 'VIDEO' && (
         <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
@@ -250,6 +495,11 @@ function LessonRow({
               </button>
             </div>
           ) : null}
+          {uploadError && (
+            <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              <span className="font-medium">Lỗi:</span> {uploadError}
+            </div>
+          )}
           {uploading ? (
             <div className="space-y-1">
               <div className="text-xs text-indigo-600 font-medium">Đang tải lên... {uploadPct}%</div>
@@ -263,7 +513,7 @@ function LessonRow({
               {lesson.videoKey ? 'Thay thế video mới' : 'Chọn file video (mp4, webm, mov)'}
               <input
                 type="file" accept="video/*" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadVideo(f); }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setUploadError(''); handleUploadVideo(f); } }}
               />
             </label>
           )}
@@ -505,6 +755,385 @@ function CourseInfoPanel({ course, onUpdate }: { course: Course; onUpdate: (data
   );
 }
 
+// ─── Import File Modal ────────────────────────────────────────────────────────
+
+interface ImportResult {
+  sections: Array<{ id: string; title: string; lessons: any[] }>;
+  totalLessons: number;
+}
+
+function ImportFileModal({ courseId, onDone, onClose }: {
+  courseId: string;
+  onDone: (result: ImportResult) => void;
+  onClose: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+  const { accessToken } = useAuthStore();
+
+  const ACCEPTED = ['.pdf', '.docx', '.txt', '.md'];
+
+  const pick = (f: File) => {
+    const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+    if (!ACCEPTED.includes(ext)) { setError('Chỉ hỗ trợ PDF, DOCX, TXT, MD'); return; }
+    setError('');
+    setFile(f);
+  };
+
+  const handleImport = async () => {
+    if (!file) return;
+    setImporting(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`/api/courses/${courseId}/import-file`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: form,
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error || 'Import thất bại');
+      }
+      const result: ImportResult = await res.json();
+      onDone(result);
+    } catch (e: any) {
+      setError(e.message || 'Import thất bại');
+    }
+    setImporting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-xl bg-indigo-100 flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Import từ file</h3>
+              <p className="text-xs text-muted-foreground">AI tự động tạo chương và bài học</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center">
+            <X className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className={cn(
+            'border-2 border-dashed rounded-2xl p-8 text-center transition-colors cursor-pointer',
+            dragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50',
+            file ? 'border-green-400 bg-green-50' : '',
+          )}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) pick(f); }}
+          onClick={() => document.getElementById('file-import-input')?.click()}
+        >
+          <input
+            id="file-import-input"
+            type="file"
+            accept=".pdf,.docx,.txt,.md"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); }}
+          />
+          {file ? (
+            <>
+              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+              <p className="font-semibold text-green-700 text-sm">{file.name}</p>
+              <p className="text-xs text-green-600 mt-1">{(file.size / 1024).toFixed(0)} KB</p>
+            </>
+          ) : (
+            <>
+              <FileUp className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="font-semibold text-gray-700 text-sm">Kéo thả hoặc click để chọn file</p>
+              <p className="text-xs text-muted-foreground mt-1">Hỗ trợ: PDF, DOCX, TXT, MD (tối đa 20MB)</p>
+            </>
+          )}
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />{error}
+          </div>
+        )}
+
+        <div className="bg-indigo-50 rounded-xl px-4 py-3 text-xs text-indigo-700 space-y-1">
+          <p className="font-semibold flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> AI sẽ tự động:</p>
+          <p>• Đọc nội dung file</p>
+          <p>• Chia thành chương và bài học phù hợp</p>
+          <p>• Điền nội dung vào từng bài học</p>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={handleImport}
+            disabled={!file || importing}
+            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-50"
+          >
+            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {importing ? 'Đang xử lý...' : 'Bắt đầu import'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl">
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Course Language Section ──────────────────────────────────────────────────
+
+interface LangVocabSet { id: string; title: string; language: string; courseId: string | null; _count: { items: number }; }
+interface LangExercise { id: string; title: string; type: string; language: string; courseId: string | null; _count: { questions: number }; }
+
+function CourseLangSection({ courseId }: { courseId: string }) {
+  const [vocabSets, setVocabSets] = useState<LangVocabSet[]>([]);
+  const [exercises, setExercises] = useState<LangExercise[]>([]);
+  const [allVocab, setAllVocab] = useState<LangVocabSet[]>([]);
+  const [allExercises, setAllExercises] = useState<LangExercise[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [linking, setLinking] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [content, mine] = await Promise.all([
+        api.get<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] }>(`/language/course/${courseId}/content`),
+        api.get<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] }>('/language/mine'),
+      ]);
+      setVocabSets(content.vocabSets);
+      setExercises(content.exercises);
+      setAllVocab(mine.vocabSets);
+      setAllExercises(mine.exercises);
+    } catch {}
+    setLoading(false);
+  }, [courseId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const linkVocab = async (id: string) => {
+    setLinking(id);
+    try {
+      await api.patch(`/language/vocab-sets/${id}`, { courseId });
+      await load();
+      setToast({ type: 'success', msg: 'Đã liên kết bộ từ vựng' });
+    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
+    setLinking(null);
+  };
+
+  const unlinkVocab = async (id: string) => {
+    setLinking(id);
+    try {
+      await api.patch(`/language/vocab-sets/${id}`, { courseId: null });
+      setVocabSets((prev) => prev.filter((v) => v.id !== id));
+      setToast({ type: 'success', msg: 'Đã gỡ liên kết' });
+    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
+    setLinking(null);
+  };
+
+  const linkExercise = async (id: string) => {
+    setLinking(id);
+    try {
+      await api.patch(`/language/exercises/${id}`, { courseId });
+      await load();
+      setToast({ type: 'success', msg: 'Đã liên kết bài tập' });
+    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
+    setLinking(null);
+  };
+
+  const unlinkExercise = async (id: string) => {
+    setLinking(id);
+    try {
+      await api.patch(`/language/exercises/${id}`, { courseId: null });
+      setExercises((prev) => prev.filter((e) => e.id !== id));
+      setToast({ type: 'success', msg: 'Đã gỡ liên kết' });
+    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
+    setLinking(null);
+  };
+
+  const TYPE_LABEL: Record<string, string> = { MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền từ', MATCHING: 'Nối từ', WORD_ORDER: 'Sắp xếp', DICTATION: 'Nghe viết' };
+
+  const linkedVocabIds = new Set(vocabSets.map((v) => v.id));
+  const linkedExerciseIds = new Set(exercises.map((e) => e.id));
+  const unlinkedVocab = allVocab.filter((v) => !linkedVocabIds.has(v.id) && !v.courseId);
+  const unlinkedExercises = allExercises.filter((e) => !linkedExerciseIds.has(e.id) && !e.courseId);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Languages className="h-5 w-5 text-violet-600" />
+          <h2 className="font-bold text-gray-900">Nội dung ngoại ngữ</h2>
+        </div>
+        <button
+          onClick={() => setShowPicker(!showPicker)}
+          className="flex items-center gap-1.5 text-sm font-semibold text-violet-600 hover:text-violet-700 bg-white border border-violet-200 hover:border-violet-400 px-3 py-1.5 rounded-xl transition-all"
+        >
+          <Plus className="h-4 w-4" />Thêm nội dung
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="bg-white rounded-2xl border border-gray-100 py-8 flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          {vocabSets.length === 0 && exercises.length === 0 && !showPicker && (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-12 text-center">
+              <BookMarked className="h-9 w-9 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Chưa có nội dung ngoại ngữ</p>
+              <button onClick={() => setShowPicker(true)} className="mt-2 text-sm text-violet-600 hover:underline font-medium">
+                + Liên kết bộ từ vựng hoặc bài tập
+              </button>
+            </div>
+          )}
+
+          {vocabSets.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-violet-50/50">
+                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Bộ từ vựng ({vocabSets.length})</p>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {vocabSets.map((v) => (
+                  <div key={v.id} className="flex items-center gap-3 px-5 py-3">
+                    <BookMarked className="h-4 w-4 text-violet-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{v.title}</p>
+                      <p className="text-xs text-muted-foreground">{v.language} · {v._count.items} từ</p>
+                    </div>
+                    <button
+                      onClick={() => unlinkVocab(v.id)}
+                      disabled={linking === v.id}
+                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60 shrink-0"
+                    >
+                      {linking === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                      Gỡ
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {exercises.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-violet-50/50">
+                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Bài tập ({exercises.length})</p>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {exercises.map((e) => (
+                  <div key={e.id} className="flex items-center gap-3 px-5 py-3">
+                    <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{e.title}</p>
+                      <p className="text-xs text-muted-foreground">{TYPE_LABEL[e.type] || e.type} · {e._count.questions} câu</p>
+                    </div>
+                    <button
+                      onClick={() => unlinkExercise(e.id)}
+                      disabled={linking === e.id}
+                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60 shrink-0"
+                    >
+                      {linking === e.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                      Gỡ
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showPicker && (
+            <div className="bg-white rounded-2xl border border-violet-200 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-sm text-gray-900">Chọn nội dung để liên kết</p>
+                <button onClick={() => setShowPicker(false)} className="h-7 w-7 rounded-lg hover:bg-gray-100 flex items-center justify-center">
+                  <X className="h-4 w-4 text-gray-500" />
+                </button>
+              </div>
+
+              {unlinkedVocab.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Bộ từ vựng chưa liên kết</p>
+                  <div className="space-y-1.5">
+                    {unlinkedVocab.map((v) => (
+                      <div key={v.id} className="flex items-center gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 transition-colors">
+                        <BookMarked className="h-4 w-4 text-violet-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{v.title}</p>
+                          <p className="text-xs text-muted-foreground">{v.language} · {v._count.items} từ</p>
+                        </div>
+                        <button
+                          onClick={() => linkVocab(v.id)}
+                          disabled={linking === v.id}
+                          className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-60 shrink-0"
+                        >
+                          {linking === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          Thêm
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {unlinkedExercises.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Bài tập chưa liên kết</p>
+                  <div className="space-y-1.5">
+                    {unlinkedExercises.map((e) => (
+                      <div key={e.id} className="flex items-center gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 transition-colors">
+                        <Sparkles className="h-4 w-4 text-violet-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{e.title}</p>
+                          <p className="text-xs text-muted-foreground">{TYPE_LABEL[e.type] || e.type} · {e._count.questions} câu</p>
+                        </div>
+                        <button
+                          onClick={() => linkExercise(e.id)}
+                          disabled={linking === e.id}
+                          className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-60 shrink-0"
+                        >
+                          {linking === e.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          Thêm
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {unlinkedVocab.length === 0 && unlinkedExercises.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Tất cả nội dung đã được liên kết hoặc chưa có nội dung nào</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {toast && (
+        <div className={cn(
+          'fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium animate-in slide-in-from-bottom-4',
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white',
+        )}>
+          {toast.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function InstructorCoursePage() {
@@ -516,6 +1145,9 @@ export default function InstructorCoursePage() {
   const [sectionTitle, setSectionTitle] = useState('');
   const [savingSection, setSavingSection] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingCourse, setDeletingCourse] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     api.get<Course>(`/courses/${id}/manage`)
@@ -581,6 +1213,18 @@ export default function InstructorCoursePage() {
     } : prev);
   }, []);
 
+  const handleDeleteCourse = async () => {
+    setDeletingCourse(true);
+    try {
+      await api.delete(`/courses/${id}`);
+      router.replace('/courses');
+    } catch (e: any) {
+      setToast({ type: 'error', msg: e.message || 'Xóa khóa học thất bại' });
+      setShowDeleteConfirm(false);
+    }
+    setDeletingCourse(false);
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-[#f8fafc]">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -618,14 +1262,26 @@ export default function InstructorCoursePage() {
               </div>
               <div className="w-px h-6 bg-white/20" />
               <div className="text-center">
-                <div className="text-white font-bold text-sm">{course._count.enrollments}</div>
+                <div className="text-white font-bold text-sm">{course._count?.enrollments ?? 0}</div>
                 <div className="text-white/50 text-[10px]">Học viên</div>
               </div>
             </div>
-            <Link href={`/learn/${course.slug}`}
+            <a href={`/learn/${course.slug}`}
               className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
               <Eye className="h-3.5 w-3.5" />Xem trước
-            </Link>
+            </a>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 bg-indigo-500/30 hover:bg-indigo-500/50 border border-indigo-400/40 text-indigo-100 hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />Import AI
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-400/30 text-red-200 hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />Xóa
+            </button>
           </div>
         </div>
       </div>
@@ -700,13 +1356,74 @@ export default function InstructorCoursePage() {
             <h3 className="font-semibold text-sm mb-4">Thông tin khoá học</h3>
             <CourseInfoPanel
               course={course}
-              onUpdate={(data) => setCourse((prev) => prev ? { ...prev, ...data } : prev)}
+              onUpdate={(data) => setCourse((prev) => prev ? { ...prev, ...data, _count: prev._count } : prev)}
             />
           </div>
+          <CourseLangSection courseId={id} />
         </aside>
       </div>
 
       {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
+
+      {/* Delete course confirm modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Xóa khóa học?</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  <strong>"{course.title}"</strong> sẽ bị xóa vĩnh viễn cùng toàn bộ nội dung.
+                </p>
+                {(course._count?.enrollments ?? 0) > 0 && (
+                  <p className="text-sm text-red-600 mt-2 font-semibold">
+                    ⚠ Đang có {course._count?.enrollments ?? 0} học viên đăng ký!
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 mt-2">Hành động này không thể hoàn tác.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteCourse}
+                disabled={deletingCourse}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-60"
+              >
+                {deletingCourse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Xóa vĩnh viễn
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <ImportFileModal
+          courseId={id}
+          onClose={() => setShowImport(false)}
+          onDone={(result) => {
+            setCourse((prev) => prev ? {
+              ...prev,
+              sections: [
+                ...prev.sections,
+                ...result.sections.map((s: any) => ({ ...s, order: s.order ?? 0, lessons: s.lessons || [] })),
+              ],
+            } : prev);
+            setShowImport(false);
+            setToast({ type: 'success', msg: `✨ Đã tạo ${result.sections.length} chương và ${result.totalLessons} bài học từ file!` });
+          }}
+        />
+      )}
     </div>
   );
 }
