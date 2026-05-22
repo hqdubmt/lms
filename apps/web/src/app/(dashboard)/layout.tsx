@@ -7,11 +7,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
     Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, LibraryBig, Calculator, BookType,
+    Image as ImageIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
 import { siteConfig } from '@/config/site';
 import { api } from '@/lib/api';
+import { useBranding } from '@/hooks/useBranding';
 import { AiChat } from '@/components/ai/AiChat';
 
 interface Notif {
@@ -50,6 +52,7 @@ const INSTRUCTOR_GROUP = {
         { href: '/instructor/language', label: 'Bộ từ vựng', icon: LibraryBig, exact: false },
         { href: '/instructor/math', label: 'Module toán', icon: Calculator, exact: false },
         { href: '/instructor/viet', label: 'Module Tiếng Việt', icon: BookType, exact: false },
+        { href: '/instructor/media', label: 'Thư viện', icon: ImageIcon, exact: false },
     ],
 };
 
@@ -178,13 +181,14 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 
 function DesktopSidebar({
     user, pathname, liveCount, showNotif, setShowNotif,
-    notifRef, onLogout, collapsed, onToggle, navGroups,
+    notifRef, onLogout, collapsed, onToggle, navGroups, logoBg, logoBgHeight,
 }: {
     user: any; pathname: string; liveCount: number;
     showNotif: boolean; setShowNotif: (v: boolean) => void;
     notifRef: React.RefObject<HTMLDivElement>;
     onLogout: () => void; collapsed: boolean; onToggle: () => void;
     navGroups: ReturnType<typeof getNavGroups>;
+    logoBg: string; logoBgHeight: number;
 }) {
     return (
         <aside
@@ -216,14 +220,20 @@ function DesktopSidebar({
             </button>
 
             {/* Logo row */}
-            <div className="h-14 flex items-center border-b border-white/10 shrink-0 overflow-hidden px-3">
+            <div
+                className={cn(
+                    'flex items-center border-b border-white/10 shrink-0 overflow-hidden px-3',
+                    !logoBgHeight && 'h-14',
+                )}
+                style={logoBg ? { background: logoBg, ...(logoBgHeight ? { height: logoBgHeight } : {}) } : undefined}
+            >
                 {collapsed ? (
-                    <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center mx-auto">
+                    <div className="h-7 w-7 rounded-lg bg-primary/80 flex items-center justify-center mx-auto">
                         <GraduationCap className="h-4 w-4 text-white" />
                     </div>
                 ) : siteConfig.logoUrl ? (
-                    <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain" />
-                ) : (
+                    <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain mx-auto" />
+                ) : logoBg ? null : (
                     <div className="flex items-center gap-2.5 overflow-hidden">
                         <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
                             <GraduationCap className="h-4 w-4 text-white" />
@@ -377,7 +387,7 @@ function DesktopSidebar({
 
 function MobileSidebar({
     user, pathname, liveCount, showNotif, setShowNotif,
-    notifRef, onNavClick, onLogout, open, onClose, navGroups,
+    notifRef, onNavClick, onLogout, open, onClose, navGroups, logoBg, logoBgHeight,
 }: {
     user: any; pathname: string; liveCount: number;
     showNotif: boolean; setShowNotif: (v: boolean) => void;
@@ -385,6 +395,7 @@ function MobileSidebar({
     onNavClick: () => void; onLogout: () => void;
     open: boolean; onClose: () => void;
     navGroups: ReturnType<typeof getNavGroups>;
+    logoBg: string; logoBgHeight: number;
 }) {
     return (
         <>
@@ -401,11 +412,23 @@ function MobileSidebar({
                 </button>
 
                 {/* Logo */}
-                <div className="h-14 flex items-center gap-2.5 px-4 border-b border-white/10 shrink-0">
-                    <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                        <GraduationCap className="h-4 w-4 text-white" />
-                    </div>
-                    <span className="font-bold text-white text-sm">{siteConfig.name}</span>
+                <div
+                    className={cn(
+                        'flex items-center gap-2.5 px-4 border-b border-white/10 shrink-0 overflow-hidden',
+                        !logoBgHeight && 'h-14',
+                    )}
+                    style={logoBg ? { background: logoBg, ...(logoBgHeight ? { height: logoBgHeight } : {}) } : undefined}
+                >
+                    {siteConfig.logoUrl ? (
+                        <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain mx-auto" />
+                    ) : logoBg ? null : (
+                        <>
+                            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                                <GraduationCap className="h-4 w-4 text-white" />
+                            </div>
+                            <span className="font-bold text-white text-sm">{siteConfig.name}</span>
+                        </>
+                    )}
                 </div>
 
                 {/* Nav */}
@@ -478,6 +501,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [collapsed, setCollapsed] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
+    const branding = useBranding();
 
     // Restore collapsed state from localStorage
     useEffect(() => {
@@ -546,6 +570,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 collapsed={collapsed}
                 onToggle={handleToggle}
                 navGroups={navGroups}
+                logoBg={branding.logoBg}
+                logoBgHeight={branding.logoBgHeight}
             />
 
             {/* Mobile drawer */}
@@ -561,6 +587,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
                 navGroups={navGroups}
+                logoBg={branding.logoBg}
+                logoBgHeight={branding.logoBgHeight}
             />
 
             {/* Content */}

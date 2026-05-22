@@ -516,6 +516,35 @@ export async function adminRoutes(app: FastifyInstance) {
     return { message: 'Đã reset tài khoản về mặc định', defaultPassword: generatedPassword };
   });
 
+  // Delete user (cascades all owned resources)
+  app.delete('/users/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub } = req.user as { sub: string };
+
+    if (id === sub) return reply.status(400).send({ error: 'Không thể xóa chính mình' });
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, name: true,
+        _count: { select: { coursesCreated: true, classesCreated: true } },
+      },
+    });
+    if (!user) return reply.status(404).send({ error: 'Không tìm thấy người dùng' });
+
+    // Delete owned resources that don't have onDelete:Cascade on the user FK
+    await prisma.liveSession.deleteMany({ where: { createdBy: id } });
+    await prisma.course.deleteMany({ where: { instructorId: id } });
+    await prisma.class.deleteMany({ where: { createdBy: id } });
+
+    await prisma.user.delete({ where: { id } });
+    return {
+      message: `Đã xóa người dùng "${user.name}"`,
+      deletedCourses: user._count.coursesCreated,
+      deletedClasses: user._count.classesCreated,
+    };
+  });
+
   // Toggle active
   app.patch('/users/:id/toggle-active', { preHandler: requireAdmin }, async (req) => {
     const { id } = req.params as { id: string };

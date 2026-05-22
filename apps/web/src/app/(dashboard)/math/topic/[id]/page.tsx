@@ -264,7 +264,7 @@ function QuizMode({ topic, onExit }: { topic: Topic; onExit: () => void }) {
 }
 
 // ─── Main View (embeddable) ───────────────────────────────────────────────────
-export function TopicView({ id, onBack }: { id: string; onBack: () => void }) {
+function TopicView({ id, onBack }: { id: string; onBack?: () => void }) {
   const { user } = useAuthStore();
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
   const [topic, setTopic] = useState<Topic | null>(null);

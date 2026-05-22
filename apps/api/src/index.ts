@@ -29,6 +29,8 @@ import { languageRoutes } from './modules/language/language.routes';
 import { mathRoutes } from './modules/math/math.routes';
 import { vietRoutes } from './modules/viet/viet.routes';
 import { aiRoutes } from './modules/ai/ai.routes';
+import { mediaRoutes } from './modules/media/media.routes';
+import { siteSettingsRoutes } from './modules/site-settings/site-settings.routes';
 
 const NUM_WORKERS = os.cpus().length;
 
@@ -99,6 +101,8 @@ if (cluster.isPrimary) {
     await app.register(mathRoutes, { prefix: '/math' });
     await app.register(vietRoutes, { prefix: '/viet' });
     await app.register(aiRoutes, { prefix: '/ai' });
+    await app.register(mediaRoutes, { prefix: '/media' });
+    await app.register(siteSettingsRoutes, { prefix: '/site-settings' });
     await app.register(adminRoutes, { prefix: '/admin' });
     await app.register(classRoutes, { prefix: '/admin' });
     await app.register(liveSessionsRoutes, { prefix: '/admin' });

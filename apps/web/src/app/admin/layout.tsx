@@ -7,10 +7,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, BookOpen, Users, GraduationCap,
   LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
+  Image as ImageIcon, Palette,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
 import { siteConfig } from '@/config/site';
+import { useBranding } from '@/hooks/useBranding';
 
 const navItems = [
   { href: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
@@ -20,6 +22,8 @@ const navItems = [
   { href: '/admin/language', label: 'Ngoại ngữ', icon: Globe },
   { href: '/admin/math', label: 'Toán học', icon: Calculator },
   { href: '/admin/viet', label: 'Tiếng Việt', icon: BookType },
+  { href: '/admin/media', label: 'Thư viện', icon: ImageIcon },
+  { href: '/admin/branding', label: 'Thương hiệu', icon: Palette },
 ];
 
 const COLLAPSED_KEY = 'admin_sidebar_collapsed';
@@ -43,14 +47,19 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 // ─── Desktop Sidebar ──────────────────────────────────────────────────────────
 
 function DesktopSidebar({
-  user, pathname, collapsed, onToggle, onLogout,
+  user, pathname, collapsed, onToggle, onLogout, logoBg, logoBgHeight,
 }: {
   user: any; pathname: string; collapsed: boolean; onToggle: () => void; onLogout: () => void;
+  logoBg: string; logoBgHeight: number;
 }) {
   const hasBg = !!siteConfig.adminSidebarBackground;
   const bgStyle = siteConfig.adminSidebarBackground
     ? { background: siteConfig.adminSidebarBackground }
     : undefined;
+  const hasLogoBg = !!logoBg;
+  const logoBgStyle: React.CSSProperties = logoBg
+    ? { background: logoBg, ...(logoBgHeight ? { height: logoBgHeight } : {}) }
+    : {};
 
   return (
     <aside
@@ -82,14 +91,21 @@ function DesktopSidebar({
       </button>
 
       {/* Logo */}
-      <div className={cn('h-16 flex items-center border-b shrink-0 overflow-hidden px-3', hasBg ? 'border-white/10' : 'border-border')}>
+      <div
+        className={cn(
+          'flex items-center border-b shrink-0 overflow-hidden px-3',
+          !siteConfig.logoBgHeight && 'h-16',
+          hasBg || hasLogoBg ? 'border-white/10' : 'border-border',
+        )}
+        style={logoBgStyle}
+      >
         {collapsed ? (
-          <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center mx-auto', hasBg ? 'bg-white/10' : 'bg-primary/10')}>
-            <GraduationCap className={cn('h-4 w-4', hasBg ? 'text-white' : 'text-primary')} />
+          <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center mx-auto', hasBg || hasLogoBg ? 'bg-white/10' : 'bg-primary/10')}>
+            <GraduationCap className={cn('h-4 w-4', hasBg || hasLogoBg ? 'text-white' : 'text-primary')} />
           </div>
         ) : siteConfig.logoUrl ? (
-          <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain" />
-        ) : (
+          <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain mx-auto" />
+        ) : hasLogoBg ? null : (
           <div className="flex items-center gap-2 overflow-hidden w-full">
             <GraduationCap className={cn('h-6 w-6 shrink-0', hasBg ? 'text-white' : 'text-primary')} />
             <span className={cn('font-bold text-base truncate', hasBg ? 'text-white' : '')}>{siteConfig.name}</span>
@@ -174,6 +190,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const branding = useBranding();
 
   useEffect(() => {
     const saved = localStorage.getItem(COLLAPSED_KEY);
@@ -209,6 +226,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const drawerStyle = siteConfig.adminSidebarBackground
     ? { background: siteConfig.adminSidebarBackground }
     : { background: '#fff', borderRight: '1px solid #e2e8f0' };
+  const hasLogoBg = !!branding.logoBg;
+  const logoBgStyle: React.CSSProperties = branding.logoBg
+    ? { background: branding.logoBg, ...(branding.logoBgHeight ? { height: branding.logoBgHeight } : {}) }
+    : {};
 
   return (
     <div className="min-h-screen flex bg-muted/20 overflow-x-clip">
@@ -220,6 +241,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         collapsed={collapsed}
         onToggle={handleToggle}
         onLogout={handleLogout}
+        logoBg={branding.logoBg}
+        logoBgHeight={branding.logoBgHeight}
       />
 
       {/* Mobile overlay */}
@@ -240,10 +263,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </button>
 
         {/* Logo */}
-        <div className={cn('h-16 flex items-center gap-2 px-6 border-b shrink-0', hasBg ? 'border-white/10' : 'border-border')}>
-          <GraduationCap className={cn('h-6 w-6', hasBg ? 'text-white' : 'text-primary')} />
-          <span className={cn('font-bold text-lg', hasBg ? 'text-white' : '')}>{siteConfig.name}</span>
-          <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-auto">Admin</span>
+        <div
+          className={cn(
+            'flex items-center gap-2 px-6 border-b shrink-0 overflow-hidden',
+            !branding.logoBgHeight && 'h-16',
+            hasBg || hasLogoBg ? 'border-white/10' : 'border-border',
+          )}
+          style={logoBgStyle}
+        >
+          {siteConfig.logoUrl ? (
+            <Image src={siteConfig.logoUrl} alt={siteConfig.name} width={siteConfig.logoWidth} height={siteConfig.logoHeight} className="object-contain mx-auto" />
+          ) : hasLogoBg ? null : (
+            <>
+              <GraduationCap className={cn('h-6 w-6 shrink-0', hasBg ? 'text-white' : 'text-primary')} />
+              <span className={cn('font-bold text-lg truncate', hasBg ? 'text-white' : '')}>{siteConfig.name}</span>
+              <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded ml-auto shrink-0">Admin</span>
+            </>
+          )}
         </div>
 
         {/* Nav */}

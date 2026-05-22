@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, UserCheck, UserX, UserPlus, X, Loader2, Upload, Download, CheckCircle2, AlertCircle, KeyRound, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { Search, UserCheck, UserX, UserPlus, X, Loader2, Upload, Download, CheckCircle2, AlertCircle, KeyRound, Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +51,11 @@ export default function AdminUsersPage() {
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; results: { email: string; status: string; reason?: string }[] } | null>(null);
   const limit = 20;
+
+  // Delete user modal
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; role: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // Reset account modal
   const [resetAccountTarget, setResetAccountTarget] = useState<{ id: string; name: string } | null>(null);
@@ -201,6 +206,20 @@ export default function AdminUsersPage() {
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, isActive: res.isActive } : u));
     } catch { }
     setBusy((b) => ({ ...b, [userId]: false }));
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true); setDeleteError('');
+    try {
+      await api.delete(`/admin/users/${deleteTarget.id}`);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      setTotal((t) => t - 1);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Xóa người dùng thất bại');
+    }
+    setDeleting(false);
   };
 
   return (
@@ -458,6 +477,14 @@ export default function AdminUsersPage() {
                       >
                         {user.isActive ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                       </Button>
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => { setDeleteTarget({ id: user.id, name: user.name, role: user.role }); setDeleteError(''); }}
+                        title="Xóa người dùng"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -530,6 +557,42 @@ export default function AdminUsersPage() {
                 <Button className="w-full" variant="outline" onClick={() => { setResetAccountTarget(null); setResetAccountResult(null); }}>Đóng</Button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete user modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setDeleteTarget(null); setDeleteError(''); } }}>
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Xóa người dùng?</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Tài khoản <strong>"{deleteTarget.name}"</strong> sẽ bị xóa vĩnh viễn.
+                </p>
+                {deleteTarget.role === 'INSTRUCTOR' && (
+                  <p className="text-sm text-amber-600 mt-2 font-medium">
+                    ⚠ Giảng viên này: tất cả khóa học và lớp học do họ tạo cũng sẽ bị xóa!
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">Hành động này không thể hoàn tác.</p>
+              </div>
+            </div>
+            {deleteError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex gap-3">
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteUser} disabled={deleting}>
+                {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Xóa vĩnh viễn
+              </Button>
+              <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteError(''); }}>Hủy</Button>
+            </div>
           </div>
         </div>
       )}

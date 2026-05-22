@@ -1666,7 +1666,7 @@ function VoiceChatMode({ set, onExit, initialImport }: {
 }
 
 // ─── Main View (embeddable) ───────────────────────────────────────────────────
-export function VocabSetView({ id, onBack }: { id: string; onBack: () => void }) {
+function VocabSetView({ id, onBack }: { id: string; onBack?: () => void }) {
   const { user } = useAuthStore();
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
   const [set, setSet] = useState<VocabSet | null>(null);
@@ -1692,7 +1692,7 @@ export function VocabSetView({ id, onBack }: { id: string; onBack: () => void })
     try {
       const data = await api.get<VocabSet>(`/language/vocab-sets/${id}`);
       setSet(data);
-    } catch { onBack(); }
+    } catch { onBack?.(); }
     setLoading(false);
   }, [id]);
 

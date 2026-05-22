@@ -272,7 +272,7 @@ function SpellingMode({ set, onExit }: { set: VietSet; onExit: () => void }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export function VietSetView({ id, onBack }: { id: string; onBack: () => void }) {
+function VietSetView({ id, onBack }: { id: string; onBack?: () => void }) {
   const { user } = useAuthStore();
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
   const [set, setSet] = useState<VietSet | null>(null);

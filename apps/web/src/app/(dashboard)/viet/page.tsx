@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight, Plus, Brain,
   PlayCircle, Settings, TrendingUp, Target, BookMarked,
@@ -11,7 +12,6 @@ import { CATEGORY_LABEL, CATEGORY_COLOR, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as 
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
-import { VietSetView } from './set/[id]/page';
 
 interface VietStats {
   xp: number; level: number; streak: number; longestStreak: number;
@@ -44,12 +44,12 @@ function xpProgress(xp: number, level: number) {
 
 export default function VietPage() {
   const { user } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState<VietStats | null>(null);
   const [sets, setSets] = useState<VietSet[]>([]);
   const [exercises, setExercises] = useState<VietExercise[]>([]);
   const [loading, setLoading] = useState(true);
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
 
   // ── Smart Import state ──
   const [showSmart, setShowSmart] = useState(false);
@@ -99,7 +99,6 @@ export default function VietPage() {
     <div className="space-y-4 animate-pulse">{[1, 2, 3].map(i => <div key={i} className="h-32 rounded-xl bg-muted" />)}</div>
   );
 
-  if (selectedSetId) return <VietSetView id={selectedSetId} onBack={() => setSelectedSetId(null)} />;
 
   const progress = stats ? xpProgress(stats.xp, stats.level) : 0;
 
@@ -343,7 +342,7 @@ export default function VietPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {sets.slice(0, 6).map((set) => (
-              <button key={set.id} type="button" onClick={() => setSelectedSetId(set.id)}
+              <button key={set.id} type="button" onClick={() => router.push(`/viet/set/${set.id}`)}
                 className="bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all hover:-translate-y-0.5 group text-left">
                 <div className="flex items-start justify-between mb-3">
                   <div className={cn('text-xs font-semibold px-2 py-1 rounded-lg', CATEGORY_COLOR[set.category] || 'bg-gray-100 text-gray-600')}>

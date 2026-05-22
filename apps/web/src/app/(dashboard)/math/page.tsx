@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Calculator, Zap, Flame, Trophy, Star, ChevronRight,
   Plus, BookOpen, Brain,
@@ -12,7 +13,6 @@ import { SUBJECT_LABEL, SUBJECT_COLOR, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EX
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
-import { TopicView } from './topic/[id]/page';
 
 interface MathStats {
   xp: number; level: number; streak: number; longestStreak: number;
@@ -46,11 +46,11 @@ function xpProgress(xp: number, level: number) {
 
 export default function MathPage() {
   const { user } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState<MathStats | null>(null);
   const [topics, setTopics] = useState<MathTopic[]>([]);
   const [exercises, setExercises] = useState<MathExercise[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
 
   // ── Smart Import state ──
@@ -105,7 +105,6 @@ export default function MathPage() {
     </div>
   );
 
-  if (selectedTopicId) return <TopicView id={selectedTopicId} onBack={() => setSelectedTopicId(null)} />;
 
   const progress = stats ? xpProgress(stats.xp, stats.level) : 0;
 
@@ -367,7 +366,7 @@ export default function MathPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {topics.slice(0, 6).map((topic) => (
-              <button key={topic.id} onClick={() => setSelectedTopicId(topic.id)} type="button"
+              <button key={topic.id} onClick={() => router.push(`/math/topic/${topic.id}`)} type="button"
                 className="bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all hover:-translate-y-0.5 group text-left">
                 <div className="flex items-start justify-between mb-3">
                   <div className={cn('text-xs font-semibold px-2 py-1 rounded-lg', SUBJECT_COLOR[topic.subject] || 'bg-gray-100 text-gray-600')}>

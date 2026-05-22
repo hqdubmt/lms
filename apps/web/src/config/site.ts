@@ -21,6 +21,18 @@ export const siteConfig = {
   // Ví dụ: '239 84% 67%' = tím-xanh, '142 71% 45%' = xanh lá, '24 95% 53%' = cam
   primaryHsl: '239 84% 67%',
 
+  // ─── BACKGROUND PHẦN LOGO (đầu sidebar) ─────────────────
+  // CSS background cho khu vực chứa logo/tên ở đầu sidebar (cả admin & dashboard)
+  // Ví dụ:
+  //   "url('/logo-banner.png') center/cover no-repeat"       → ảnh banner thay logo
+  //   "linear-gradient(135deg, #7c3aed 0%, #2563eb 100%)"   → gradient màu
+  //   "#1e1b4b"                                              → màu đơn tối
+  //   ""                                                     → theo màu sidebar mặc định
+  logoBg: '',
+
+  // Chiều cao khu vực logo (px) — đặt 0 để dùng mặc định (64px admin / 56px dashboard)
+  logoBgHeight: 0,
+
   // ─── BACKGROUND ADMIN SIDEBAR ────────────────────────────
   // CSS background property, VD:
   //   'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)'   → gradient tím đậm

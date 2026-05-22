@@ -54,6 +54,7 @@ model User {
   vietExercisesCreated VietExercise[]      @relation("VietExerciseCreator")
   vietAttempts        VietAttempt[]        @relation("VietAttemptUser")
   vietStats           VietUserStats?       @relation("VietUserStatsUser")
+  mediaUploads        Media[]              @relation("MediaUploader")
 
   @@index([email])
   @@index([role])
@@ -907,4 +908,36 @@ model VietUserStats {
   user          User      @relation("VietUserStatsUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([xp])
+}
+
+// ─── SITE SETTINGS ────────────────────────────────────────────────────────────
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── MEDIA LIBRARY ────────────────────────────────────────────────────────────
+
+enum MediaType {
+  VIDEO
+  IMAGE
+  DOCUMENT
+}
+
+model Media {
+  id         String    @id @default(uuid())
+  name       String
+  fileKey    String
+  fileSize   Int
+  mimeType   String
+  type       MediaType @default(DOCUMENT)
+  isPublic   Boolean   @default(false)
+  uploadedBy String
+  createdAt  DateTime  @default(now())
+  uploader   User      @relation("MediaUploader", fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([uploadedBy])
+  @@index([type])
 }

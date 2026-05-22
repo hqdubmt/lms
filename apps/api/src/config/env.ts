@@ -15,6 +15,7 @@ const schema = z.object({
   MINIO_BUCKET_VIDEOS: z.string().default('lms-videos'),
   MINIO_BUCKET_ATTACHMENTS: z.string().default('lms-attachments'),
   MINIO_BUCKET_AVATARS: z.string().default('lms-avatars'),
+  MINIO_BUCKET_MEDIA: z.string().default('lms-media'),
 
   JWT_ACCESS_SECRET: z.string(),
   JWT_REFRESH_SECRET: z.string(),

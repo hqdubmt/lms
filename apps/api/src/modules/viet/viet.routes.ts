@@ -182,9 +182,9 @@ export async function vietRoutes(app: FastifyInstance) {
 
   app.delete('/sets/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const set = await prisma.vietSet.findUniqueOrThrow({ where: { id } });
-    if (set.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (set.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vietSet.delete({ where: { id } });
     return { message: 'Đã xóa bộ bài' };
   });
@@ -464,9 +464,9 @@ export async function vietRoutes(app: FastifyInstance) {
 
   app.delete('/exercises/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const ex = await prisma.vietExercise.findUniqueOrThrow({ where: { id } });
-    if (ex.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vietExercise.delete({ where: { id } });
     return { message: 'Đã xóa bài tập' };
   });

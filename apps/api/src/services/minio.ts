@@ -14,6 +14,7 @@ export async function initMinioBuckets() {
     env.MINIO_BUCKET_VIDEOS,
     env.MINIO_BUCKET_ATTACHMENTS,
     env.MINIO_BUCKET_AVATARS,
+    env.MINIO_BUCKET_MEDIA,
   ];
 
   for (const bucket of buckets) {

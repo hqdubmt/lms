@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Save, UserPlus, UserX,
   Pencil, Video, X, Upload, Check, Eye, EyeOff,
   Download, CheckCircle2, AlertCircle,
-  CalendarDays, Calendar, Clock, ExternalLink,
+  CalendarDays, Calendar, Clock, ExternalLink, Play,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -674,9 +674,15 @@ export default function CourseDetailPage() {
                                     onChange={(e) => setEditLesson({ ...editLesson, videoUrl: e.target.value })}
                                   />
                                   {editLesson.videoUrl && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Link hiện tại: <span className="text-primary truncate">{editLesson.videoUrl}</span>
-                                    </p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xs text-muted-foreground flex-1 truncate">
+                                        Link: <span className="text-primary">{editLesson.videoUrl}</span>
+                                      </p>
+                                      <a href={`/learn/${course.slug}?lesson=${editLesson.id}`} target="_blank" rel="noopener noreferrer"
+                                        className="shrink-0 flex items-center gap-1 text-xs text-blue-600 hover:underline font-medium">
+                                        <Play className="h-3 w-3" />Xem thử
+                                      </a>
+                                    </div>
                                   )}
                                   <Button size="sm" variant="outline" className="h-7 text-xs"
                                     disabled={savingLesson}
@@ -725,6 +731,13 @@ export default function CourseDetailPage() {
                             </div>
                           ) : (
                             <div className="flex gap-1 shrink-0">
+                              {(lesson.videoKey || lesson.videoUrl) && (
+                                <a href={`/learn/${course.slug}?lesson=${lesson.id}`} target="_blank" rel="noopener noreferrer">
+                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-600" title="Xem video bài học">
+                                    <Play className="h-3.5 w-3.5" />
+                                  </Button>
+                                </a>
+                              )}
                               <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                                 onClick={() => { setVideoInputMode(lesson.videoUrl ? 'url' : 'upload'); setEditLesson({ id: lesson.id, title: lesson.title, type: lesson.type, isFree: lesson.isFree, isPublished: lesson.isPublished, videoKey: lesson.videoKey, videoUrl: lesson.videoUrl }); }}>
                                 <Pencil className="h-3.5 w-3.5" />

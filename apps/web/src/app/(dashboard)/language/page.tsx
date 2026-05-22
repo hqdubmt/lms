@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { VocabSetView } from './vocab/[id]/page';
+import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight,
   Plus, Brain, Globe, PlayCircle, Settings,
@@ -42,12 +42,12 @@ function xpProgress(xp: number, level: number) {
 
 export default function LanguagePage() {
   const { user } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState<LangStats | null>(null);
   const [sets, setSets] = useState<VocabSet[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const isInstructor = user?.role === 'INSTRUCTOR' || user?.role === 'ADMIN';
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -65,7 +65,6 @@ export default function LanguagePage() {
     </div>
   );
 
-  if (selectedSetId) return <VocabSetView id={selectedSetId} onBack={() => setSelectedSetId(null)} />;
 
   const progress = stats ? xpProgress(stats.xp, stats.level) : 0;
 
@@ -158,7 +157,7 @@ export default function LanguagePage() {
               const prog = set.progresses[0];
               const pct = set._count.items > 0 ? Math.round(((prog?.wordsLearned || 0) / set._count.items) * 100) : 0;
               return (
-                <button key={set.id} type="button" onClick={() => setSelectedSetId(set.id)} className="text-left w-full">
+                <button key={set.id} type="button" onClick={() => router.push(`/language/vocab/${set.id}`)} className="text-left w-full">
                   <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                     <CardContent className="p-4 h-full flex flex-col">
                       <div className="flex items-start justify-between gap-2 mb-3">

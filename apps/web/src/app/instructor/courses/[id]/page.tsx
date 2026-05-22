@@ -325,9 +325,9 @@ function QuizManager({ lessonId }: { lessonId: string }) {
 // ─── Lesson Row ───────────────────────────────────────────────────────────────
 
 function LessonRow({
-  lesson, courseId, sectionId, onUpdate, onDelete,
+  lesson, courseId, courseSlug, sectionId, onUpdate, onDelete,
 }: {
-  lesson: Lesson; courseId: string; sectionId: string;
+  lesson: Lesson; courseId: string; courseSlug: string; sectionId: string;
   onUpdate: (id: string, data: Partial<Lesson>) => void;
   onDelete: (id: string) => void;
 }) {
@@ -438,6 +438,17 @@ function LessonRow({
               <Upload className="h-3 w-3" />Upload
             </button>
           )}
+          {(lesson.videoKey || lesson.type === 'VIDEO') && (
+            <a
+              href={`/learn/${courseSlug}?lesson=${lesson.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-6 px-2 rounded-lg flex items-center gap-1 hover:bg-green-50 text-green-600 text-[10px] font-semibold"
+              title="Xem video bài học"
+            >
+              <Play className="h-3 w-3" />Xem
+            </a>
+          )}
           <button
             onClick={() => setQuizOpen(!quizOpen)}
             className={cn('h-6 px-2 rounded-lg flex items-center gap-1 text-[10px] font-semibold transition-colors',
@@ -526,9 +537,9 @@ function LessonRow({
 // ─── Section Block ────────────────────────────────────────────────────────────
 
 function SectionBlock({
-  section, courseId, onUpdate, onDelete, onLessonAdd, onLessonUpdate, onLessonDelete,
+  section, courseId, courseSlug, onUpdate, onDelete, onLessonAdd, onLessonUpdate, onLessonDelete,
 }: {
-  section: Section; courseId: string;
+  section: Section; courseId: string; courseSlug: string;
   onUpdate: (id: string, data: Partial<Section>) => void;
   onDelete: (id: string) => void;
   onLessonAdd: (sectionId: string, lesson: Lesson) => void;
@@ -609,6 +620,7 @@ function SectionBlock({
               key={lesson.id}
               lesson={lesson}
               courseId={courseId}
+              courseSlug={courseSlug}
               sectionId={section.id}
               onUpdate={(lid, data) => onLessonUpdate(section.id, lid, data)}
               onDelete={(lid) => onLessonDelete(section.id, lid)}
@@ -1340,6 +1352,7 @@ export default function InstructorCoursePage() {
                 key={section.id}
                 section={section}
                 courseId={id}
+                courseSlug={course.slug}
                 onUpdate={updateSection}
                 onDelete={deleteSection}
                 onLessonAdd={addLesson}

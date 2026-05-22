@@ -252,9 +252,9 @@ export async function languageRoutes(app: FastifyInstance) {
 
   app.delete('/vocab-sets/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const set = await prisma.vocabSet.findUniqueOrThrow({ where: { id } });
-    if (set.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (set.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vocabSet.delete({ where: { id } });
     return { message: 'Đã xóa bộ từ vựng' };
   });
@@ -732,9 +732,9 @@ export async function languageRoutes(app: FastifyInstance) {
 
   app.delete('/exercises/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const ex = await prisma.langExercise.findUniqueOrThrow({ where: { id } });
-    if (ex.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.langExercise.delete({ where: { id } });
     return { message: 'Đã xóa bài tập' };
   });

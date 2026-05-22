@@ -190,9 +190,9 @@ export async function mathRoutes(app: FastifyInstance) {
 
   app.delete('/topics/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const topic = await prisma.mathTopic.findUniqueOrThrow({ where: { id } });
-    if (topic.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (topic.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.mathTopic.delete({ where: { id } });
     return { message: 'Đã xóa chủ đề' };
   });
@@ -492,9 +492,9 @@ export async function mathRoutes(app: FastifyInstance) {
 
   app.delete('/exercises/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const ex = await prisma.mathExercise.findUniqueOrThrow({ where: { id } });
-    if (ex.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.mathExercise.delete({ where: { id } });
     return { message: 'Đã xóa bài tập' };
   });
