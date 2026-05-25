@@ -85,6 +85,15 @@ export default function InstructorVietPage() {
     setBusy((b) => ({ ...b, [`gen-${setId}`]: false }));
   };
 
+  const generateQuiz = async (setId: string, setTitle: string) => {
+    setBusy((b) => ({ ...b, [`quiz-${setId}`]: true }));
+    try {
+      await api.post('/quiz/generate', { source: 'viet', sourceId: setId, title: `Quiz: ${setTitle}`, timeLimit: 30 });
+      setToast({ msg: `Đã tạo Quiz Game từ "${setTitle}"! Vào mục Quiz Game để xem.`, type: 'success' });
+    } catch (e: any) { setToast({ msg: e.message || 'Tạo quiz thất bại', type: 'error' }); }
+    setBusy((b) => ({ ...b, [`quiz-${setId}`]: false }));
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -93,11 +102,9 @@ export default function InstructorVietPage() {
         <div className="absolute right-0 top-0 w-48 h-48 bg-red-200/10 rounded-full -translate-y-1/4 translate-x-1/4" />
         <div className="relative z-10 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl">🇻🇳</span>
-              <span className="text-red-200 text-sm font-semibold">Quản lý module tiếng Việt</span>
-            </div>
-            <h1 className="text-2xl font-bold">Tiếng Việt</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <span className="text-xl">🇻🇳</span>Tiếng Việt
+            </h1>
             <p className="text-white/60 text-sm mt-0.5">{sets.length} bộ bài · {exercises.length} bài tập</p>
           </div>
           <div className="flex gap-2">
@@ -176,8 +183,10 @@ export default function InstructorVietPage() {
                 set={set}
                 busy={busy[set.id]}
                 genBusy={busy[`gen-${set.id}`]}
+                quizBusy={busy[`quiz-${set.id}`]}
                 onDelete={() => deleteSet(set.id)}
                 onGenerateAll={() => generateAll(set.id, set.title)}
+                onGenerateQuiz={() => generateQuiz(set.id, set.title)}
               />
             ))}
           </div>

@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
-  BookOpen, Zap, Flame, Trophy, Star, ChevronRight, Plus, Brain,
-  PlayCircle, Settings, TrendingUp, Target, BookMarked,
+  BookOpen, Zap, Flame, Trophy, Star, ChevronRight, Brain,
+  Settings, TrendingUp, Target, BookMarked,
   Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown, ChevronUp,
+  FolderOpen,
 } from 'lucide-react';
-import { CATEGORY_LABEL, CATEGORY_COLOR, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL } from '@/constants/viet';
+import { CATEGORY_LABEL, CATEGORY_COLOR, CATEGORY_OPTIONS, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL } from '@/constants/viet';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -44,7 +44,6 @@ function xpProgress(xp: number, level: number) {
 
 export default function VietPage() {
   const { user } = useAuthStore();
-  const router = useRouter();
   const [stats, setStats] = useState<VietStats | null>(null);
   const [sets, setSets] = useState<VietSet[]>([]);
   const [exercises, setExercises] = useState<VietExercise[]>([]);
@@ -316,7 +315,7 @@ export default function VietPage() {
         </div>
       )}
 
-      {/* ── Sets ── */}
+      {/* ── Sets grouped by category (folder-first) ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-gray-900">Bộ bài học</h2>
@@ -339,26 +338,35 @@ export default function VietPage() {
               <Link href="/instructor/viet" className="mt-2 inline-block text-sm text-red-600 hover:underline font-medium">+ Tạo bộ bài học đầu tiên</Link>
             )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sets.slice(0, 6).map((set) => (
-              <button key={set.id} type="button" onClick={() => router.push(`/viet/set/${set.id}`)}
-                className="bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all hover:-translate-y-0.5 group text-left">
-                <div className="flex items-start justify-between mb-3">
-                  <div className={cn('text-xs font-semibold px-2 py-1 rounded-lg', CATEGORY_COLOR[set.category] || 'bg-gray-100 text-gray-600')}>
-                    {CATEGORY_LABEL[set.category] || set.category}
+        ) : (() => {
+          // Group sets by category
+          const categoryMap: Record<string, number> = {};
+          sets.forEach(s => { categoryMap[s.category] = (categoryMap[s.category] || 0) + 1; });
+          // Show categories that have sets
+          const orderedCategories = CATEGORY_OPTIONS.filter(c => categoryMap[c.value] > 0);
+          return (
+            <div className="space-y-2">
+              {orderedCategories.map((cat) => (
+                <Link key={cat.value} href={`/viet/sets?category=${cat.value}`}
+                  className="flex items-center gap-4 bg-white rounded-2xl border border-gray-100 px-4 py-3.5 hover:shadow-md transition-all hover:-translate-y-0.5 group">
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-red-50">
+                    <FolderOpen className="h-5 w-5 text-red-600" />
                   </div>
-                  <span className="text-xs text-muted-foreground">Lớp {set.grade}</span>
-                </div>
-                <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-red-600 transition-colors">{set.title}</h3>
-                <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
-                  <span>{set._count.items} mục</span>
-                  <span className="flex items-center gap-1"><PlayCircle className="h-3 w-3" />Học ngay</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 group-hover:text-red-600 transition-colors">{cat.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{categoryMap[cat.value]} bộ bài học</p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className={cn('text-xs font-semibold px-2 py-1 rounded-lg', CATEGORY_COLOR[cat.value] || 'bg-gray-100 text-gray-600')}>
+                      {categoryMap[cat.value]} bộ
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-red-600 transition-colors" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Exercises ── */}
@@ -391,18 +399,6 @@ export default function VietPage() {
         </div>
       )}
 
-      {/* ── Categories ── */}
-      <div>
-        <h2 className="font-bold text-gray-900 mb-3">Khám phá theo chủ đề</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {Object.entries(CATEGORY_LABEL).map(([key, label]) => (
-            <Link key={key} href={`/viet/sets?category=${key}`}
-              className={cn('rounded-xl px-3 py-2.5 text-center text-sm font-semibold hover:opacity-90 transition-opacity', CATEGORY_COLOR[key] || 'bg-gray-100 text-gray-600')}>
-              {label}
-            </Link>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

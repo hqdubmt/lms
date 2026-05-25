@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Loader2, Sparkles, Edit3, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Edit3, Trash2, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MathTopic } from '@/types/math';
 import { SUBJECT_COLOR, SUBJECT_LABEL } from '@/constants/math';
@@ -10,11 +10,13 @@ interface Props {
   topic: MathTopic;
   busy: boolean;
   genBusy: boolean;
+  quizBusy: boolean;
   onDelete: () => void;
   onGenerateAll: () => void;
+  onGenerateQuiz: () => void;
 }
 
-export function TopicCard({ topic, busy, genBusy, onDelete, onGenerateAll }: Props) {
+export function TopicCard({ topic, busy, genBusy, quizBusy, onDelete, onGenerateAll, onGenerateQuiz }: Props) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4">
       <div className="flex-1 min-w-0">
@@ -34,6 +36,12 @@ export function TopicCard({ topic, busy, genBusy, onDelete, onGenerateAll }: Pro
           className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {genBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           Tạo tất cả
+        </button>
+        <button onClick={onGenerateQuiz} disabled={quizBusy || (topic._count?.concepts ?? 0) < 4}
+          title={(topic._count?.concepts ?? 0) < 4 ? 'Cần ít nhất 4 khái niệm' : 'Tạo Quiz Game'}
+          className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          {quizBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Gamepad2 className="h-3.5 w-3.5" />}
+          Tạo Quiz
         </button>
         <Link href={`/instructor/math/topic/${topic.id}`}
           className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors">

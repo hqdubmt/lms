@@ -87,6 +87,15 @@ export default function InstructorMathPage() {
     setBusy((b) => ({ ...b, [`gen-${topicId}`]: false }));
   };
 
+  const generateQuiz = async (topicId: string, topicTitle: string) => {
+    setBusy((b) => ({ ...b, [`quiz-${topicId}`]: true }));
+    try {
+      await api.post('/quiz/generate', { source: 'math', sourceId: topicId, title: `Quiz Toán: ${topicTitle}`, timeLimit: 30 });
+      setToast({ msg: `Đã tạo Quiz Game từ "${topicTitle}"! Vào mục Quiz Game để xem.`, type: 'success' });
+    } catch (e: any) { setToast({ msg: e.message || 'Tạo quiz thất bại', type: 'error' }); }
+    setBusy((b) => ({ ...b, [`quiz-${topicId}`]: false }));
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* ── Header ── */}
@@ -95,11 +104,9 @@ export default function InstructorMathPage() {
         <div className="absolute right-0 top-0 w-48 h-48 bg-blue-400/10 rounded-full -translate-y-1/4 translate-x-1/4" />
         <div className="relative z-10 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Calculator className="h-5 w-5 text-blue-300" />
-              <span className="text-blue-300 text-sm font-semibold">Quản lý module toán</span>
-            </div>
-            <h1 className="text-2xl font-bold">Toán học</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-blue-300" />Toán học
+            </h1>
             <p className="text-white/60 text-sm mt-0.5">{topics.length} chủ đề · {exercises.length} bài tập</p>
           </div>
           <div className="flex gap-2">
@@ -178,8 +185,10 @@ export default function InstructorMathPage() {
                 topic={topic}
                 busy={busy[topic.id]}
                 genBusy={busy[`gen-${topic.id}`]}
+                quizBusy={busy[`quiz-${topic.id}`]}
                 onDelete={() => deleteTopic(topic.id)}
                 onGenerateAll={() => generateAll(topic.id, topic.title)}
+                onGenerateQuiz={() => generateQuiz(topic.id, topic.title)}
               />
             ))}
           </div>

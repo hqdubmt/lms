@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   Calculator, Zap, Flame, Trophy, Star, ChevronRight,
-  Plus, BookOpen, Brain,
-  PlayCircle, Settings, Target, BarChart2, TrendingUp,
-  Upload, CheckCircle2, AlertCircle, Loader2, X, ChevronDown, ChevronUp,
+  BookOpen, Brain,
+  Settings, Target, TrendingUp,
+  Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { SUBJECT_LABEL, SUBJECT_COLOR, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL } from '@/constants/math';
+import { SUBJECT_LABEL, SUBJECT_COLOR, SUBJECT_OPTIONS, EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL } from '@/constants/math';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -46,7 +45,6 @@ function xpProgress(xp: number, level: number) {
 
 export default function MathPage() {
   const { user } = useAuthStore();
-  const router = useRouter();
   const [stats, setStats] = useState<MathStats | null>(null);
   const [topics, setTopics] = useState<MathTopic[]>([]);
   const [exercises, setExercises] = useState<MathExercise[]>([]);
@@ -336,7 +334,7 @@ export default function MathPage() {
         </div>
       )}
 
-      {/* ── Topics ── */}
+      {/* ── Topics grouped by subject (folder-first) ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-gray-900">Chủ đề toán học</h2>
@@ -363,29 +361,35 @@ export default function MathPage() {
               </Link>
             )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {topics.slice(0, 6).map((topic) => (
-              <button key={topic.id} onClick={() => router.push(`/math/topic/${topic.id}`)} type="button"
-                className="bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all hover:-translate-y-0.5 group text-left">
-                <div className="flex items-start justify-between mb-3">
-                  <div className={cn('text-xs font-semibold px-2 py-1 rounded-lg', SUBJECT_COLOR[topic.subject] || 'bg-gray-100 text-gray-600')}>
-                    {SUBJECT_LABEL[topic.subject] || topic.subject}
+        ) : (() => {
+          // Group topics by subject
+          const subjectMap: Record<string, number> = {};
+          topics.forEach(t => { subjectMap[t.subject] = (subjectMap[t.subject] || 0) + 1; });
+          // Show subjects that have topics first, then the rest
+          const orderedSubjects = SUBJECT_OPTIONS.filter(s => subjectMap[s.value] > 0);
+          return (
+            <div className="space-y-2">
+              {orderedSubjects.map((subj) => (
+                <Link key={subj.value} href={`/math/topics?subject=${subj.value}`}
+                  className="flex items-center gap-4 bg-white rounded-2xl border border-gray-100 px-4 py-3.5 hover:shadow-md transition-all hover:-translate-y-0.5 group">
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                    <Calculator className="h-5 w-5 text-blue-600" />
                   </div>
-                  <span className="text-xs text-muted-foreground">Lớp {topic.grade}</span>
-                </div>
-                <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">{topic.title}</h3>
-                <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
-                  <span>{topic._count.concepts} khái niệm</span>
-                  <span>{topic._count.exercises} bài tập</span>
-                </div>
-                <div className="mt-3 flex items-center gap-1.5 text-blue-600 text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-                  <PlayCircle className="h-3.5 w-3.5" />Học ngay
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{subj.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{subjectMap[subj.value]} chủ đề</p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className={cn('text-xs font-semibold px-2 py-1 rounded-lg', SUBJECT_COLOR[subj.value] || 'bg-gray-100 text-gray-600')}>
+                      {subjectMap[subj.value]} chủ đề
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-blue-600 transition-colors" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Exercises ── */}
@@ -418,18 +422,6 @@ export default function MathPage() {
         </div>
       )}
 
-      {/* ── Subjects quick filter ── */}
-      <div>
-        <h2 className="font-bold text-gray-900 mb-3">Khám phá theo môn</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {Object.entries(SUBJECT_LABEL).map(([key, label]) => (
-            <Link key={key} href={`/math/topics?subject=${key}`}
-              className={cn('rounded-xl px-3 py-2.5 text-center text-sm font-semibold hover:opacity-90 transition-opacity', SUBJECT_COLOR[key] || 'bg-gray-100 text-gray-600')}>
-              {label}
-            </Link>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

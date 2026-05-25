@@ -49,13 +49,21 @@ model User {
   mathAttempts        MathAttempt[]        @relation("MathAttemptUser")
   conceptProgresses   ConceptProgress[]    @relation("ConceptProgressUser")
   mathStats           MathUserStats?       @relation("MathUserStatsUser")
+  mathDocuments       MathDocument[]       @relation("MathDocumentCreator")
+  vietDocuments       VietDocument[]       @relation("VietDocumentCreator")
   vietSetsCreated     VietSet[]            @relation("VietSetCreator")
   vietItemProgresses  VietItemProgress[]   @relation("VietItemProgressUser")
   vietExercisesCreated VietExercise[]      @relation("VietExerciseCreator")
   vietAttempts        VietAttempt[]        @relation("VietAttemptUser")
   vietStats           VietUserStats?       @relation("VietUserStatsUser")
   mediaUploads        Media[]              @relation("MediaUploader")
-
+  announcements       Announcement[]       @relation("AnnouncementAuthor")
+  announcementReads   AnnouncementRead[]   @relation("AnnouncementReadUser")
+  forumPosts          ForumPost[]          @relation("ForumPostAuthor")
+  forumReplies        ForumReply[]         @relation("ForumReplyAuthor")
+  forumLikes          ForumLike[]          @relation("ForumLikeUser")
+  quizSets            QuizSet[]            @relation("QuizSetAuthor")
+  quizAttempts        QuizAttempt[]        @relation("QuizAttemptUser")
   @@index([email])
   @@index([role])
 }
@@ -129,6 +137,10 @@ model Course {
   mathExercises MathExercise[]
   vietSets      VietSet[]
   vietExercises VietExercise[]
+  mediaFiles    Media[]        @relation("MediaCourse")
+  announcements Announcement[] @relation("AnnouncementCourse")
+  classCourses  ClassCourse[]
+  modules       CourseModule[]
 
   @@index([instructorId])
   @@index([categoryId])
@@ -330,6 +342,19 @@ model TodoItem {
   @@index([userId])
 }
 
+model ClassCourse {
+  id        String   @id @default(uuid())
+  classId   String
+  courseId  String
+  addedAt   DateTime @default(now())
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, courseId])
+  @@index([classId])
+  @@index([courseId])
+}
+
 model Class {
   id           String        @id @default(uuid())
   name         String
@@ -340,6 +365,10 @@ model Class {
   creator      User          @relation("ClassCreator", fields: [createdBy], references: [id])
   members      ClassMember[]
   liveSessions LiveSession[]
+  courses      ClassCourse[]
+  mediaFiles   Media[]        @relation("MediaClass")
+  announcements Announcement[] @relation("AnnouncementClass")
+  modules      ClassModule[]
 
   @@index([createdBy])
 }
@@ -463,15 +492,20 @@ model VocabSet {
   isPublic    Boolean         @default(true)
   createdBy   String
   courseId    String?
+  parentId    String?
   items       VocabItem[]
   progresses  VocabProgress[]
   creator     User            @relation("VocabSetCreator", fields: [createdBy], references: [id])
   course      Course?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  parent      VocabSet?       @relation("VocabSetTree", fields: [parentId], references: [id])
+  children    VocabSet[]      @relation("VocabSetTree")
+  exercises   LangExercise[]  @relation("VocabSetExercises")
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([createdBy])
   @@index([language])
+  @@index([parentId])
 }
 
 model VocabItem {
@@ -535,15 +569,18 @@ model LangExercise {
   isPublic    Boolean             @default(true)
   createdBy   String
   courseId    String?
+  vocabSetId  String?
   questions   ExerciseQuestion[]
   attempts    ExerciseAttempt[]
   creator     User                @relation("ExerciseCreator", fields: [createdBy], references: [id])
   course      Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  vocabSet    VocabSet?           @relation("VocabSetExercises", fields: [vocabSetId], references: [id], onDelete: SetNull)
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
 
   @@index([createdBy])
   @@index([language, type])
+  @@index([vocabSetId])
 }
 
 model ExerciseQuestion {
@@ -620,6 +657,27 @@ enum MathExerciseType {
   TRUE_FALSE
   CALCULATION
   PROOF_STEP
+}
+
+model MathDocument {
+  id            String   @id @default(uuid())
+  originalName  String
+  storedKey     String
+  mimetype      String
+  size          Int
+  bucket        String
+  status        String   @default("uploaded")
+  extractedText String?  @db.Text
+  grade         String?
+  subject       String?
+  errorMsg      String?
+  createdBy     String
+  creator       User     @relation("MathDocumentCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([createdBy])
+  @@index([status])
 }
 
 model MathTopic {
@@ -778,6 +836,27 @@ enum VietExerciseType {
   READING           // Đọc hiểu (passage + questions)
 }
 
+model VietDocument {
+  id            String   @id @default(uuid())
+  originalName  String
+  storedKey     String
+  mimetype      String
+  size          Int
+  bucket        String
+  status        String   @default("uploaded")
+  extractedText String?  @db.Text
+  grade         String?
+  category      String?
+  errorMsg      String?
+  createdBy     String
+  creator       User     @relation("VietDocumentCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([createdBy])
+  @@index([status])
+}
+
 model VietSet {
   id          String        @id @default(uuid())
   title       String
@@ -910,6 +989,32 @@ model VietUserStats {
   @@index([xp])
 }
 
+// ─── MODULE LINKS ─────────────────────────────────────────────────────────────
+
+model CourseModule {
+  id          String   @id @default(uuid())
+  courseId    String
+  contentType String   // 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE'
+  contentId   String
+  addedAt     DateTime @default(now())
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, contentType, contentId])
+  @@index([courseId])
+}
+
+model ClassModule {
+  id          String   @id @default(uuid())
+  classId     String
+  contentType String   // 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE'
+  contentId   String
+  addedAt     DateTime @default(now())
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, contentType, contentId])
+  @@index([classId])
+}
+
 // ─── SITE SETTINGS ────────────────────────────────────────────────────────────
 
 model SiteSetting {
@@ -926,18 +1031,213 @@ enum MediaType {
   DOCUMENT
 }
 
+enum MediaAccess {
+  PUBLIC
+  COURSE
+  CLASS
+  PRIVATE
+}
+
 model Media {
-  id         String    @id @default(uuid())
+  id         String      @id @default(uuid())
   name       String
   fileKey    String
   fileSize   Int
   mimeType   String
-  type       MediaType @default(DOCUMENT)
-  isPublic   Boolean   @default(false)
+  type       MediaType   @default(DOCUMENT)
+  access     MediaAccess @default(PUBLIC)
+  courseId   String?
+  classId    String?
   uploadedBy String
-  createdAt  DateTime  @default(now())
-  uploader   User      @relation("MediaUploader", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+  uploader   User        @relation("MediaUploader", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  course     Course?     @relation("MediaCourse", fields: [courseId], references: [id], onDelete: SetNull)
+  class      Class?      @relation("MediaClass", fields: [classId], references: [id], onDelete: SetNull)
 
   @@index([uploadedBy])
   @@index([type])
+  @@index([courseId])
+  @@index([classId])
+}
+
+// ─── ANNOUNCEMENTS ────────────────────────────────────────────────────────────
+
+enum AnnouncementTopic {
+  SYSTEM
+  COURSE
+  CLASS
+  EVENT
+  GENERAL
+}
+
+model Announcement {
+  id        String            @id @default(uuid())
+  title     String
+  content   String
+  topic     AnnouncementTopic @default(GENERAL)
+  authorId  String
+  courseId  String?
+  classId   String?
+  isPinned  Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  author    User              @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  course    Course?           @relation("AnnouncementCourse", fields: [courseId], references: [id], onDelete: SetNull)
+  class     Class?            @relation("AnnouncementClass", fields: [classId], references: [id], onDelete: SetNull)
+  reads     AnnouncementRead[]
+
+  @@index([authorId])
+  @@index([topic])
+  @@index([courseId])
+  @@index([classId])
+  @@index([isPinned, createdAt])
+}
+
+model AnnouncementRead {
+  announcementId String
+  userId         String
+  readAt         DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation("AnnouncementReadUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
+  @@index([userId])
+}
+
+// ─── FORUM ────────────────────────────────────────────────────────────────────
+
+model ForumCategory {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  icon        String?
+  color       String?     @default("#6366f1")
+  order       Int         @default(0)
+  isHidden    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  posts       ForumPost[]
+
+  @@index([order])
+  @@index([isHidden])
+}
+
+enum ForumPostStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ForumPost {
+  id         String          @id @default(uuid())
+  title      String
+  content    String
+  categoryId String
+  authorId   String
+  isPinned   Boolean         @default(false)
+  isClosed   Boolean         @default(false)
+  isHidden   Boolean         @default(false)
+  status     ForumPostStatus @default(APPROVED)
+  views      Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  category   ForumCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  author     User            @relation("ForumPostAuthor", fields: [authorId], references: [id])
+  replies    ForumReply[]
+  likes      ForumLike[]     @relation("PostLike")
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([isPinned, createdAt])
+  @@index([status])
+  @@index([isHidden])
+}
+
+model ForumReply {
+  id        String      @id @default(uuid())
+  content   String
+  postId    String
+  authorId  String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  post      ForumPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User        @relation("ForumReplyAuthor", fields: [authorId], references: [id])
+  likes     ForumLike[] @relation("ReplyLike")
+
+  @@index([postId])
+  @@index([authorId])
+}
+
+model ForumLike {
+  id        String      @id @default(uuid())
+  userId    String
+  postId    String?
+  replyId   String?
+  createdAt DateTime    @default(now())
+  user      User        @relation("ForumLikeUser", fields: [userId], references: [id], onDelete: Cascade)
+  post      ForumPost?  @relation("PostLike", fields: [postId], references: [id], onDelete: Cascade)
+  reply     ForumReply? @relation("ReplyLike", fields: [replyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@unique([userId, replyId])
+  @@index([postId])
+  @@index([replyId])
+}
+
+// ─── QUIZ GAME ────────────────────────────────────────────────────────────────
+
+enum QuizQuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_BLANK
+}
+
+model QuizSet {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+  topic       String
+  authorId    String
+  isPublic    Boolean        @default(true)
+  timeLimit   Int?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  author      User           @relation("QuizSetAuthor", fields: [authorId], references: [id])
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+
+  @@index([authorId])
+  @@index([topic])
+  @@index([isPublic])
+}
+
+model QuizQuestion {
+  id           String           @id @default(uuid())
+  quizSetId    String
+  question     String
+  type         QuizQuestionType @default(MULTIPLE_CHOICE)
+  options      String[]
+  correctIndex Int?
+  correctText  String?
+  explanation  String?
+  order        Int              @default(0)
+  quizSet      QuizSet          @relation(fields: [quizSetId], references: [id], onDelete: Cascade)
+
+  @@index([quizSetId])
+}
+
+model QuizAttempt {
+  id        String   @id @default(uuid())
+  quizSetId String
+  userId    String
+  score     Int
+  answers   Json
+  timeTaken Int?
+  createdAt DateTime @default(now())
+  quizSet   QuizSet  @relation(fields: [quizSetId], references: [id], onDelete: Cascade)
+  user      User     @relation("QuizAttemptUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([quizSetId])
+  @@index([userId])
+  @@index([quizSetId, score])
 }

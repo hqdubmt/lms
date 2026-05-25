@@ -1,4 +1,8 @@
 import type { NextConfig } from 'next';
+import crypto from 'crypto';
+
+// Build ID dùng để bust cache trình duyệt khi deploy phiên bản mới
+const buildId = process.env.BUILD_ID || crypto.randomBytes(8).toString('hex');
 
 const config: NextConfig = {
   compress: true,
@@ -6,6 +10,7 @@ const config: NextConfig = {
   reactStrictMode: true,
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   allowedDevOrigins: ['103.82.24.142', '100.109.210.10', process.env.ALLOWED_DEV_ORIGIN].filter(Boolean) as string[],
+  generateBuildId: async () => buildId,
 
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
@@ -24,15 +29,30 @@ const config: NextConfig = {
   },
 
   async headers() {
+    const isProd = process.env.NODE_ENV === 'production';
     return [
       {
-        source: '/_next/static/:path*',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+        // HTML pages không cache để luôn nhận phiên bản mới nhất
+        source: '/((?!_next/static|_next/image|favicon).*)',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
       },
-      {
-        source: '/fonts/:path*',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-      },
+      // Chỉ cache immutable trong production — dev dùng content-hash nên an toàn
+      // Dev không dùng hash → phải để browser tự re-fetch khi HMR không hoạt động
+      ...(isProd ? [
+        {
+          source: '/_next/static/:path*',
+          headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+        },
+        {
+          source: '/fonts/:path*',
+          headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+        },
+      ] : [
+        {
+          source: '/_next/static/:path*',
+          headers: [{ key: 'Cache-Control', value: 'no-cache, no-store' }],
+        },
+      ]),
       {
         // Public API data: revalidate every 2 minutes
         source: '/api/courses',

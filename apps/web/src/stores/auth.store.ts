@@ -25,6 +25,7 @@ interface User {
 interface AuthState {
   user: User | null;
   accessToken: string | null;
+  _hasHydrated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ user: User; accessToken: string }>;
   logout: () => Promise<void>;
@@ -37,6 +38,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       accessToken: null,
+      _hasHydrated: false,
       isLoading: false,
 
       setToken: (token) => {
@@ -98,6 +100,7 @@ export const useAuthStore = create<AuthState>()(
           api.setToken(state.accessToken);
           setAuthCookie(state.accessToken);
         }
+        useAuthStore.setState({ _hasHydrated: true });
       },
     },
   ),

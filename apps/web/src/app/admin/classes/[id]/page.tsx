@@ -6,13 +6,14 @@ import {
   ArrowLeft, Loader2, UserPlus, UserX, BookOpen,
   CheckSquare, Users, Save, Upload, Download, X, CheckCircle2, AlertCircle,
   CalendarDays, Plus, Calendar, Clock, Video, Pencil, Trash2, ExternalLink,
+  Languages, BookMarked,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cn } from '@/lib/utils';
 
 interface ClassDetail {
   id: string;
@@ -44,7 +45,268 @@ function fmtDT(iso: string) {
   return new Date(iso).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-type Tab = 'members' | 'grant' | 'sessions';
+type Tab = 'members' | 'grant' | 'courses' | 'sessions' | 'modules';
+
+// ─── Class Modules ─────────────────────────────────────────────────────────────
+
+type ContentType = 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE';
+
+interface ModuleLink {
+  id: string; contentType: ContentType; contentId: string; addedAt: string;
+  title: string; subtitle?: string;
+}
+
+interface PickerItem {
+  id: string; title: string; subtitle?: string; contentType: ContentType;
+}
+
+const MODULE_TYPE_GROUP: Record<ContentType, 'lang' | 'math' | 'viet'> = {
+  VOCAB_SET: 'lang', LANG_EXERCISE: 'lang',
+  MATH_TOPIC: 'math', MATH_EXERCISE: 'math',
+  VIET_SET: 'viet', VIET_EXERCISE: 'viet',
+};
+
+const MODULE_TYPE_LABEL: Record<ContentType, string> = {
+  VOCAB_SET: 'Bộ từ vựng', LANG_EXERCISE: 'Bài tập ngoại ngữ',
+  MATH_TOPIC: 'Chủ đề toán', MATH_EXERCISE: 'Bài tập toán',
+  VIET_SET: 'Bộ tiếng Việt', VIET_EXERCISE: 'Bài tập tiếng Việt',
+};
+
+const GROUP_COLORS = {
+  lang: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700' },
+  math: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+  viet: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
+};
+
+function ClassModulesTab({ classId }: { classId: string }) {
+  const [modules, setModules] = useState<ModuleLink[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'lang' | 'math' | 'viet'>('lang');
+  const [pickerItems, setPickerItems] = useState<{ lang: PickerItem[]; math: PickerItem[]; viet: PickerItem[] }>({ lang: [], math: [], viet: [] });
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const loadModules = useCallback(async () => {
+    try {
+      const data = await api.get<ModuleLink[]>(`/admin/classes/${classId}/modules`);
+      setModules(Array.isArray(data) ? data : []);
+    } catch {}
+    setLoading(false);
+  }, [classId]);
+
+  const loadPickerContent = useCallback(async () => {
+    setPickerLoading(true);
+    try {
+      const [langData, mathData, vietData] = await Promise.all([
+        api.get<{ vocabSets: any[]; exercises: any[] }>('/language/mine'),
+        api.get<{ topics: any[]; exercises: any[] }>('/math/mine'),
+        api.get<{ sets: any[]; exercises: any[] }>('/viet/mine'),
+      ]);
+      const langItems: PickerItem[] = [
+        ...langData.vocabSets.map((v: any) => ({ id: v.id, title: v.title, subtitle: `${v.language} · ${v._count?.items ?? 0} từ`, contentType: 'VOCAB_SET' as ContentType })),
+        ...langData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'LANG_EXERCISE' as ContentType })),
+      ];
+      const mathItems: PickerItem[] = [
+        ...mathData.topics.map((t: any) => ({ id: t.id, title: t.title, subtitle: `${t.subject} · Lớp ${t.grade}`, contentType: 'MATH_TOPIC' as ContentType })),
+        ...mathData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'MATH_EXERCISE' as ContentType })),
+      ];
+      const vietItems: PickerItem[] = [
+        ...vietData.sets.map((s: any) => ({ id: s.id, title: s.title, subtitle: `${s.category} · ${s._count?.items ?? 0} mục`, contentType: 'VIET_SET' as ContentType })),
+        ...vietData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'VIET_EXERCISE' as ContentType })),
+      ];
+      setPickerItems({ lang: langItems, math: mathItems, viet: vietItems });
+    } catch {}
+    setPickerLoading(false);
+  }, []);
+
+  useEffect(() => { loadModules(); }, [loadModules]);
+  useEffect(() => { if (showPicker) loadPickerContent(); }, [showPicker, loadPickerContent]);
+
+  const handleAdd = async (item: PickerItem) => {
+    setAdding(item.id);
+    try {
+      const link = await api.post<ModuleLink>(`/admin/classes/${classId}/modules`, { contentType: item.contentType, contentId: item.id });
+      setModules((prev) => [...prev, link]);
+      setToast({ type: 'success', msg: `Đã thêm: ${item.title}` });
+    } catch (e: any) {
+      setToast({ type: 'error', msg: e.message || 'Thêm thất bại' });
+    }
+    setAdding(null);
+  };
+
+  const handleRemove = async (linkId: string, title: string) => {
+    if (!confirm(`Gỡ "${title}" khỏi lớp học?`)) return;
+    setRemoving(linkId);
+    try {
+      await api.delete(`/admin/classes/${classId}/modules/${linkId}`);
+      setModules((prev) => prev.filter((m) => m.id !== linkId));
+      setToast({ type: 'success', msg: 'Đã gỡ liên kết' });
+    } catch (e: any) {
+      setToast({ type: 'error', msg: e.message || 'Gỡ thất bại' });
+    }
+    setRemoving(null);
+  };
+
+  const linkedIds = new Set(modules.map((m) => m.contentId));
+  const currentPickerItems = pickerItems[pickerTab];
+  const filteredPicker = currentPickerItems.filter((item) =>
+    !linkedIds.has(item.id) &&
+    (!search.trim() || item.title.toLowerCase().includes(search.toLowerCase()))
+  );
+  const grouped = {
+    lang: modules.filter((m) => MODULE_TYPE_GROUP[m.contentType] === 'lang'),
+    math: modules.filter((m) => MODULE_TYPE_GROUP[m.contentType] === 'math'),
+    viet: modules.filter((m) => MODULE_TYPE_GROUP[m.contentType] === 'viet'),
+  };
+  const groupTitles = { lang: 'Ngoại ngữ', math: 'Toán học', viet: 'Tiếng Việt' };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Languages className="h-4 w-4" />Nội dung học ({modules.length})
+            </CardTitle>
+            <Button size="sm" onClick={() => setShowPicker(!showPicker)}>
+              <Plus className="h-4 w-4 mr-1.5" />Thêm nội dung
+            </Button>
+          </div>
+        </CardHeader>
+
+        {showPicker && (
+          <CardContent className="border-t pt-4 space-y-3">
+            {/* Picker tabs */}
+            <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
+              {(['lang', 'math', 'viet'] as const).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => { setPickerTab(g); setSearch(''); }}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors',
+                    pickerTab === g ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {groupTitles[g]}
+                </button>
+              ))}
+            </div>
+
+            <Input
+              placeholder="Tìm kiếm..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
+
+            {pickerLoading ? (
+              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : filteredPicker.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                {search ? 'Không tìm thấy kết quả' : 'Không có nội dung để thêm'}
+              </p>
+            ) : (
+              <div className="max-h-56 overflow-y-auto space-y-1.5 border rounded-lg p-2">
+                {filteredPicker.map((item) => {
+                  const colors = GROUP_COLORS[pickerTab];
+                  return (
+                    <div key={item.id} className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-muted/40 transition-colors">
+                      <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${colors.badge}`}>
+                        {MODULE_TYPE_LABEL[item.contentType]}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.title}</p>
+                        {item.subtitle && <p className="text-xs text-muted-foreground">{item.subtitle}</p>}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={adding === item.id}
+                        onClick={() => handleAdd(item)}
+                        className="shrink-0 h-7 px-2"
+                      >
+                        {adding === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                        Thêm
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {loading ? (
+        <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : modules.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            <BookMarked className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">Chưa có nội dung học nào được liên kết</p>
+            <Button size="sm" className="mt-3" onClick={() => setShowPicker(true)}>
+              <Plus className="h-4 w-4 mr-1" />Thêm nội dung
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        (['lang', 'math', 'viet'] as const).map((group) => {
+          if (grouped[group].length === 0) return null;
+          const colors = GROUP_COLORS[group];
+          return (
+            <Card key={group}>
+              <div className={`px-5 py-2.5 border-b ${colors.bg}`}>
+                <p className={`text-xs font-semibold uppercase tracking-wide ${colors.text}`}>
+                  {groupTitles[group]} ({grouped[group].length})
+                </p>
+              </div>
+              <div className="divide-y">
+                {grouped[group].map((m) => (
+                  <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${colors.badge}`}>
+                      {MODULE_TYPE_LABEL[m.contentType]}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{m.title}</p>
+                      {m.subtitle && <p className="text-xs text-muted-foreground">{m.subtitle}</p>}
+                    </div>
+                    <Button
+                      variant="ghost" size="sm"
+                      className="h-8 w-8 p-0 text-destructive hover:text-destructive shrink-0"
+                      disabled={removing === m.id}
+                      onClick={() => handleRemove(m.id, m.title)}
+                    >
+                      {removing === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          );
+        })
+      )}
+
+      {toast && (
+        <div className={cn(
+          'fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium',
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white',
+        )}>
+          {toast.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+          {toast.msg}
+          <button onClick={() => setToast(null)} className="ml-2 hover:opacity-70">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ClassCourse { id: string; title: string; status: string; thumbnailUrl?: string; _count: { enrollments: number } }
 
 export default function ClassDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -88,6 +350,13 @@ export default function ClassDetailPage() {
   const [sessionsTotal, setSessionsTotal] = useState(0);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
+  // Khoá học của lớp
+  const [classCourses, setClassCourses] = useState<ClassCourse[]>([]);
+  const [allCoursesList, setAllCoursesList] = useState<ClassCourse[]>([]);
+  const [selectedCourseIdsForClass, setSelectedCourseIdsForClass] = useState<string[]>([]);
+  const [loadingClassCourses, setLoadingClassCourses] = useState(false);
+  const [addingClassCourses, setAddingClassCourses] = useState(false);
+
   const loadClass = useCallback(async () => {
     try {
       const data = await api.get<ClassDetail>(`/admin/classes/${id}`);
@@ -116,9 +385,40 @@ export default function ClassDetailPage() {
     setLoadingSessions(false);
   }, [id]);
 
+  const loadClassCourses = useCallback(async () => {
+    setLoadingClassCourses(true);
+    try {
+      const [linked, all] = await Promise.all([
+        api.get<ClassCourse[]>(`/admin/classes/${id}/courses`),
+        api.get<{ courses: ClassCourse[] }>(`/admin/classes/${id}/available-courses`).then((d) => d.courses || []),
+      ]);
+      setClassCourses(Array.isArray(linked) ? linked : []);
+      setAllCoursesList(Array.isArray(all) ? all : []);
+    } catch { }
+    setLoadingClassCourses(false);
+  }, [id]);
+
+  const handleAddClassCourses = async () => {
+    if (selectedCourseIdsForClass.length === 0) return;
+    setAddingClassCourses(true);
+    try {
+      await api.post(`/admin/classes/${id}/courses`, { courseIds: selectedCourseIdsForClass });
+      setSelectedCourseIdsForClass([]);
+      await loadClassCourses();
+    } catch (e: any) { alert(e?.message || 'Lỗi thêm khoá học'); }
+    finally { setAddingClassCourses(false); }
+  };
+
+  const handleRemoveClassCourse = async (courseId: string) => {
+    if (!confirm('Xóa khoá học khỏi lớp?')) return;
+    await api.delete(`/admin/classes/${id}/courses/${courseId}`);
+    setClassCourses((p) => p.filter((c) => c.id !== courseId));
+  };
+
   useEffect(() => { loadClass(); }, [loadClass]);
   useEffect(() => { if (tab === 'grant') loadCourses(); }, [tab, loadCourses]);
   useEffect(() => { if (tab === 'sessions') loadSessions(); }, [tab, loadSessions]);
+  useEffect(() => { if (tab === 'courses') loadClassCourses(); }, [tab, loadClassCourses]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -254,10 +554,12 @@ export default function ClassDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b">
+      <div className="flex border-b overflow-x-auto">
         {([
           { key: 'members', label: `Thành viên (${cls.members.length})`, icon: Users },
-          { key: 'grant', label: 'Cấp quyền khóa học', icon: BookOpen },
+          { key: 'courses', label: `Khoá học (${classCourses.length})`, icon: BookOpen },
+          { key: 'modules', label: 'Nội dung học', icon: Languages },
+          { key: 'grant', label: 'Cấp quyền hàng loạt', icon: CheckSquare },
           { key: 'sessions', label: `Lịch học (${sessionsTotal})`, icon: CalendarDays },
         ] as const).map((t) => (
           <button
@@ -581,6 +883,78 @@ export default function ClassDetailPage() {
           )}
         </div>
       )}
+
+      {/* Tab: Khoá học */}
+      {tab === 'courses' && (
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="p-5 space-y-3">
+              <h3 className="font-semibold text-gray-900 text-sm">Thêm khoá học vào lớp</h3>
+              {loadingClassCourses ? (
+                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-indigo-500" /></div>
+              ) : (
+                <>
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 border border-gray-200 rounded-lg p-3">
+                    {allCoursesList.filter((c) => !classCourses.find((cc) => cc.id === c.id)).length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-2">Tất cả khoá học đã được thêm</p>
+                    ) : allCoursesList.filter((c) => !classCourses.find((cc) => cc.id === c.id)).map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded p-1.5">
+                        <input type="checkbox" checked={selectedCourseIdsForClass.includes(c.id)}
+                          onChange={(e) => setSelectedCourseIdsForClass((p) => e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id))}
+                          className="h-4 w-4 rounded text-indigo-600" />
+                        <span className="text-sm text-gray-800 flex-1 truncate">{c.title}</span>
+                        <span className={`text-xs shrink-0 ${c.status === 'PUBLISHED' ? 'text-green-600' : 'text-gray-400'}`}>
+                          {c.status === 'PUBLISHED' ? 'Đã xuất bản' : 'Nháp'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <Button onClick={handleAddClassCourses} disabled={selectedCourseIdsForClass.length === 0 || addingClassCourses} size="sm">
+                    {addingClassCourses && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                    Thêm {selectedCourseIdsForClass.length > 0 ? `${selectedCourseIdsForClass.length} ` : ''}khoá học
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="space-y-2">
+            {classCourses.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Lớp chưa có khoá học nào</p>
+              </div>
+            ) : classCourses.map((c) => (
+              <Card key={c.id}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  {c.thumbnailUrl ? (
+                    <img src={c.thumbnailUrl} alt={c.title} className="h-12 w-20 rounded object-cover shrink-0" />
+                  ) : (
+                    <div className="h-12 w-20 rounded bg-gray-100 flex items-center justify-center shrink-0">
+                      <BookOpen className="h-5 w-5 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 text-sm truncate">{c.title}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`text-xs ${c.status === 'PUBLISHED' ? 'text-green-600' : 'text-gray-400'}`}>
+                        {c.status === 'PUBLISHED' ? 'Đã xuất bản' : c.status === 'DRAFT' ? 'Nháp' : 'Lưu trữ'}
+                      </span>
+                      <span className="text-xs text-gray-400">{c._count.enrollments} học viên đăng ký</span>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => handleRemoveClassCourse(c.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Nội dung học */}
+      {tab === 'modules' && <ClassModulesTab classId={id} />}
 
       {/* Tab: Sessions */}
       {tab === 'sessions' && (

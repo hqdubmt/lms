@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
 import { extractText, structureMathWithAI } from '../../services/file-import';
+import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
+import { env } from '../../config/env';
+import crypto from 'crypto';
 
 // ─── SM-2 Spaced Repetition ───────────────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -674,6 +677,18 @@ export async function mathRoutes(app: FastifyInstance) {
     return reply.status(201).send({ imported: results.length, errors, results });
   });
 
+  // ─── Extract text only (preview before AI) ───────────────────────────────
+  app.post('/extract-preview', { preHandler: requireInstructor }, async (req, reply) => {
+    const data = await req.file({ limits: { fileSize: 20 * 1024 * 1024 } });
+    if (!data) throw { statusCode: 400, message: 'Không có file' };
+    const buffer = await data.toBuffer();
+    let text: string;
+    try { text = await extractText(buffer, data.mimetype, data.filename); }
+    catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
+    if (!text?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
+    return reply.send({ text: text.trim(), filename: data.filename });
+  });
+
   // ─── Smart Import (PDF / DOCX / XLSX / PPTX → AI structured) ─────────────
   app.post('/import-smart', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
@@ -744,12 +759,189 @@ export async function mathRoutes(app: FastifyInstance) {
             }
           }
         }
-        results.push({ topicId: topic.id, title: topic.title, conceptsCreated: topic._count.concepts, exercisesGenerated });
+        results.push({ topicId: topic.id, title: topic.title, conceptsCreated: topic._count.concepts, exercisesGenerated, concepts: topic.concepts });
       } catch (e: any) {
         errors.push({ entry: entry?.title || '(không rõ)', error: e.message });
       }
     }
 
     return reply.status(201).send({ imported: results.length, errors, results });
+  });
+
+  // ─── DOCUMENT LIBRARY (upload, view, on-demand AI) ───────────────────────
+
+  // Upload doc → store in MinIO, extract text, save record
+  app.post('/docs', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const data = await req.file({ limits: { fileSize: 30 * 1024 * 1024 } });
+    if (!data) throw { statusCode: 400, message: 'Không có file' };
+
+    const allowedMimes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg', 'image/png', 'image/webp',
+    ];
+    if (!allowedMimes.includes(data.mimetype)) {
+      throw { statusCode: 400, message: 'Định dạng file không được hỗ trợ (PDF, Word, Excel, PowerPoint, ảnh)' };
+    }
+
+    const buffer = await data.toBuffer();
+    const ext = data.filename.split('.').pop()?.toLowerCase() || 'bin';
+    const key = `math-docs/${sub}/${crypto.randomBytes(8).toString('hex')}.${ext}`;
+    const bucket = env.MINIO_BUCKET_MATH_DOCS;
+
+    await minioClient.putObject(bucket, key, buffer, buffer.length, { 'Content-Type': data.mimetype });
+
+    let extractedText: string | null = null;
+    try {
+      const text = await extractText(buffer, data.mimetype, data.filename);
+      extractedText = text?.trim() || null;
+    } catch { /* image or unsupported — text stays null */ }
+
+    const doc = await (prisma as any).mathDocument.create({
+      data: {
+        id: crypto.randomUUID(),
+        originalName: data.filename,
+        storedKey: key,
+        mimetype: data.mimetype,
+        size: buffer.length,
+        bucket,
+        extractedText,
+        createdBy: sub,
+        updatedAt: new Date(),
+      },
+    });
+
+    return reply.status(201).send(doc);
+  });
+
+  // List documents
+  app.get('/docs', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const docs = await (prisma as any).mathDocument.findMany({
+      where: role === 'ADMIN' ? {} : { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, originalName: true, mimetype: true, size: true,
+        status: true, grade: true, subject: true, errorMsg: true,
+        createdAt: true, updatedAt: true,
+        creator: { select: { id: true, name: true, email: true } },
+      },
+    });
+    return reply.send(docs);
+  });
+
+  // Get signed view URL
+  app.get('/docs/:id/view-url', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).mathDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    const url = await getSignedUrl(doc.bucket, doc.storedKey, 1800);
+    return reply.send({ url, mimetype: doc.mimetype, originalName: doc.originalName });
+  });
+
+  // Get extracted text
+  app.get('/docs/:id/text', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).mathDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    return reply.send({ text: doc.extractedText, originalName: doc.originalName });
+  });
+
+  // Trigger AI analysis on stored document
+  app.post('/docs/:id/analyze', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).mathDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (doc.status === 'analyzing') throw { statusCode: 409, message: 'Đang phân tích, vui lòng chờ' };
+    if (!doc.extractedText?.trim()) throw { statusCode: 400, message: 'Tài liệu không có nội dung văn bản để phân tích' };
+
+    const q = req.query as { grade?: string; subject?: string; generateExercises?: string };
+    const opts = {
+      grade: q.grade ? parseInt(q.grade) : undefined,
+      subject: q.subject || doc.subject || undefined,
+      generateExercises: q.generateExercises !== 'false',
+    };
+
+    await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'analyzing', updatedAt: new Date() } });
+
+    let curriculum: any[];
+    try {
+      curriculum = await structureMathWithAI(doc.extractedText, opts);
+    } catch (e: any) {
+      await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'error', errorMsg: e.message, updatedAt: new Date() } });
+      throw { statusCode: 500, message: `AI phân tích thất bại: ${e.message}` };
+    }
+
+    const results: any[] = [];
+    const errors: any[] = [];
+
+    for (const entry of curriculum) {
+      try {
+        const { concepts, generateExercises, ...topicData } = entry;
+        const validConcepts = (concepts ?? []).filter((c: any) => c.name && c.definition);
+        const topic = await prisma.mathTopic.create({
+          data: {
+            title: topicData.title,
+            subject: (topicData.subject as any) ?? 'ARITHMETIC',
+            grade: topicData.grade ?? opts.grade ?? 5,
+            level: topicData.level ?? 'beginner',
+            description: topicData.description,
+            isPublic: true,
+            createdBy: sub,
+            concepts: { create: validConcepts.map((c: any, i: number) => ({ ...c, order: i, hints: c.hints ?? [] })) },
+          },
+          include: { concepts: true, _count: { select: { concepts: true } } },
+        });
+
+        let exercisesGenerated = 0;
+        if (generateExercises && topic.concepts.length >= 2) {
+          const genTypes = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const;
+          for (const type of genTypes) {
+            const questions = buildMathQuestions(topic.concepts, type, 10);
+            if (!('error' in (questions as any))) {
+              await prisma.mathExercise.create({
+                data: {
+                  title: `${topic.title} — ${TYPE_IMPORT_LABEL[type]}`,
+                  type: type as any, subject: topic.subject, grade: topic.grade,
+                  level: topic.level, isPublic: true,
+                  topicId: topic.id, createdBy: sub,
+                  questions: { create: questions as any },
+                },
+              });
+              exercisesGenerated++;
+            }
+          }
+        }
+        results.push({ topicId: topic.id, title: topic.title, conceptsCreated: topic._count.concepts, exercisesGenerated, concepts: topic.concepts });
+      } catch (e: any) {
+        errors.push({ entry: entry?.title || '(không rõ)', error: e.message });
+      }
+    }
+
+    await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'analyzed', updatedAt: new Date() } });
+    return reply.status(201).send({ imported: results.length, errors, results });
+  });
+
+  // Delete document
+  app.delete('/docs/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).mathDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    try { await deleteObject(doc.bucket, doc.storedKey); } catch { /* minio may not have it */ }
+    await (prisma as any).mathDocument.delete({ where: { id } });
+    return reply.send({ ok: true });
   });
 }

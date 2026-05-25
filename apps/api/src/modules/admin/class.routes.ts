@@ -205,21 +205,137 @@ export async function classRoutes(app: FastifyInstance) {
   // ─── LIST ENROLLABLE COURSES ──────────────────────────────
   app.get('/classes/:id/available-courses', { preHandler: requireAdmin }, async (req) => {
     const { id: classId } = req.params as { id: string };
-
-    // Lấy các courseId mà TẤT CẢ thành viên đã được enroll
-    const members = await prisma.classMember.findMany({
-      where: { classId },
-      select: { userId: true },
-    });
-
+    const members = await prisma.classMember.findMany({ where: { classId }, select: { userId: true } });
     const courses = await prisma.course.findMany({
-      select: {
-        id: true, title: true, status: true,
-        _count: { select: { enrollments: true } },
-      },
+      select: { id: true, title: true, status: true, _count: { select: { enrollments: true } } },
       orderBy: { title: 'asc' },
     });
-
     return { courses, classSize: members.length };
+  });
+
+  // ─── CLASS COURSES (direct link) ─────────────────────────
+
+  // List courses linked to class
+  app.get('/classes/:id/courses', { preHandler: requireAdmin }, async (req) => {
+    const { id: classId } = req.params as { id: string };
+    const items = await (prisma as any).classCourse.findMany({
+      where: { classId },
+      orderBy: { addedAt: 'asc' },
+      include: {
+        course: {
+          select: { id: true, title: true, status: true, thumbnailUrl: true, _count: { select: { enrollments: true } } },
+        },
+      },
+    });
+    return items.map((i: any) => i.course);
+  });
+
+  // Add courses to class
+  app.post('/classes/:id/courses', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id: classId } = req.params as { id: string };
+    const { courseIds } = z.object({ courseIds: z.array(z.string()).min(1) }).parse(req.body);
+    const crypto = require('crypto');
+    await prisma.$transaction(
+      courseIds.map((courseId: string) =>
+        (prisma as any).classCourse.upsert({
+          where: { classId_courseId: { classId, courseId } },
+          update: {},
+          create: { id: crypto.randomUUID(), classId, courseId },
+        }),
+      ),
+    );
+    return reply.status(201).send({ added: courseIds.length });
+  });
+
+  // Remove course from class
+  app.delete('/classes/:id/courses/:courseId', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id: classId, courseId } = req.params as { id: string; courseId: string };
+    await (prisma as any).classCourse.deleteMany({ where: { classId, courseId } });
+    return reply.send({ ok: true });
+  });
+
+  // ─── CLASS MODULES ────────────────────────────────────────────────────────────
+
+  async function resolveClassModuleContent(contentType: string, contentId: string): Promise<{ title: string; subtitle?: string }> {
+    try {
+      if (contentType === 'VOCAB_SET') {
+        const r = await prisma.vocabSet.findUnique({ where: { id: contentId }, select: { title: true, language: true, _count: { select: { items: true } } } });
+        return r ? { title: r.title, subtitle: `${r.language} · ${r._count.items} từ` } : { title: contentId };
+      }
+      if (contentType === 'LANG_EXERCISE') {
+        const r = await prisma.langExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+      if (contentType === 'MATH_TOPIC') {
+        const r = await prisma.mathTopic.findUnique({ where: { id: contentId }, select: { title: true, subject: true, _count: { select: { concepts: true } } } });
+        return r ? { title: r.title, subtitle: `${r.subject} · ${r._count.concepts} khái niệm` } : { title: contentId };
+      }
+      if (contentType === 'MATH_EXERCISE') {
+        const r = await prisma.mathExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+      if (contentType === 'VIET_SET') {
+        const r = await prisma.vietSet.findUnique({ where: { id: contentId }, select: { title: true, category: true, _count: { select: { items: true } } } });
+        return r ? { title: r.title, subtitle: `${r.category} · ${r._count.items} mục` } : { title: contentId };
+      }
+      if (contentType === 'VIET_EXERCISE') {
+        const r = await prisma.vietExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+    } catch {}
+    return { title: contentId };
+  }
+
+  // List modules linked to a class
+  app.get('/classes/:id/modules', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const links = await (prisma as any).classModule.findMany({
+        where: { classId: id },
+        orderBy: { addedAt: 'asc' },
+      });
+      const resolved = await Promise.all(
+        links.map(async (link: any) => {
+          const { title, subtitle } = await resolveClassModuleContent(link.contentType, link.contentId);
+          return { id: link.id, contentType: link.contentType, contentId: link.contentId, addedAt: link.addedAt, title, subtitle };
+        }),
+      );
+      return resolved;
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message });
+    }
+  });
+
+  // Add module to class
+  app.post('/classes/:id/modules', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { contentType, contentId } = z.object({
+      contentType: z.enum(['VOCAB_SET', 'LANG_EXERCISE', 'MATH_TOPIC', 'MATH_EXERCISE', 'VIET_SET', 'VIET_EXERCISE']),
+      contentId: z.string().min(1),
+    }).parse(req.body);
+    try {
+      const crypto = require('crypto');
+      const link = await (prisma as any).classModule.upsert({
+        where: { classId_contentType_contentId: { classId: id, contentType, contentId } },
+        update: {},
+        create: { id: crypto.randomUUID(), classId: id, contentType, contentId },
+      });
+      const { title, subtitle } = await resolveClassModuleContent(contentType, contentId);
+      return reply.status(201).send({ ...link, title, subtitle });
+    } catch (e: any) {
+      if (e.code === 'P2002') return reply.status(409).send({ error: 'Nội dung đã được liên kết' });
+      return reply.status(500).send({ error: e.message });
+    }
+  });
+
+  // Remove module from class
+  app.delete('/classes/:id/modules/:linkId', { preHandler: requireAdmin }, async (req, reply) => {
+    const { linkId } = req.params as { id: string; linkId: string };
+    try {
+      await (prisma as any).classModule.delete({ where: { id: linkId } });
+      return { message: 'Đã gỡ liên kết' };
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message });
+    }
   });
 }

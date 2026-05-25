@@ -19,7 +19,7 @@ export async function aiRoutes(app: FastifyInstance) {
   // ─── Health check ─────────────────────────────────────────────────────────────
   app.get('/health', async (_req, reply) => {
     const ok = await checkOllamaHealth();
-    return reply.send({ available: ok, model: process.env.OLLAMA_MODEL || 'qwen2.5:1.5b' });
+    return reply.send({ available: ok, model: process.env.OLLAMA_MODEL || 'qwen2.5:7b' });
   });
 
   // ─── Streaming chat ───────────────────────────────────────────────────────────

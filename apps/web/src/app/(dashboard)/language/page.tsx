@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight,
-  Plus, Brain, Globe, PlayCircle, Settings,
+  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen,
 } from 'lucide-react';
 import { EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL, LANG_NAMES } from '@/constants/language';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,9 +21,10 @@ interface LangStats {
 
 interface VocabSet {
   id: string; title: string; language: string; level: string;
-  _count: { items: number };
+  _count: { items: number; children?: number };
   creator: { name: string };
   progresses: { wordsLearned: number; lastStudied: string }[];
+  children?: any[];
 }
 
 interface Exercise {
@@ -52,7 +53,7 @@ export default function LanguagePage() {
   useEffect(() => {
     Promise.all([
       api.get<LangStats>('/language/stats'),
-      api.get<VocabSet[]>('/language/vocab-sets'),
+      api.get<VocabSet[]>('/language/vocab-sets/tree'),
       api.get<Exercise[]>('/language/exercises'),
     ]).then(([s, v, e]) => {
       setStats(s); setSets(v); setExercises(e);
@@ -139,54 +140,53 @@ export default function LanguagePage() {
         </Link>
       )}
 
-      {/* Vocab Sets */}
+      {/* Vocab Sets - Folder-first navigation */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-lg">Bộ từ vựng</h2>
           <div className="flex gap-2">
-            <Link href="/language/vocab/new">
-              <Button size="sm" variant="outline"><Plus className="h-4 w-4 mr-1" />Tạo mới</Button>
-            </Link>
+            {isInstructor && (
+              <Link href="/instructor/language">
+                <Button size="sm" variant="outline"><Settings className="h-4 w-4 mr-1" />Quản lý</Button>
+              </Link>
+            )}
           </div>
         </div>
         {sets.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-muted-foreground">Chưa có bộ từ vựng nào. Giảng viên sẽ tạo và chia sẻ cho bạn.</CardContent></Card>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="space-y-2">
             {sets.map((set) => {
+              const childCount = set._count.children ?? set.children?.length ?? 0;
               const prog = set.progresses[0];
-              const pct = set._count.items > 0 ? Math.round(((prog?.wordsLearned || 0) / set._count.items) * 100) : 0;
+              const totalItems = set._count.items;
+              const learned = prog?.wordsLearned || 0;
+              const pct = totalItems > 0 ? Math.round((learned / totalItems) * 100) : 0;
               return (
-                <button key={set.id} type="button" onClick={() => router.push(`/language/vocab/${set.id}`)} className="text-left w-full">
-                  <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                    <CardContent className="p-4 h-full flex flex-col">
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <div className="font-semibold line-clamp-1">{set.title}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5">{LANG_NAMES[set.language] || set.language}</div>
+                <button key={set.id} type="button" onClick={() => router.push(`/language/folder/${set.id}`)}
+                  className="w-full text-left bg-white rounded-2xl border border-gray-100 px-4 py-3.5 flex items-center gap-4 hover:shadow-md transition-all hover:-translate-y-0.5 group">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                    <FolderOpen className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">{set.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{LANG_NAMES[set.language] || set.language}</p>
+                    {totalItems > 0 && (
+                      <div className="mt-1.5">
+                        <div className="flex justify-between text-xs text-muted-foreground mb-0.5">
+                          <span>{learned}/{totalItems} từ đã học</span>
+                          <span>{pct}%</span>
                         </div>
-                        <Badge variant="outline" className="shrink-0 text-xs">{set.level}</Badge>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-auto">
-                        <BookOpen className="h-3.5 w-3.5" />{set._count.items} từ
-                      </div>
-                      {set._count.items > 0 && (
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                            <span>{prog?.wordsLearned || 0}/{set._count.items} đã học</span>
-                            <span>{pct}%</span>
-                          </div>
-                          <div className="h-1.5 bg-muted rounded-full">
-                            <div className="h-1.5 bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
+                        <div className="h-1 bg-muted rounded-full w-40">
+                          <div className="h-1 bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
-                      )}
-                      <div className="flex items-center justify-between mt-3">
-                        <span className="text-xs text-muted-foreground">bởi {set.creator.name}</span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </div>
-                    </CardContent>
-                  </Card>
+                    )}
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-1 rounded-lg">{childCount} bộ</span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-indigo-600 transition-colors" />
+                  </div>
                 </button>
               );
             })}

@@ -6,8 +6,8 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
     Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
-    Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, LibraryBig, Calculator, BookType,
-    Image as ImageIcon,
+    Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
+    Image as ImageIcon, Gamepad2,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -30,12 +30,15 @@ const BASE_NAV_GROUPS = [
     {
         label: 'HỌC TẬP',
         items: [
-            { href: '/dashboard', label: 'Trang chủ', icon: Home, exact: true },
-            { href: '/courses', label: 'Khoá học', icon: BookOpen },
-            { href: '/language', label: 'Ngoại ngữ', icon: Globe },
-            { href: '/math', label: 'Toán học', icon: Calculator },
-            { href: '/viet', label: 'Tiếng Việt', icon: BookType },
-            { href: '/schedule', label: 'Phòng học', icon: MonitorPlay },
+            { href: '/dashboard',      label: 'Trang chủ',  icon: Home,          exact: true },
+            { href: '/courses',        label: 'Khoá học',   icon: BookOpen },
+            { href: '/media',          label: 'Thư viện',   icon: ImageIcon },
+            { href: '/language',       label: 'Ngoại ngữ',  icon: Globe },
+            { href: '/math',           label: 'Toán học',   icon: Calculator },
+            { href: '/viet',           label: 'Tiếng Việt', icon: BookType },
+            { href: '/quiz',           label: 'Quiz Game',  icon: Gamepad2 },
+            { href: '/announcements',  label: 'Thông báo',  icon: Bell },
+            { href: '/schedule',       label: 'Phòng học',  icon: MonitorPlay },
         ],
     },
     {
@@ -46,19 +49,24 @@ const BASE_NAV_GROUPS = [
     },
 ];
 
-const INSTRUCTOR_GROUP = {
-    label: 'GIẢNG VIÊN',
-    items: [
-        { href: '/instructor/language', label: 'Bộ từ vựng', icon: LibraryBig, exact: false },
-        { href: '/instructor/math', label: 'Module toán', icon: Calculator, exact: false },
-        { href: '/instructor/viet', label: 'Module Tiếng Việt', icon: BookType, exact: false },
-        { href: '/instructor/media', label: 'Thư viện', icon: ImageIcon, exact: false },
-    ],
+const INSTRUCTOR_HREF_MAP: Record<string, string> = {
+    '/language':     '/instructor/language',
+    '/math':         '/instructor/math',
+    '/viet':         '/instructor/viet',
+    '/media':        '/instructor/media',
+    '/quiz':         '/instructor/quiz',
+    '/announcements':'/instructor/announcements',
 };
 
 function getNavGroups(role?: string) {
     if (role === 'INSTRUCTOR' || role === 'ADMIN') {
-        return [BASE_NAV_GROUPS[0], INSTRUCTOR_GROUP, BASE_NAV_GROUPS[1]];
+        return BASE_NAV_GROUPS.map((group) => ({
+            ...group,
+            items: group.items.map((item) => ({
+                ...item,
+                href: INSTRUCTOR_HREF_MAP[item.href] ?? item.href,
+            })),
+        }));
     }
     return BASE_NAV_GROUPS;
 }
@@ -181,7 +189,7 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 
 function DesktopSidebar({
     user, pathname, liveCount, showNotif, setShowNotif,
-    notifRef, onLogout, collapsed, onToggle, navGroups, logoBg, logoBgHeight,
+    notifRef, onLogout, collapsed, onToggle, navGroups, logoBg, logoBgHeight, badges,
 }: {
     user: any; pathname: string; liveCount: number;
     showNotif: boolean; setShowNotif: (v: boolean) => void;
@@ -189,6 +197,7 @@ function DesktopSidebar({
     onLogout: () => void; collapsed: boolean; onToggle: () => void;
     navGroups: ReturnType<typeof getNavGroups>;
     logoBg: string; logoBgHeight: number;
+    badges: Record<string, number>;
 }) {
     return (
         <aside
@@ -258,6 +267,7 @@ function DesktopSidebar({
                                 const active = item.exact
                                     ? pathname === item.href
                                     : pathname.startsWith(item.href);
+                                const badge = badges[item.href] || 0;
 
                                 const linkEl = (
                                     <Link
@@ -270,11 +280,20 @@ function DesktopSidebar({
                                                 : 'text-white/55 hover:bg-white/8 hover:text-white',
                                         )}
                                     >
-                                        <item.icon className="h-4 w-4 shrink-0" />
+                                        <div className="relative shrink-0">
+                                            <item.icon className="h-4 w-4" />
+                                            {badge > 0 && collapsed && (
+                                                <span className="absolute -top-1.5 -right-1.5 h-3.5 min-w-3.5 px-0.5 text-[8px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center leading-none">{badge}</span>
+                                            )}
+                                        </div>
                                         {!collapsed && (
                                             <>
                                                 <span className="truncate">{item.label}</span>
-                                                {active && <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />}
+                                                {badge > 0 ? (
+                                                    <span className="ml-auto text-[9px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0">{badge}</span>
+                                                ) : active ? (
+                                                    <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />
+                                                ) : null}
                                             </>
                                         )}
                                     </Link>
@@ -493,11 +512,12 @@ function MobileSidebar({
 const COLLAPSED_KEY = 'sidebar_collapsed';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const { user, accessToken, fetchMe, logout } = useAuthStore();
+    const { user, accessToken, _hasHydrated, fetchMe, logout } = useAuthStore();
     const pathname = usePathname();
     const router = useRouter();
     const [showNotif, setShowNotif] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
+    const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [collapsed, setCollapsed] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
@@ -517,9 +537,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
 
     useEffect(() => {
+        if (!_hasHydrated) return;
         if (!user && accessToken) fetchMe();
         else if (!user && !accessToken) router.replace('/login');
-    }, [user, accessToken, fetchMe, router]);
+    }, [user, accessToken, _hasHydrated, fetchMe, router]);
 
     useEffect(() => {
         if (!user) return;
@@ -528,9 +549,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 const list = Array.isArray(data) ? data : [];
                 setLiveCount(list.filter((s) => s.status === 'LIVE').length);
             }).catch(() => {});
+            api.get<{ count: number }>('/announcements/unread-count').then((d) => {
+                setUnreadAnnouncements(d?.count || 0);
+            }).catch(() => {});
         };
         check();
-        const t = setInterval(check, 30_000);
+        const t = setInterval(check, 60_000);
         return () => clearInterval(t);
     }, [user]);
 
@@ -546,7 +570,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
-    if (!user) return (
+    if (!_hasHydrated || !user) return (
         <div className="min-h-screen flex items-center justify-center">
             <div className="animate-spin h-8 w-8 rounded-full border-4 border-primary border-t-transparent" />
         </div>
@@ -554,6 +578,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const handleLogout = async () => { await logout(); router.push('/login'); };
     const navGroups = getNavGroups(user.role);
+    const badges: Record<string, number> = {};
+    if (unreadAnnouncements > 0) {
+        badges['/announcements'] = unreadAnnouncements;
+        badges['/instructor/announcements'] = unreadAnnouncements;
+    }
 
     return (
         <div className="min-h-screen flex bg-[#f1f5f9] overflow-x-clip">
@@ -572,6 +601,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 navGroups={navGroups}
                 logoBg={branding.logoBg}
                 logoBgHeight={branding.logoBgHeight}
+                badges={badges}
             />
 
             {/* Mobile drawer */}
@@ -615,23 +645,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* Mobile bottom nav */}
                 <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-100 flex items-center justify-around h-14 px-2">
-                    {BASE_NAV_GROUPS[0].items.map((item) => {
+                    {navGroups[0].items.map((item) => {
                         const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                        const badge = badges[item.href] || 0;
                         return (
                             <Link key={item.href} href={item.href}
-                                className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-0', active ? 'text-primary' : 'text-gray-400 hover:text-gray-700')}>
+                                className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-0 relative', active ? 'text-primary' : 'text-gray-400 hover:text-gray-700')}>
                                 <item.icon className={cn('h-5 w-5', active && 'stroke-[2.5px]')} />
                                 <span className="text-[10px] font-medium truncate">{item.label}</span>
                                 {active && <span className="h-1 w-1 rounded-full bg-primary" />}
+                                {badge > 0 && <span className="absolute top-0.5 right-1 h-2 w-2 bg-red-500 rounded-full" />}
                             </Link>
                         );
                     })}
-                    <button onClick={() => { setDrawerOpen(true); setTimeout(() => setShowNotif(true), 300); }}
-                        className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-gray-400 hover:text-gray-700 relative">
-                        <Bell className="h-5 w-5" />
-                        <span className="text-[10px] font-medium">Thông báo</span>
-                        {liveCount > 0 && <span className="absolute top-0.5 right-2 h-2 w-2 bg-red-500 rounded-full animate-pulse" />}
-                    </button>
                 </nav>
             </div>
         </div>

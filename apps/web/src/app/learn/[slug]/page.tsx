@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Play, FileText, CheckCircle2,
   ArrowLeft, Loader2, Lock, ExternalLink, Calendar, Clock, Video,
   PanelRightOpen, X, MessageCircle, Send, Trash2,
-  HelpCircle, RefreshCw, AlertCircle,
+  HelpCircle, RefreshCw, AlertCircle, BookMarked, Sparkles, Languages,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,15 @@ interface ChatMessage {
   content: string;
   type: string;
   createdAt: string;
+}
+
+interface LangVocabSet {
+  id: string; title: string; language: string;
+  _count: { items: number };
+}
+interface LangExercise {
+  id: string; title: string; type: string;
+  _count: { questions: number };
 }
 
 interface QuizQuestion {
@@ -340,6 +349,7 @@ export default function LearnPage() {
   const [course, setCourse] = useState<Course | null>(null);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [showSessions, setShowSessions] = useState(true);
+  const [langContent, setLangContent] = useState<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] } | null>(null);
   const [activeLesson, setActiveLesson] = useState<LessonDetail | null>(null);
   const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
   const [loadingLesson, setLoadingLesson] = useState(false);
@@ -371,6 +381,10 @@ export default function LearnPage() {
       const firstLesson = courseData.sections[0]?.lessons[0];
       const target = lessonId || firstLesson?.id;
       if (target) openLesson(target);
+      // Fetch linked language content
+      api.get<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] }>(`/language/course/${courseData.id}/content`)
+        .then((d) => { if (d.vocabSets?.length || d.exercises?.length) setLangContent(d); })
+        .catch(() => {});
     }).catch(() => router.replace('/dashboard'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
@@ -729,6 +743,48 @@ export default function LearnPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Linked language content */}
+            {langContent && (langContent.vocabSets.length > 0 || langContent.exercises.length > 0) && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Languages className="h-4 w-4 text-violet-600" />
+                  <h3 className="text-sm font-semibold text-violet-800">Nội dung ngoại ngữ kèm theo</h3>
+                </div>
+                {langContent.vocabSets.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Bộ từ vựng</p>
+                    {langContent.vocabSets.map((v) => (
+                      <Link key={v.id} href={`/language/vocab/${v.id}`} target="_blank"
+                        className="flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group">
+                        <BookMarked className="h-4 w-4 text-violet-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{v.title}</p>
+                          <p className="text-xs text-gray-500">{v.language} · {v._count.items} từ</p>
+                        </div>
+                        <ExternalLink className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                {langContent.exercises.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Bài tập</p>
+                    {langContent.exercises.map((e) => (
+                      <Link key={e.id} href={`/language/exercise/${e.id}`} target="_blank"
+                        className="flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group">
+                        <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{e.title}</p>
+                          <p className="text-xs text-gray-500">{e._count.questions} câu hỏi</p>
+                        </div>
+                        <ExternalLink className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

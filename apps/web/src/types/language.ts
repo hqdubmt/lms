@@ -17,7 +17,11 @@ export interface VocabSet {
   isPublic?: boolean;
   description?: string;
   items: VocabItem[];
-  _count?: { items: number };
+  parentId?: string | null;
+  parent?: { id: string; title: string } | null;
+  children?: VocabSet[];
+  exercises?: { id: string; title: string; type: string; isPublic: boolean }[];
+  _count?: { items: number; children?: number };
   creator: { id?: string; name: string };
   progresses?: { wordsLearned: number }[];
 }

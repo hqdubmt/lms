@@ -185,7 +185,7 @@ function DesktopSidebar({
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, accessToken, fetchMe, logout } = useAuthStore();
+  const { user, accessToken, _hasHydrated, fetchMe, logout } = useAuthStore();
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -205,14 +205,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!user && accessToken) fetchMe();
     else if (!user && !accessToken) router.replace('/login');
     else if (user && user.role !== 'ADMIN') router.replace('/dashboard');
-  }, [user, accessToken, fetchMe, router]);
+  }, [user, accessToken, _hasHydrated, fetchMe, router]);
 
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
-  if (!user || user.role !== 'ADMIN') {
+  if (!_hasHydrated || !user || user.role !== 'ADMIN') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin h-8 w-8 rounded-full border-4 border-primary border-t-transparent" />

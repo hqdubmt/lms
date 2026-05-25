@@ -2,1441 +2,935 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
-  ArrowLeft, Plus, Trash2, Edit3, ChevronDown, ChevronRight,
-  Play, FileText, Video, Save, Loader2, BookOpen, Users,
-  CheckCircle2, Circle, Eye, Globe, Archive, AlertCircle,
-  GripVertical, X, Upload, Link as LinkIcon, FileUp, Sparkles,
-  Languages, BookMarked, Unlink, HelpCircle,
+  ArrowLeft, Loader2, Plus, Trash2,
+  ChevronDown, ChevronRight, Save,
+  Pencil, Video, X, Upload, Check, Eye, EyeOff,
+  ExternalLink, BookMarked, Users,
 } from 'lucide-react';
-import { api } from '@/lib/api';
-import { useAuthStore } from '@/stores/auth.store';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { api } from '@/lib/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface Lesson {
-  id: string; title: string; type: 'VIDEO' | 'TEXT' | 'LIVE';
-  order: number; isFree: boolean; isPublished: boolean;
-  videoDuration?: number; videoKey?: string; slug: string;
-}
-
-interface Section {
-  id: string; title: string; order: number; lessons: Lesson[];
-}
-
 interface Course {
   id: string; title: string; slug: string; description?: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  level: string; isFree: boolean; price: number;
-  thumbnailUrl?: string;
-  category?: { id: string; name: string };
+  status: string; level: string; price: number; isFree: boolean;
   sections: Section[];
   _count: { enrollments: number };
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const LESSON_TYPE_ICON: Record<string, any> = { VIDEO: Play, TEXT: FileText, LIVE: Video };
-const LESSON_TYPE_LABEL: Record<string, string> = { VIDEO: 'Video', TEXT: 'Bài đọc', LIVE: 'Trực tuyến' };
-
-const STATUS_CONFIG = {
-  PUBLISHED: { label: 'Đã xuất bản', icon: Globe, cls: 'bg-green-100 text-green-700' },
-  DRAFT:     { label: 'Bản nháp',    icon: AlertCircle, cls: 'bg-yellow-100 text-yellow-700' },
-  ARCHIVED:  { label: 'Lưu trữ',    icon: Archive, cls: 'bg-gray-100 text-gray-600' },
-};
-
-const LEVEL_LABEL: Record<string, string> = {
-  BEGINNER: 'Cơ bản', INTERMEDIATE: 'Trung cấp', ADVANCED: 'Nâng cao',
-};
-
-function Toast({ type, msg, onClose }: { type: 'success' | 'error'; msg: string; onClose: () => void }) {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={cn(
-      'fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium',
-      type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white',
-    )}>
-      {type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-      {msg}
-    </div>
-  );
+interface Section { id: string; title: string; order: number; lessons: Lesson[] }
+interface Lesson {
+  id: string; title: string; type: string; order: number;
+  isFree: boolean; isPublished: boolean; videoKey?: string; videoUrl?: string; videoDuration?: number;
 }
 
-// ─── Inline editable text ─────────────────────────────────────────────────────
+const STATUS_LABEL: Record<string, string> = { DRAFT: 'Nháp', PUBLISHED: 'Công khai', ARCHIVED: 'Lưu trữ' };
 
-function InlineEdit({ value, onSave, className }: { value: string; onSave: (v: string) => Promise<void>; className?: string }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(value);
-  const [saving, setSaving] = useState(false);
+type Tab = 'info' | 'content' | 'modules';
 
-  const save = async () => {
-    if (val.trim() === value) { setEditing(false); return; }
-    setSaving(true);
-    await onSave(val.trim());
-    setSaving(false);
-    setEditing(false);
-  };
+// ─── Modules Tab ──────────────────────────────────────────────────────────────
 
-  if (!editing) {
-    return (
-      <span
-        onClick={() => setEditing(true)}
-        className={cn('cursor-pointer hover:text-indigo-600 transition-colors group', className)}
-      >
-        {value}
-        <Edit3 className="h-3 w-3 inline ml-1.5 opacity-0 group-hover:opacity-50 transition-opacity" />
-      </span>
-    );
+type ContentType = 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE';
+interface ModuleLink { id: string; contentType: ContentType; contentId: string; addedAt: string; title: string; subtitle?: string; }
+interface PickerItem { id: string; title: string; subtitle?: string; contentType: ContentType; }
+
+const MODULE_TYPE_GROUP: Record<ContentType, 'lang' | 'math' | 'viet'> = {
+  VOCAB_SET: 'lang', LANG_EXERCISE: 'lang',
+  MATH_TOPIC: 'math', MATH_EXERCISE: 'math',
+  VIET_SET: 'viet', VIET_EXERCISE: 'viet',
+};
+const MODULE_TYPE_LABEL: Record<ContentType, string> = {
+  VOCAB_SET: 'Bộ từ vựng', LANG_EXERCISE: 'Bài tập ngoại ngữ',
+  MATH_TOPIC: 'Chủ đề toán', MATH_EXERCISE: 'Bài tập toán',
+  VIET_SET: 'Bộ tiếng Việt', VIET_EXERCISE: 'Bài tập tiếng Việt',
+};
+const GROUP_COLORS = {
+  lang: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700' },
+  math: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+  viet: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
+};
+const GROUP_TITLES = { lang: 'Ngoại ngữ', math: 'Toán học', viet: 'Tiếng Việt' };
+
+function getModuleViewUrl(contentType: ContentType, contentId: string): string {
+  switch (contentType) {
+    case 'VOCAB_SET':     return `/instructor/language/vocab/${contentId}`;
+    case 'LANG_EXERCISE': return `/instructor/language/exercise/${contentId}`;
+    case 'MATH_TOPIC':   return `/instructor/math/topic/${contentId}`;
+    case 'VIET_SET':     return `/instructor/viet/set/${contentId}`;
+    default:             return '';
   }
-
-  return (
-    <input
-      autoFocus
-      value={val}
-      onChange={(e) => setVal(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value); setEditing(false); } }}
-      className="border-b border-indigo-400 outline-none bg-transparent text-sm font-medium w-full max-w-sm"
-      disabled={saving}
-    />
-  );
+}
+function getModuleParentUrl(contentType: ContentType): string {
+  switch (contentType) {
+    case 'VOCAB_SET': case 'LANG_EXERCISE': return '/instructor/language';
+    case 'MATH_TOPIC': case 'MATH_EXERCISE': return '/instructor/math';
+    default: return '/instructor/viet';
+  }
 }
 
-// ─── Quiz Manager ────────────────────────────────────────────────────────────
-
-interface QuizItem {
-  id: string; question: string; options: string[]; answer: number;
-  explanation?: string; order: number;
-}
-
-function QuizManager({ lessonId }: { lessonId: string }) {
-  const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+function InstructorModulesTab({ courseId }: { courseId: string }) {
+  const [modules, setModules] = useState<ModuleLink[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<QuizItem | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-
-  const emptyForm = (): Omit<QuizItem, 'id' | 'order'> => ({
-    question: '', options: ['', '', '', ''], answer: 0, explanation: '',
-  });
-  const [form, setForm] = useState(emptyForm());
-
-  useEffect(() => {
-    api.get<QuizItem[]>(`/lessons/${lessonId}/quizzes`)
-      .then(setQuizzes).catch(() => setQuizzes([]))
-      .finally(() => setLoading(false));
-  }, [lessonId]);
-
-  const startCreate = () => { setForm(emptyForm()); setEditing(null); setCreating(true); };
-  const startEdit = (q: QuizItem) => {
-    setForm({ question: q.question, options: [...q.options], answer: q.answer, explanation: q.explanation ?? '' });
-    setEditing(q);
-    setCreating(false);
-  };
-  const cancel = () => { setCreating(false); setEditing(null); };
-
-  const handleSave = async () => {
-    if (!form.question.trim() || form.options.filter((o) => o.trim()).length < 2) return;
-    const payload = {
-      question: form.question.trim(),
-      options: form.options.filter((o) => o.trim()),
-      answer: form.answer,
-      explanation: form.explanation?.trim() || undefined,
-    };
-    setSaving(true);
-    try {
-      if (editing) {
-        const updated = await api.patch<QuizItem>(`/lessons/quizzes/${editing.id}`, payload);
-        setQuizzes((prev) => prev.map((q) => q.id === editing.id ? updated : q));
-      } else {
-        const created = await api.post<QuizItem>(`/lessons/${lessonId}/quizzes`, payload);
-        setQuizzes((prev) => [...prev, created]);
-      }
-      cancel();
-    } catch {}
-    setSaving(false);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Xóa câu hỏi này?')) return;
-    setDeleting(id);
-    try {
-      await api.delete(`/lessons/quizzes/${id}`);
-      setQuizzes((prev) => prev.filter((q) => q.id !== id));
-    } catch {}
-    setDeleting(null);
-  };
-
-  return (
-    <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-          <HelpCircle className="h-3.5 w-3.5 text-indigo-500" />
-          Câu hỏi kiểm tra ({quizzes.length})
-        </span>
-        {!creating && !editing && (
-          <button onClick={startCreate}
-            className="h-6 px-2 rounded-lg flex items-center gap-1 text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-            <Plus className="h-3 w-3" />Thêm câu hỏi
-          </button>
-        )}
-      </div>
-
-      {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-
-      {/* Quiz list */}
-      {!loading && quizzes.length === 0 && !creating && (
-        <p className="text-xs text-muted-foreground">Chưa có câu hỏi nào</p>
-      )}
-      {!loading && quizzes.map((q, qi) => (
-        <div key={q.id} className={cn('rounded-xl border bg-white p-3 space-y-2', editing?.id === q.id ? 'ring-2 ring-indigo-300' : '')}>
-          {editing?.id !== q.id ? (
-            <div className="flex items-start gap-2">
-              <span className="text-xs font-bold text-indigo-600 shrink-0 mt-0.5">{qi + 1}.</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium leading-snug">{q.question}</p>
-                <div className="mt-1.5 space-y-0.5">
-                  {q.options.map((opt, oi) => (
-                    <div key={oi} className={cn('text-[11px] flex items-center gap-1.5 px-2 py-0.5 rounded-lg',
-                      oi === q.answer ? 'bg-green-50 text-green-700 font-semibold' : 'text-muted-foreground',
-                    )}>
-                      <span className={cn('h-4 w-4 rounded-full border flex items-center justify-center text-[9px] font-bold shrink-0',
-                        oi === q.answer ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300',
-                      )}>{String.fromCharCode(65 + oi)}</span>
-                      {opt}
-                    </div>
-                  ))}
-                </div>
-                {q.explanation && (
-                  <p className="text-[11px] text-blue-600 mt-1">Giải thích: {q.explanation}</p>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => startEdit(q)} className="h-6 w-6 rounded-lg hover:bg-gray-100 flex items-center justify-center">
-                  <Edit3 className="h-3 w-3 text-gray-500" />
-                </button>
-                <button onClick={() => handleDelete(q.id)} disabled={deleting === q.id}
-                  className="h-6 w-6 rounded-lg hover:bg-red-50 flex items-center justify-center">
-                  {deleting === q.id ? <Loader2 className="h-3 w-3 animate-spin text-red-400" /> : <Trash2 className="h-3 w-3 text-red-400" />}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ))}
-
-      {/* Create / Edit form */}
-      {(creating || editing) && (
-        <div className="rounded-xl border-2 border-indigo-200 bg-white p-4 space-y-3">
-          <p className="text-xs font-semibold text-indigo-700">{editing ? 'Sửa câu hỏi' : 'Thêm câu hỏi mới'}</p>
-
-          {/* Question */}
-          <div>
-            <label className="text-[11px] font-medium text-gray-600 block mb-1">Câu hỏi *</label>
-            <textarea
-              value={form.question}
-              onChange={(e) => setForm((p) => ({ ...p, question: e.target.value }))}
-              placeholder="Nhập câu hỏi..."
-              rows={2}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-            />
-          </div>
-
-          {/* Options */}
-          <div>
-            <label className="text-[11px] font-medium text-gray-600 block mb-1">Các đáp án (tối thiểu 2, tối đa 6)</label>
-            <div className="space-y-1.5">
-              {form.options.map((opt, oi) => (
-                <div key={oi} className="flex items-center gap-2">
-                  <button
-                    onClick={() => setForm((p) => ({ ...p, answer: oi }))}
-                    className={cn('h-5 w-5 rounded-full border-2 flex items-center justify-center text-[9px] font-bold shrink-0 transition-colors',
-                      form.answer === oi ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300 hover:border-green-300',
-                    )}
-                    title="Chọn đáp án đúng"
-                  >
-                    {String.fromCharCode(65 + oi)}
-                  </button>
-                  <input
-                    value={opt}
-                    onChange={(e) => {
-                      const opts = [...form.options];
-                      opts[oi] = e.target.value;
-                      setForm((p) => ({ ...p, options: opts }));
-                    }}
-                    placeholder={`Đáp án ${String.fromCharCode(65 + oi)}`}
-                    className="flex-1 h-7 rounded-lg border border-gray-200 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                  />
-                  {form.options.length > 2 && (
-                    <button
-                      onClick={() => {
-                        const opts = form.options.filter((_, i) => i !== oi);
-                        setForm((p) => ({ ...p, options: opts, answer: Math.min(p.answer, opts.length - 1) }));
-                      }}
-                      className="h-5 w-5 rounded flex items-center justify-center text-gray-400 hover:text-red-500"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              {form.options.length < 6 && (
-                <button onClick={() => setForm((p) => ({ ...p, options: [...p.options, ''] }))}
-                  className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1">
-                  <Plus className="h-3 w-3" />Thêm đáp án
-                </button>
-              )}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Click vào vòng tròn màu xanh để chọn đáp án đúng</p>
-          </div>
-
-          {/* Explanation */}
-          <div>
-            <label className="text-[11px] font-medium text-gray-600 block mb-1">Giải thích (tuỳ chọn)</label>
-            <input
-              value={form.explanation ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, explanation: e.target.value }))}
-              placeholder="Giải thích tại sao đáp án đúng..."
-              className="w-full h-7 rounded-lg border border-gray-200 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-            />
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-1">
-            <button onClick={handleSave} disabled={saving || !form.question.trim()}
-              className="h-7 px-3 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1.5">
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-              {editing ? 'Cập nhật' : 'Lưu câu hỏi'}
-            </button>
-            <button onClick={cancel} className="h-7 px-3 text-xs text-gray-600 hover:bg-gray-100 rounded-lg">
-              Huỷ
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Lesson Row ───────────────────────────────────────────────────────────────
-
-function LessonRow({
-  lesson, courseId, courseSlug, sectionId, onUpdate, onDelete,
-}: {
-  lesson: Lesson; courseId: string; courseSlug: string; sectionId: string;
-  onUpdate: (id: string, data: Partial<Lesson>) => void;
-  onDelete: (id: string) => void;
-}) {
-  const Icon = LESSON_TYPE_ICON[lesson.type] || Play;
-  const [deleting, setDeleting] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadPct, setUploadPct] = useState(0);
-  const [uploadError, setUploadError] = useState('');
-  const [expanded, setExpanded] = useState(false);
-  const [quizOpen, setQuizOpen] = useState(false);
-
-  const handleDelete = async () => {
-    if (!confirm(`Xóa bài "${lesson.title}"?`)) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/courses/lessons/${lesson.id}`);
-      onDelete(lesson.id);
-    } catch {}
-    setDeleting(false);
-  };
-
-  const toggleFree = async () => {
-    const updated = await api.patch<Lesson>(`/courses/lessons/${lesson.id}`, { isFree: !lesson.isFree }).catch(() => null);
-    if (updated) onUpdate(lesson.id, { isFree: updated.isFree });
-  };
-
-  const togglePublished = async () => {
-    const updated = await api.patch<Lesson>(`/courses/lessons/${lesson.id}`, { isPublished: !lesson.isPublished }).catch(() => null);
-    if (updated) onUpdate(lesson.id, { isPublished: updated.isPublished });
-  };
-
-  const { accessToken } = useAuthStore();
-
-  const handleUploadVideo = (file: File) => {
-    setUploading(true);
-    setUploadPct(0);
-    setUploadError('');
-    const formData = new FormData();
-    formData.append('file', file);
-    const xhr = new XMLHttpRequest();
-    // Upload thẳng vào API server để tránh Next.js proxy buffer toàn bộ file
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
-    xhr.open('POST', `${apiBase}/lessons/${lesson.id}/upload-video`);
-    if (accessToken) xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onload = () => {
-      setUploading(false);
-      if (xhr.status < 300) {
-        try {
-          const res = JSON.parse(xhr.responseText);
-          onUpdate(lesson.id, { videoKey: res.key, isPublished: true });
-        } catch {
-          setUploadError('Upload thành công nhưng không đọc được phản hồi.');
-        }
-      } else {
-        try {
-          const err = JSON.parse(xhr.responseText);
-          setUploadError(err.error || `Lỗi ${xhr.status}`);
-        } catch {
-          setUploadError(`Upload thất bại (${xhr.status})`);
-        }
-      }
-    };
-    xhr.onerror = () => { setUploading(false); setUploadError('Lỗi kết nối – không thể tải video lên.'); };
-    xhr.send(formData);
-  };
-
-  return (
-    <div className="rounded-xl border border-gray-100 overflow-hidden">
-      {/* Main row */}
-      <div className="flex items-center gap-3 py-2.5 px-3 hover:bg-gray-50 group transition-colors">
-        <GripVertical className="h-4 w-4 text-gray-300 shrink-0 cursor-grab" />
-        <div className={cn('h-7 w-7 rounded-lg flex items-center justify-center shrink-0',
-          lesson.type === 'VIDEO' ? 'bg-indigo-50' : lesson.type === 'TEXT' ? 'bg-green-50' : 'bg-red-50',
-        )}>
-          <Icon className={cn('h-3.5 w-3.5',
-            lesson.type === 'VIDEO' ? 'text-indigo-600' : lesson.type === 'TEXT' ? 'text-green-600' : 'text-red-500',
-          )} />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <InlineEdit
-            value={lesson.title}
-            onSave={async (title) => {
-              const updated = await api.patch<Lesson>(`/courses/lessons/${lesson.id}`, { title }).catch(() => null);
-              if (updated) onUpdate(lesson.id, { title: updated.title });
-            }}
-            className="text-sm font-medium text-gray-800"
-          />
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {LESSON_TYPE_LABEL[lesson.type]}
-            {lesson.type === 'VIDEO' && lesson.videoKey && (
-              <span className="ml-2 text-green-600 font-medium">· Đã có video</span>
-            )}
-            {lesson.type === 'VIDEO' && !lesson.videoKey && (
-              <span className="ml-2 text-orange-500 font-medium">· Chưa có video</span>
-            )}
-          </p>
-        </div>
-
-        {/* Toggles */}
-        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          {lesson.type === 'VIDEO' && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="h-6 px-2 rounded-lg flex items-center gap-1 hover:bg-indigo-50 text-indigo-600 text-[10px] font-semibold"
-            >
-              <Upload className="h-3 w-3" />Upload
-            </button>
-          )}
-          {(lesson.videoKey || lesson.type === 'VIDEO') && (
-            <a
-              href={`/learn/${courseSlug}?lesson=${lesson.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-6 px-2 rounded-lg flex items-center gap-1 hover:bg-green-50 text-green-600 text-[10px] font-semibold"
-              title="Xem video bài học"
-            >
-              <Play className="h-3 w-3" />Xem
-            </a>
-          )}
-          <button
-            onClick={() => setQuizOpen(!quizOpen)}
-            className={cn('h-6 px-2 rounded-lg flex items-center gap-1 text-[10px] font-semibold transition-colors',
-              quizOpen ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-indigo-50 text-indigo-600',
-            )}
-          >
-            <HelpCircle className="h-3 w-3" />Quiz
-          </button>
-          <button
-            onClick={toggleFree}
-            className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors',
-              lesson.isFree ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-green-200',
-            )}
-          >
-            {lesson.isFree ? 'Miễn phí' : 'Trả phí'}
-          </button>
-          <button
-            onClick={togglePublished}
-            title={lesson.isPublished ? 'Ẩn bài' : 'Xuất bản'}
-            className="h-6 w-6 rounded-lg flex items-center justify-center hover:bg-gray-100"
-          >
-            {lesson.isPublished
-              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-              : <Circle className="h-3.5 w-3.5 text-gray-400" />
-            }
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="h-6 w-6 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-400 hover:text-red-600"
-          >
-            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Quiz management panel */}
-      {quizOpen && <QuizManager lessonId={lesson.id} />}
-
-      {/* Video upload panel */}
-      {expanded && lesson.type === 'VIDEO' && (
-        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
-          {lesson.videoKey ? (
-            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate font-mono">{lesson.videoKey.split('/').pop()}</span>
-              <button
-                className="ml-auto text-red-500 hover:text-red-700 shrink-0 font-medium"
-                onClick={async () => {
-                  await api.patch(`/courses/lessons/${lesson.id}`, { videoKey: null }).catch(() => {});
-                  onUpdate(lesson.id, { videoKey: undefined });
-                }}
-              >
-                Xóa
-              </button>
-            </div>
-          ) : null}
-          {uploadError && (
-            <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
-              <span className="font-medium">Lỗi:</span> {uploadError}
-            </div>
-          )}
-          {uploading ? (
-            <div className="space-y-1">
-              <div className="text-xs text-indigo-600 font-medium">Đang tải lên... {uploadPct}%</div>
-              <div className="h-1.5 rounded-full bg-gray-200">
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${uploadPct}%` }} />
-              </div>
-            </div>
-          ) : (
-            <label className="flex items-center gap-2 cursor-pointer text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-              <Upload className="h-3.5 w-3.5" />
-              {lesson.videoKey ? 'Thay thế video mới' : 'Chọn file video (mp4, webm, mov)'}
-              <input
-                type="file" accept="video/*" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setUploadError(''); handleUploadVideo(f); } }}
-              />
-            </label>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Section Block ────────────────────────────────────────────────────────────
-
-function SectionBlock({
-  section, courseId, courseSlug, onUpdate, onDelete, onLessonAdd, onLessonUpdate, onLessonDelete,
-}: {
-  section: Section; courseId: string; courseSlug: string;
-  onUpdate: (id: string, data: Partial<Section>) => void;
-  onDelete: (id: string) => void;
-  onLessonAdd: (sectionId: string, lesson: Lesson) => void;
-  onLessonUpdate: (sectionId: string, lessonId: string, data: Partial<Lesson>) => void;
-  onLessonDelete: (sectionId: string, lessonId: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const [addingLesson, setAddingLesson] = useState(false);
-  const [lessonTitle, setLessonTitle] = useState('');
-  const [lessonType, setLessonType] = useState<'VIDEO' | 'TEXT' | 'LIVE'>('VIDEO');
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const handleAddLesson = async () => {
-    if (!lessonTitle.trim()) return;
-    setSaving(true);
-    try {
-      const lesson = await api.post<Lesson>(`/courses/sections/${section.id}/lessons`, {
-        title: lessonTitle.trim(),
-        type: lessonType,
-        order: section.lessons.length,
-      });
-      onLessonAdd(section.id, lesson);
-      setLessonTitle('');
-      setAddingLesson(false);
-    } catch {}
-    setSaving(false);
-  };
-
-  const handleDelete = async () => {
-    if (!confirm(`Xóa chương "${section.title}"? Tất cả bài học sẽ bị xóa.`)) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/courses/sections/${section.id}`);
-      onDelete(section.id);
-    } catch {}
-    setDeleting(false);
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Section header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100">
-        <button onClick={() => setExpanded(!expanded)} className="shrink-0">
-          {expanded
-            ? <ChevronDown className="h-4 w-4 text-gray-500" />
-            : <ChevronRight className="h-4 w-4 text-gray-500" />
-          }
-        </button>
-        <BookOpen className="h-4 w-4 text-indigo-500 shrink-0" />
-        <div className="flex-1 min-w-0 font-semibold text-sm">
-          <InlineEdit
-            value={section.title}
-            onSave={async (title) => {
-              const updated = await api.patch<Section>(`/courses/sections/${section.id}`, { title }).catch(() => null);
-              if (updated) onUpdate(section.id, { title: updated.title });
-            }}
-          />
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0">{section.lessons.length} bài</span>
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-red-50 text-red-400 hover:text-red-600 ml-1 transition-colors"
-        >
-          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-
-      {/* Lessons */}
-      {expanded && (
-        <div className="p-3 space-y-0.5">
-          {section.lessons.length === 0 && !addingLesson && (
-            <p className="text-xs text-muted-foreground text-center py-4">Chưa có bài học nào</p>
-          )}
-          {section.lessons.map((lesson) => (
-            <LessonRow
-              key={lesson.id}
-              lesson={lesson}
-              courseId={courseId}
-              courseSlug={courseSlug}
-              sectionId={section.id}
-              onUpdate={(lid, data) => onLessonUpdate(section.id, lid, data)}
-              onDelete={(lid) => onLessonDelete(section.id, lid)}
-            />
-          ))}
-
-          {/* Add lesson form */}
-          {addingLesson ? (
-            <div className="flex items-center gap-2 pt-2 px-3">
-              <Input
-                autoFocus
-                placeholder="Tên bài học..."
-                value={lessonTitle}
-                onChange={(e) => setLessonTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddLesson(); if (e.key === 'Escape') setAddingLesson(false); }}
-                className="text-sm h-8"
-              />
-              <select
-                value={lessonType}
-                onChange={(e) => setLessonType(e.target.value as any)}
-                className="border rounded-lg px-2 py-1.5 text-xs h-8 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="VIDEO">Video</option>
-                <option value="TEXT">Bài đọc</option>
-                <option value="LIVE">Trực tuyến</option>
-              </select>
-              <button onClick={handleAddLesson} disabled={saving}
-                className="h-8 px-3 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-1">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Thêm
-              </button>
-              <button onClick={() => setAddingLesson(false)} className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center">
-                <X className="h-4 w-4 text-gray-500" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAddingLesson(true)}
-              className="flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-700 px-3 py-2 rounded-xl hover:bg-indigo-50 transition-colors w-full"
-            >
-              <Plus className="h-3.5 w-3.5" />Thêm bài học
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Course Info Panel ────────────────────────────────────────────────────────
-
-function CourseInfoPanel({ course, onUpdate }: { course: Course; onUpdate: (data: Partial<Course>) => void }) {
-  const [form, setForm] = useState({
-    title: course.title,
-    description: course.description || '',
-    level: course.level,
-    status: course.status,
-    price: course.price,
-    isFree: course.isFree,
-  });
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const updated = await api.patch<Course>(`/courses/${course.id}`, form);
-      onUpdate(updated);
-      setToast({ type: 'success', msg: 'Đã lưu thông tin khoá học' });
-    } catch (e: any) {
-      setToast({ type: 'error', msg: e.message || 'Lưu thất bại' });
-    }
-    setSaving(false);
-  };
-
-  const st = STATUS_CONFIG[form.status];
-  const StatusIcon = st.icon;
-
-  return (
-    <div className="space-y-4">
-      {/* Status badge */}
-      <div className={cn('inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full', st.cls)}>
-        <StatusIcon className="h-3.5 w-3.5" />{st.label}
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">Tên khoá học</label>
-          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="text-sm" />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">Mô tả</label>
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full border rounded-xl px-3 py-2 text-sm resize-none h-24 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-            placeholder="Mô tả khoá học..."
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Trình độ</label>
-            <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}
-              className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
-              <option value="BEGINNER">Cơ bản</option>
-              <option value="INTERMEDIATE">Trung cấp</option>
-              <option value="ADVANCED">Nâng cao</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Trạng thái</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as any })}
-              className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
-              <option value="DRAFT">Bản nháp</option>
-              <option value="PUBLISHED">Xuất bản</option>
-              <option value="ARCHIVED">Lưu trữ</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.isFree} onChange={(e) => setForm({ ...form, isFree: e.target.checked, price: e.target.checked ? 0 : form.price })}
-              className="rounded border-gray-300 text-indigo-600" />
-            <span className="text-sm font-medium">Miễn phí</span>
-          </label>
-        </div>
-        {!form.isFree && (
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Giá (₫)</label>
-            <Input type="number" min={0} value={form.price}
-              onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="text-sm" />
-          </div>
-        )}
-      </div>
-
-      <button onClick={handleSave} disabled={saving}
-        className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-60">
-        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        {saving ? 'Đang lưu...' : 'Lưu thông tin'}
-      </button>
-
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
-    </div>
-  );
-}
-
-// ─── Import File Modal ────────────────────────────────────────────────────────
-
-interface ImportResult {
-  sections: Array<{ id: string; title: string; lessons: any[] }>;
-  totalLessons: number;
-}
-
-function ImportFileModal({ courseId, onDone, onClose }: {
-  courseId: string;
-  onDone: (result: ImportResult) => void;
-  onClose: () => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState('');
-  const { accessToken } = useAuthStore();
-
-  const ACCEPTED = ['.pdf', '.docx', '.txt', '.md'];
-
-  const pick = (f: File) => {
-    const ext = '.' + f.name.split('.').pop()?.toLowerCase();
-    if (!ACCEPTED.includes(ext)) { setError('Chỉ hỗ trợ PDF, DOCX, TXT, MD'); return; }
-    setError('');
-    setFile(f);
-  };
-
-  const handleImport = async () => {
-    if (!file) return;
-    setImporting(true);
-    setError('');
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch(`/api/courses/${courseId}/import-file`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: form,
-      });
-      if (!res.ok) {
-        const e = await res.json();
-        throw new Error(e.error || 'Import thất bại');
-      }
-      const result: ImportResult = await res.json();
-      onDone(result);
-    } catch (e: any) {
-      setError(e.message || 'Import thất bại');
-    }
-    setImporting(false);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-indigo-100 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-indigo-600" />
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-900">Import từ file</h3>
-              <p className="text-xs text-muted-foreground">AI tự động tạo chương và bài học</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center">
-            <X className="h-4 w-4 text-gray-500" />
-          </button>
-        </div>
-
-        {/* Drop zone */}
-        <div
-          className={cn(
-            'border-2 border-dashed rounded-2xl p-8 text-center transition-colors cursor-pointer',
-            dragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50',
-            file ? 'border-green-400 bg-green-50' : '',
-          )}
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) pick(f); }}
-          onClick={() => document.getElementById('file-import-input')?.click()}
-        >
-          <input
-            id="file-import-input"
-            type="file"
-            accept=".pdf,.docx,.txt,.md"
-            className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); }}
-          />
-          {file ? (
-            <>
-              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
-              <p className="font-semibold text-green-700 text-sm">{file.name}</p>
-              <p className="text-xs text-green-600 mt-1">{(file.size / 1024).toFixed(0)} KB</p>
-            </>
-          ) : (
-            <>
-              <FileUp className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="font-semibold text-gray-700 text-sm">Kéo thả hoặc click để chọn file</p>
-              <p className="text-xs text-muted-foreground mt-1">Hỗ trợ: PDF, DOCX, TXT, MD (tối đa 20MB)</p>
-            </>
-          )}
-        </div>
-
-        {error && (
-          <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />{error}
-          </div>
-        )}
-
-        <div className="bg-indigo-50 rounded-xl px-4 py-3 text-xs text-indigo-700 space-y-1">
-          <p className="font-semibold flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> AI sẽ tự động:</p>
-          <p>• Đọc nội dung file</p>
-          <p>• Chia thành chương và bài học phù hợp</p>
-          <p>• Điền nội dung vào từng bài học</p>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={handleImport}
-            disabled={!file || importing}
-            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-50"
-          >
-            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {importing ? 'Đang xử lý...' : 'Bắt đầu import'}
-          </button>
-          <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl">
-            Hủy
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Course Language Section ──────────────────────────────────────────────────
-
-interface LangVocabSet { id: string; title: string; language: string; courseId: string | null; _count: { items: number }; }
-interface LangExercise { id: string; title: string; type: string; language: string; courseId: string | null; _count: { questions: number }; }
-
-function CourseLangSection({ courseId }: { courseId: string }) {
-  const [vocabSets, setVocabSets] = useState<LangVocabSet[]>([]);
-  const [exercises, setExercises] = useState<LangExercise[]>([]);
-  const [allVocab, setAllVocab] = useState<LangVocabSet[]>([]);
-  const [allExercises, setAllExercises] = useState<LangExercise[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterGroup, setFilterGroup] = useState<'all' | 'lang' | 'math' | 'viet'>('all');
   const [showPicker, setShowPicker] = useState(false);
-  const [linking, setLinking] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [pickerTab, setPickerTab] = useState<'lang' | 'math' | 'viet'>('lang');
+  const [pickerItems, setPickerItems] = useState<{ lang: PickerItem[]; math: PickerItem[]; viet: PickerItem[] }>({ lang: [], math: [], viet: [] });
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const selectedModule = modules.find((m) => m.id === selectedId) ?? null;
+
+  const loadModules = useCallback(async () => {
     try {
-      const [content, mine] = await Promise.all([
-        api.get<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] }>(`/language/course/${courseId}/content`),
-        api.get<{ vocabSets: LangVocabSet[]; exercises: LangExercise[] }>('/language/mine'),
-      ]);
-      setVocabSets(content.vocabSets);
-      setExercises(content.exercises);
-      setAllVocab(mine.vocabSets);
-      setAllExercises(mine.exercises);
+      const data = await api.get<ModuleLink[]>(`/courses/${courseId}/modules`);
+      setModules(data);
+      if (data.length > 0) setSelectedId((prev) => prev ?? data[0].id);
     } catch {}
     setLoading(false);
   }, [courseId]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const linkVocab = async (id: string) => {
-    setLinking(id);
+  const loadPickerContent = useCallback(async () => {
+    setPickerLoading(true);
     try {
-      await api.patch(`/language/vocab-sets/${id}`, { courseId });
-      await load();
-      setToast({ type: 'success', msg: 'Đã liên kết bộ từ vựng' });
-    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
-    setLinking(null);
+      const [langData, mathData, vietData] = await Promise.all([
+        api.get<{ vocabSets: any[]; exercises: any[] }>('/language/mine'),
+        api.get<{ topics: any[]; exercises: any[] }>('/math/mine'),
+        api.get<{ sets: any[]; exercises: any[] }>('/viet/mine'),
+      ]);
+      const langItems: PickerItem[] = [
+        ...langData.vocabSets.map((v: any) => ({ id: v.id, title: v.title, subtitle: `${v.language} · ${v._count?.items ?? 0} từ`, contentType: 'VOCAB_SET' as ContentType })),
+        ...langData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'LANG_EXERCISE' as ContentType })),
+      ];
+      const mathItems: PickerItem[] = [
+        ...mathData.topics.map((t: any) => ({ id: t.id, title: t.title, subtitle: `${t.subject} · Lớp ${t.grade}`, contentType: 'MATH_TOPIC' as ContentType })),
+        ...mathData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'MATH_EXERCISE' as ContentType })),
+      ];
+      const vietItems: PickerItem[] = [
+        ...vietData.sets.map((s: any) => ({ id: s.id, title: s.title, subtitle: `${s.category} · ${s._count?.items ?? 0} mục`, contentType: 'VIET_SET' as ContentType })),
+        ...vietData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'VIET_EXERCISE' as ContentType })),
+      ];
+      setPickerItems({ lang: langItems, math: mathItems, viet: vietItems });
+    } catch {}
+    setPickerLoading(false);
+  }, []);
+
+  useEffect(() => { loadModules(); }, [loadModules]);
+  useEffect(() => { if (showPicker) loadPickerContent(); }, [showPicker, loadPickerContent]);
+
+  const handleAdd = async (item: PickerItem) => {
+    setAdding(item.id);
+    try {
+      const link = await api.post<ModuleLink>(`/courses/${courseId}/modules`, { contentType: item.contentType, contentId: item.id });
+      setModules((prev) => [...prev, link]);
+      setSelectedId(link.id);
+    } catch {}
+    setAdding(null);
   };
 
-  const unlinkVocab = async (id: string) => {
-    setLinking(id);
+  const handleRemove = async (linkId: string, title: string) => {
+    if (!confirm(`Gỡ "${title}" khỏi khóa học?`)) return;
+    setRemoving(linkId);
     try {
-      await api.patch(`/language/vocab-sets/${id}`, { courseId: null });
-      setVocabSets((prev) => prev.filter((v) => v.id !== id));
-      setToast({ type: 'success', msg: 'Đã gỡ liên kết' });
-    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
-    setLinking(null);
+      await api.delete(`/courses/${courseId}/modules/${linkId}`);
+      setModules((prev) => {
+        const next = prev.filter((m) => m.id !== linkId);
+        if (selectedId === linkId) setSelectedId(next[0]?.id ?? null);
+        return next;
+      });
+    } catch {}
+    setRemoving(null);
   };
 
-  const linkExercise = async (id: string) => {
-    setLinking(id);
-    try {
-      await api.patch(`/language/exercises/${id}`, { courseId });
-      await load();
-      setToast({ type: 'success', msg: 'Đã liên kết bài tập' });
-    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
-    setLinking(null);
-  };
-
-  const unlinkExercise = async (id: string) => {
-    setLinking(id);
-    try {
-      await api.patch(`/language/exercises/${id}`, { courseId: null });
-      setExercises((prev) => prev.filter((e) => e.id !== id));
-      setToast({ type: 'success', msg: 'Đã gỡ liên kết' });
-    } catch (e: any) { setToast({ type: 'error', msg: e.message }); }
-    setLinking(null);
-  };
-
-  const TYPE_LABEL: Record<string, string> = { MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền từ', MATCHING: 'Nối từ', WORD_ORDER: 'Sắp xếp', DICTATION: 'Nghe viết' };
-
-  const linkedVocabIds = new Set(vocabSets.map((v) => v.id));
-  const linkedExerciseIds = new Set(exercises.map((e) => e.id));
-  const unlinkedVocab = allVocab.filter((v) => !linkedVocabIds.has(v.id) && !v.courseId);
-  const unlinkedExercises = allExercises.filter((e) => !linkedExerciseIds.has(e.id) && !e.courseId);
+  const linkedIds = new Set(modules.map((m) => m.contentId));
+  const filteredModules = filterGroup === 'all' ? modules : modules.filter((m) => MODULE_TYPE_GROUP[m.contentType] === filterGroup);
+  const currentPickerItems = pickerItems[pickerTab];
+  const filteredPicker = currentPickerItems.filter((item) =>
+    !linkedIds.has(item.id) && (!search.trim() || item.title.toLowerCase().includes(search.toLowerCase()))
+  );
+  const viewUrl = selectedModule ? getModuleViewUrl(selectedModule.contentType, selectedModule.contentId) : '';
+  const parentUrl = selectedModule ? getModuleParentUrl(selectedModule.contentType) : '';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Languages className="h-5 w-5 text-violet-600" />
-          <h2 className="font-bold text-gray-900">Nội dung ngoại ngữ</h2>
+    <>
+      <div className="rounded-xl border overflow-hidden bg-background flex" style={{ height: 'calc(100vh - 260px)', minHeight: 460 }}>
+        {/* Left panel */}
+        <div className="w-64 shrink-0 flex flex-col border-r">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30 shrink-0">
+            <span className="font-semibold text-sm">Nội dung ({modules.length})</span>
+            <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowPicker(true)}>
+              <Plus className="h-3 w-3 mr-1" />Thêm
+            </Button>
+          </div>
+
+          {/* Filter tabs */}
+          <div className="flex border-b text-xs shrink-0">
+            {(['all', 'lang', 'math', 'viet'] as const).map((g) => (
+              <button
+                key={g}
+                onClick={() => setFilterGroup(g)}
+                className={cn(
+                  'px-2.5 py-2 font-medium border-b-2 transition-colors',
+                  filterGroup === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {g === 'all' ? 'Tất cả' : { lang: 'Ngoại ngữ', math: 'Toán', viet: 'Việt' }[g]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : filteredModules.length === 0 ? (
+              <div className="text-center py-8 px-4">
+                <BookMarked className="h-7 w-7 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">Chưa có nội dung</p>
+                <button onClick={() => setShowPicker(true)} className="mt-1 text-xs text-primary hover:underline">+ Thêm</button>
+              </div>
+            ) : (
+              filteredModules.map((m) => {
+                const colors = GROUP_COLORS[MODULE_TYPE_GROUP[m.contentType]];
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => setSelectedId(m.id)}
+                    className={cn(
+                      'flex items-start gap-2 px-4 py-3 cursor-pointer border-b hover:bg-muted/50 transition-colors group border-l-2',
+                      selectedId === m.id ? 'bg-primary/5 border-l-primary' : 'border-l-transparent',
+                    )}
+                  >
+                    <div className={`shrink-0 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-tight ${colors.badge}`}>
+                      {MODULE_TYPE_LABEL[m.contentType].split(' ').slice(-1)[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium leading-tight truncate">{m.title}</p>
+                      {m.subtitle && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{m.subtitle}</p>}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemove(m.id, m.title); }}
+                      disabled={removing === m.id}
+                      className="opacity-0 group-hover:opacity-100 h-5 w-5 rounded flex items-center justify-center text-destructive/60 hover:text-destructive shrink-0 transition-opacity mt-0.5"
+                    >
+                      {removing === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-        <button
-          onClick={() => setShowPicker(!showPicker)}
-          className="flex items-center gap-1.5 text-sm font-semibold text-violet-600 hover:text-violet-700 bg-white border border-violet-200 hover:border-violet-400 px-3 py-1.5 rounded-xl transition-all"
-        >
-          <Plus className="h-4 w-4" />Thêm nội dung
-        </button>
+
+        {/* Right panel */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {!selectedModule ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <BookMarked className="h-10 w-10 text-muted-foreground/20" />
+              <p className="text-sm text-muted-foreground">Chọn một nội dung bên trái để xem</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 px-5 py-3 border-b bg-muted/30 shrink-0">
+                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].badge}`}>
+                  {MODULE_TYPE_LABEL[selectedModule.contentType]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm truncate">{selectedModule.title}</p>
+                  {selectedModule.subtitle && <p className="text-xs text-muted-foreground">{selectedModule.subtitle}</p>}
+                </div>
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
+                <div className={`h-16 w-16 rounded-2xl flex items-center justify-center ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].bg}`}>
+                  <BookMarked className={`h-8 w-8 ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].text}`} />
+                </div>
+                <div>
+                  <p className="font-bold text-base">{selectedModule.title}</p>
+                  {selectedModule.subtitle && <p className="text-sm text-muted-foreground mt-1">{selectedModule.subtitle}</p>}
+                  <p className="text-xs text-muted-foreground mt-2">{MODULE_TYPE_LABEL[selectedModule.contentType]}</p>
+                </div>
+                <a
+                  href={viewUrl || parentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Mở nội dung
+                </a>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="bg-white rounded-2xl border border-gray-100 py-8 flex items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <>
-          {vocabSets.length === 0 && exercises.length === 0 && !showPicker && (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-12 text-center">
-              <BookMarked className="h-9 w-9 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">Chưa có nội dung ngoại ngữ</p>
-              <button onClick={() => setShowPicker(true)} className="mt-2 text-sm text-violet-600 hover:underline font-medium">
-                + Liên kết bộ từ vựng hoặc bài tập
+      {/* Picker modal */}
+      {showPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPicker(false); }}>
+          <div className="bg-background rounded-xl shadow-2xl w-full max-w-lg flex flex-col border" style={{ maxHeight: '80vh' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+              <h3 className="font-bold">Thêm nội dung học</h3>
+              <button onClick={() => setShowPicker(false)} className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center">
+                <X className="h-4 w-4" />
               </button>
             </div>
-          )}
-
-          {vocabSets.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 bg-violet-50/50">
-                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Bộ từ vựng ({vocabSets.length})</p>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {vocabSets.map((v) => (
-                  <div key={v.id} className="flex items-center gap-3 px-5 py-3">
-                    <BookMarked className="h-4 w-4 text-violet-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{v.title}</p>
-                      <p className="text-xs text-muted-foreground">{v.language} · {v._count.items} từ</p>
-                    </div>
-                    <button
-                      onClick={() => unlinkVocab(v.id)}
-                      disabled={linking === v.id}
-                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60 shrink-0"
-                    >
-                      {linking === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                      Gỡ
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {exercises.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 bg-violet-50/50">
-                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">Bài tập ({exercises.length})</p>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {exercises.map((e) => (
-                  <div key={e.id} className="flex items-center gap-3 px-5 py-3">
-                    <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{e.title}</p>
-                      <p className="text-xs text-muted-foreground">{TYPE_LABEL[e.type] || e.type} · {e._count.questions} câu</p>
-                    </div>
-                    <button
-                      onClick={() => unlinkExercise(e.id)}
-                      disabled={linking === e.id}
-                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60 shrink-0"
-                    >
-                      {linking === e.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                      Gỡ
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {showPicker && (
-            <div className="bg-white rounded-2xl border border-violet-200 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm text-gray-900">Chọn nội dung để liên kết</p>
-                <button onClick={() => setShowPicker(false)} className="h-7 w-7 rounded-lg hover:bg-gray-100 flex items-center justify-center">
-                  <X className="h-4 w-4 text-gray-500" />
+            <div className="flex border-b px-4 shrink-0">
+              {(['lang', 'math', 'viet'] as const).map((g) => (
+                <button key={g} onClick={() => { setPickerTab(g); setSearch(''); }}
+                  className={cn('px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+                    pickerTab === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                  {GROUP_TITLES[g]}
                 </button>
-              </div>
-
-              {unlinkedVocab.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Bộ từ vựng chưa liên kết</p>
-                  <div className="space-y-1.5">
-                    {unlinkedVocab.map((v) => (
-                      <div key={v.id} className="flex items-center gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 transition-colors">
-                        <BookMarked className="h-4 w-4 text-violet-400 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{v.title}</p>
-                          <p className="text-xs text-muted-foreground">{v.language} · {v._count.items} từ</p>
-                        </div>
-                        <button
-                          onClick={() => linkVocab(v.id)}
-                          disabled={linking === v.id}
-                          className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-60 shrink-0"
-                        >
-                          {linking === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                          Thêm
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {unlinkedExercises.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Bài tập chưa liên kết</p>
-                  <div className="space-y-1.5">
-                    {unlinkedExercises.map((e) => (
-                      <div key={e.id} className="flex items-center gap-3 py-2 px-3 rounded-xl hover:bg-gray-50 transition-colors">
-                        <Sparkles className="h-4 w-4 text-violet-400 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{e.title}</p>
-                          <p className="text-xs text-muted-foreground">{TYPE_LABEL[e.type] || e.type} · {e._count.questions} câu</p>
-                        </div>
-                        <button
-                          onClick={() => linkExercise(e.id)}
-                          disabled={linking === e.id}
-                          className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-60 shrink-0"
-                        >
-                          {linking === e.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                          Thêm
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {unlinkedVocab.length === 0 && unlinkedExercises.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">Tất cả nội dung đã được liên kết hoặc chưa có nội dung nào</p>
-              )}
+              ))}
             </div>
-          )}
-        </>
-      )}
-
-      {toast && (
-        <div className={cn(
-          'fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium animate-in slide-in-from-bottom-4',
-          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white',
-        )}>
-          {toast.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-          {toast.msg}
+            <div className="px-4 pt-3 shrink-0">
+              <input placeholder="Tìm kiếm..." value={search} onChange={(e) => setSearch(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5 min-h-0">
+              {pickerLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : filteredPicker.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted-foreground">{search ? 'Không tìm thấy kết quả' : 'Không có nội dung để thêm'}</p>
+                  {!search && (
+                    <a href={pickerTab === 'lang' ? '/instructor/language' : pickerTab === 'math' ? '/instructor/math' : '/instructor/viet'}
+                      target="_blank" rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline font-medium">
+                      <Plus className="h-3.5 w-3.5" />Tạo nội dung mới
+                    </a>
+                  )}
+                </div>
+              ) : filteredPicker.map((item) => {
+                const colors = GROUP_COLORS[pickerTab];
+                return (
+                  <div key={item.id} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
+                      {MODULE_TYPE_LABEL[item.contentType]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.title}</p>
+                      {item.subtitle && <p className="text-xs text-muted-foreground">{item.subtitle}</p>}
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs shrink-0"
+                      disabled={adding === item.id} onClick={() => handleAdd(item)}>
+                      {adding === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                      Thêm
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function InstructorCoursePage() {
+export default function InstructorCourseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const [tab, setTab] = useState<Tab>('info');
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
-  const [addingSection, setAddingSection] = useState(false);
-  const [sectionTitle, setSectionTitle] = useState('');
-  const [savingSection, setSavingSection] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deletingCourse, setDeletingCourse] = useState(false);
-  const [showImport, setShowImport] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    api.get<Course>(`/courses/${id}/manage`)
-      .then(setCourse)
-      .catch(() => router.replace('/courses'))
-      .finally(() => setLoading(false));
-  }, [id, router]);
+  // Edit form
+  const [editTitle, setEditTitle] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [editLevel, setEditLevel] = useState('');
+  const [editPrice, setEditPrice] = useState('0');
+  const [editFree, setEditFree] = useState(true);
+
+  // Delete state
+  const [deleteError, setDeleteError] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Add section
+  const [newSection, setNewSection] = useState('');
+  const [addingSection, setAddingSection] = useState(false);
+
+  // Add lesson
+  const [newLessonTitle, setNewLessonTitle] = useState<Record<string, string>>({});
+  const [addingLesson, setAddingLesson] = useState<Record<string, boolean>>({});
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  // Edit section
+  const [editSectionId, setEditSectionId] = useState<string | null>(null);
+  const [editSectionTitle, setEditSectionTitle] = useState('');
+  const [savingSection, setSavingSection] = useState(false);
+
+  // Edit lesson
+  type EditLesson = { id: string; title: string; type: string; isFree: boolean; isPublished: boolean; videoKey?: string; videoUrl?: string };
+  const [editLesson, setEditLesson] = useState<EditLesson | null>(null);
+  const [videoInputMode, setVideoInputMode] = useState<'upload' | 'url'>('upload');
+  const [savingLesson, setSavingLesson] = useState(false);
+
+  // Upload video
+  const [uploadingLesson, setUploadingLesson] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const loadCourse = useCallback(async () => {
+    try {
+      const data = await api.get<Course>(`/courses/${id}/manage`);
+      setCourse(data);
+      setEditTitle(data.title);
+      setEditStatus(data.status);
+      setEditLevel(data.level);
+      setEditPrice(String(data.price));
+      setEditFree(data.isFree);
+      const exp: Record<string, boolean> = {};
+      data.sections.forEach((s) => { exp[s.id] = true; });
+      setExpandedSections(exp);
+    } catch { }
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { loadCourse(); }, [loadCourse]);
+
+  const handleSave = async () => {
+    setSaving(true); setError('');
+    try {
+      await api.patch(`/courses/${id}`, {
+        title: editTitle, status: editStatus, level: editLevel,
+        price: editFree ? 0 : Number(editPrice), isFree: editFree,
+      });
+      await loadCourse();
+    } catch (err: any) { setError(err.message); }
+    setSaving(false);
+  };
 
   const handleAddSection = async () => {
-    if (!sectionTitle.trim()) return;
+    if (!newSection.trim() || !course) return;
+    setAddingSection(true);
+    try {
+      await api.post(`/courses/${course.id}/sections`, { title: newSection.trim(), order: course.sections.length + 1 });
+      setNewSection('');
+      await loadCourse();
+    } catch { }
+    setAddingSection(false);
+  };
+
+  const handleDeleteSection = async (sectionId: string) => {
+    setDeletingId(sectionId); setDeleteError('');
+    try {
+      await api.delete(`/courses/sections/${sectionId}`);
+      await loadCourse();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Xóa chương thất bại');
+    }
+    setDeletingId(null);
+    setConfirmDeleteId(null);
+  };
+
+  const handleAddLesson = async (sectionId: string) => {
+    const title = newLessonTitle[sectionId];
+    if (!title?.trim()) return;
+    setAddingLesson((p) => ({ ...p, [sectionId]: true }));
+    try {
+      const section = course!.sections.find((s) => s.id === sectionId)!;
+      await api.post(`/courses/sections/${sectionId}/lessons`, {
+        title: title.trim(), order: section.lessons.length + 1, type: 'VIDEO',
+      });
+      setNewLessonTitle((p) => ({ ...p, [sectionId]: '' }));
+      await loadCourse();
+    } catch { }
+    setAddingLesson((p) => ({ ...p, [sectionId]: false }));
+  };
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    setDeletingId(lessonId); setDeleteError('');
+    try {
+      await api.delete(`/courses/lessons/${lessonId}`);
+      await loadCourse();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Xóa bài học thất bại');
+    }
+    setDeletingId(null);
+    setConfirmDeleteId(null);
+  };
+
+  const handleSaveSection = async () => {
+    if (!editSectionId || !editSectionTitle.trim()) return;
     setSavingSection(true);
     try {
-      const section = await api.post<Section>(`/courses/${id}/sections`, {
-        title: sectionTitle.trim(),
-        order: course?.sections.length ?? 0,
-      });
-      setCourse((prev) => prev ? { ...prev, sections: [...prev.sections, { ...section, lessons: [] }] } : prev);
-      setSectionTitle('');
-      setAddingSection(false);
-    } catch (e: any) {
-      setToast({ type: 'error', msg: e.message || 'Thêm chương thất bại' });
-    }
+      await api.patch(`/courses/sections/${editSectionId}`, { title: editSectionTitle.trim() });
+      setEditSectionId(null);
+      await loadCourse();
+    } catch { }
     setSavingSection(false);
   };
 
-  const updateSection = useCallback((sectionId: string, data: Partial<Section>) => {
-    setCourse((prev) => prev ? {
-      ...prev,
-      sections: prev.sections.map((s) => s.id === sectionId ? { ...s, ...data } : s),
-    } : prev);
-  }, []);
-
-  const deleteSection = useCallback((sectionId: string) => {
-    setCourse((prev) => prev ? { ...prev, sections: prev.sections.filter((s) => s.id !== sectionId) } : prev);
-  }, []);
-
-  const addLesson = useCallback((sectionId: string, lesson: Lesson) => {
-    setCourse((prev) => prev ? {
-      ...prev,
-      sections: prev.sections.map((s) =>
-        s.id === sectionId ? { ...s, lessons: [...s.lessons, lesson] } : s,
-      ),
-    } : prev);
-  }, []);
-
-  const updateLesson = useCallback((sectionId: string, lessonId: string, data: Partial<Lesson>) => {
-    setCourse((prev) => prev ? {
-      ...prev,
-      sections: prev.sections.map((s) =>
-        s.id === sectionId
-          ? { ...s, lessons: s.lessons.map((l) => l.id === lessonId ? { ...l, ...data } : l) }
-          : s,
-      ),
-    } : prev);
-  }, []);
-
-  const deleteLesson = useCallback((sectionId: string, lessonId: string) => {
-    setCourse((prev) => prev ? {
-      ...prev,
-      sections: prev.sections.map((s) =>
-        s.id === sectionId ? { ...s, lessons: s.lessons.filter((l) => l.id !== lessonId) } : s,
-      ),
-    } : prev);
-  }, []);
-
-  const handleDeleteCourse = async () => {
-    setDeletingCourse(true);
+  const handleSaveVideoUrl = async () => {
+    if (!editLesson) return;
+    setSavingLesson(true);
     try {
-      await api.delete(`/courses/${id}`);
-      router.replace('/courses');
-    } catch (e: any) {
-      setToast({ type: 'error', msg: e.message || 'Xóa khóa học thất bại' });
-      setShowDeleteConfirm(false);
+      await api.patch(`/courses/lessons/${editLesson.id}`, {
+        videoUrl: editLesson.videoUrl || '',
+        videoKey: editLesson.videoUrl ? null : editLesson.videoKey,
+      });
+      await loadCourse();
+    } catch (err: any) { alert(err.message); }
+    setSavingLesson(false);
+  };
+
+  const handleSaveLesson = async () => {
+    if (!editLesson) return;
+    setSavingLesson(true);
+    try {
+      await api.patch(`/courses/lessons/${editLesson.id}`, {
+        title: editLesson.title,
+        type: editLesson.type,
+        isFree: editLesson.isFree,
+        isPublished: editLesson.isPublished,
+        videoUrl: editLesson.videoUrl ?? undefined,
+      });
+      setEditLesson(null);
+      await loadCourse();
+    } catch { }
+    setSavingLesson(false);
+  };
+
+  const handleUploadVideo = async (lessonId: string, file: File) => {
+    setUploadingLesson(lessonId);
+    setUploadProgress(0);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/api/lessons/${lessonId}/upload-video`);
+        const token = document.cookie.match(/auth_token=([^;]+)/)?.[1];
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error('Upload thất bại'));
+        xhr.onerror = () => reject(new Error('Lỗi mạng'));
+        xhr.send(formData);
+      });
+      await loadCourse();
+    } catch (err: any) {
+      alert(err.message || 'Upload thất bại');
     }
-    setDeletingCourse(false);
+    setUploadingLesson(null);
+    setUploadProgress(0);
+  };
+
+  const handleDeleteVideo = async (lessonId: string) => {
+    setDeletingId(`video-${lessonId}`); setDeleteError('');
+    try {
+      await api.patch(`/courses/lessons/${lessonId}`, { videoKey: null });
+      await loadCourse();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Xóa video thất bại');
+    }
+    setDeletingId(null);
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-[#f8fafc]">
+    <div className="flex items-center justify-center py-20">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
     </div>
   );
 
-  if (!course) return null;
+  if (!course) return (
+    <div className="text-center py-20 text-muted-foreground">Không tìm thấy khóa học</div>
+  );
 
   const totalLessons = course.sections.reduce((acc, s) => acc + s.lessons.length, 0);
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'info', label: 'Thông tin' },
+    { key: 'content', label: `Bài giảng (${totalLessons} bài)` },
+    { key: 'modules', label: 'Nội dung học' },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
-      {/* ── Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #6d28d9 100%)' }}
-        className="px-6 py-5 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
-        <div className="relative z-10 max-w-6xl mx-auto flex items-center gap-4">
-          <Link href="/courses" className="h-9 w-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors shrink-0">
-            <ArrowLeft className="h-4 w-4 text-white" />
-          </Link>
-          <div className="flex-1 min-w-0">
-            <p className="text-white/50 text-xs mb-0.5">Quản lý khoá học</p>
-            <h1 className="text-white font-bold text-lg truncate">{course.title}</h1>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-3 bg-white/10 border border-white/20 rounded-xl px-4 py-2">
-              <div className="text-center">
-                <div className="text-white font-bold text-sm">{course.sections.length}</div>
-                <div className="text-white/50 text-[10px]">Chương</div>
-              </div>
-              <div className="w-px h-6 bg-white/20" />
-              <div className="text-center">
-                <div className="text-white font-bold text-sm">{totalLessons}</div>
-                <div className="text-white/50 text-[10px]">Bài học</div>
-              </div>
-              <div className="w-px h-6 bg-white/20" />
-              <div className="text-center">
-                <div className="text-white font-bold text-sm">{course._count?.enrollments ?? 0}</div>
-                <div className="text-white/50 text-[10px]">Học viên</div>
-              </div>
-            </div>
-            <a href={`/learn/${course.slug}`}
-              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
+    <div className="space-y-5 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/courses')}>
+          <ArrowLeft className="h-4 w-4 mr-1" />Quay lại
+        </Button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-bold line-clamp-1">{course.title}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <Badge variant={course.status === 'PUBLISHED' ? 'default' : 'outline'}>{STATUS_LABEL[course.status] ?? course.status}</Badge>
+            <a href={`/instructor/courses/${id}/students`}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <Users className="h-3.5 w-3.5" />{course._count.enrollments} học viên
+            </a>
+            <a href={`/learn/${course.slug}`} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ml-1">
               <Eye className="h-3.5 w-3.5" />Xem trước
             </a>
-            <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 bg-indigo-500/30 hover:bg-indigo-500/50 border border-indigo-400/40 text-indigo-100 hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
-            >
-              <Sparkles className="h-3.5 w-3.5" />Import AI
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="flex items-center gap-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-400/30 text-red-200 hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />Xóa
-            </button>
           </div>
         </div>
       </div>
 
-      {/* ── Body ── */}
-      <div className="max-w-6xl mx-auto px-6 py-6 flex gap-6">
-        {/* ── Sections (left main) ── */}
-        <div className="flex-1 min-w-0 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-gray-900">Nội dung khoá học</h2>
-            <button
-              onClick={() => setAddingSection(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-200 hover:border-indigo-400 px-3 py-1.5 rounded-xl transition-all"
-            >
-              <Plus className="h-4 w-4" />Thêm chương
-            </button>
-          </div>
-
-          {/* Add section form */}
-          {addingSection && (
-            <div className="bg-white rounded-2xl border border-indigo-200 p-4 flex items-center gap-3">
-              <Input
-                autoFocus
-                placeholder="Tên chương mới..."
-                value={sectionTitle}
-                onChange={(e) => setSectionTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(); if (e.key === 'Escape') setAddingSection(false); }}
-                className="text-sm"
-              />
-              <button onClick={handleAddSection} disabled={savingSection}
-                className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 disabled:opacity-60 shrink-0">
-                {savingSection ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Thêm
-              </button>
-              <button onClick={() => setAddingSection(false)}
-                className="h-9 w-9 rounded-xl hover:bg-gray-100 flex items-center justify-center shrink-0">
-                <X className="h-4 w-4 text-gray-500" />
-              </button>
-            </div>
-          )}
-
-          {course.sections.length === 0 && !addingSection ? (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-16 text-center">
-              <BookOpen className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="font-medium text-muted-foreground">Chưa có chương nào</p>
-              <button
-                onClick={() => setAddingSection(true)}
-                className="mt-3 text-sm text-indigo-600 hover:underline font-medium"
-              >
-                + Thêm chương đầu tiên
-              </button>
-            </div>
-          ) : (
-            course.sections.map((section) => (
-              <SectionBlock
-                key={section.id}
-                section={section}
-                courseId={id}
-                courseSlug={course.slug}
-                onUpdate={updateSection}
-                onDelete={deleteSection}
-                onLessonAdd={addLesson}
-                onLessonUpdate={updateLesson}
-                onLessonDelete={deleteLesson}
-              />
-            ))
-          )}
-        </div>
-
-        {/* ── Right panel ── */}
-        <aside className="w-72 shrink-0 space-y-4">
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h3 className="font-semibold text-sm mb-4">Thông tin khoá học</h3>
-            <CourseInfoPanel
-              course={course}
-              onUpdate={(data) => setCourse((prev) => prev ? { ...prev, ...data, _count: prev._count } : prev)}
-            />
-          </div>
-          <CourseLangSection courseId={id} />
-        </aside>
+      {/* Tabs */}
+      <div className="flex border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {toast && <Toast type={toast.type} msg={toast.msg} onClose={() => setToast(null)} />}
-
-      {/* Delete course confirm modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={e => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                <Trash2 className="h-5 w-5 text-red-600" />
+      {/* Tab: Info */}
+      {tab === 'info' && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Chỉnh sửa thông tin</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Tên khóa học</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Trạng thái</label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                >
+                  <option value="DRAFT">Nháp</option>
+                  <option value="PUBLISHED">Công khai</option>
+                  <option value="ARCHIVED">Lưu trữ</option>
+                </select>
               </div>
               <div>
-                <h3 className="font-bold text-gray-900">Xóa khóa học?</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  <strong>"{course.title}"</strong> sẽ bị xóa vĩnh viễn cùng toàn bộ nội dung.
-                </p>
-                {(course._count?.enrollments ?? 0) > 0 && (
-                  <p className="text-sm text-red-600 mt-2 font-semibold">
-                    ⚠ Đang có {course._count?.enrollments ?? 0} học viên đăng ký!
-                  </p>
-                )}
-                <p className="text-xs text-gray-400 mt-2">Hành động này không thể hoàn tác.</p>
+                <label className="text-sm font-medium mb-1.5 block">Cấp độ</label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editLevel}
+                  onChange={(e) => setEditLevel(e.target.value)}
+                >
+                  <option value="BEGINNER">Cơ bản</option>
+                  <option value="INTERMEDIATE">Trung cấp</option>
+                  <option value="ADVANCED">Nâng cao</option>
+                </select>
               </div>
             </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleDeleteCourse}
-                disabled={deletingCourse}
-                className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-60"
-              >
-                {deletingCourse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Xóa vĩnh viễn
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Hủy
-              </button>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4" checked={editFree} onChange={(e) => setEditFree(e.target.checked)} />
+              <span className="text-sm font-medium">Miễn phí</span>
+            </label>
+            {!editFree && (
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Giá (VNĐ)</label>
+                <Input type="number" min="0" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+              </div>
+            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+              Lưu thay đổi
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tab: Content */}
+      {tab === 'content' && (
+        <div className="space-y-4">
+          {deleteError && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive flex items-center justify-between">
+              <span>{deleteError}</span>
+              <button onClick={() => setDeleteError('')} className="ml-2 hover:opacity-70">✕</button>
             </div>
-          </div>
+          )}
+
+          {/* Add section */}
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex gap-2">
+                <Input placeholder="Tên chương mới..." value={newSection}
+                  onChange={(e) => setNewSection(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddSection()} />
+                <Button onClick={handleAddSection} disabled={addingSection || !newSection.trim()}>
+                  {addingSection ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Thêm chương
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {course.sections.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">Chưa có chương nào.</p>
+          ) : course.sections.map((section) => (
+            <Card key={section.id}>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setExpandedSections((p) => ({ ...p, [section.id]: !p[section.id] }))}
+                    className="flex items-center gap-2 flex-1 text-left min-w-0">
+                    {expandedSections[section.id]
+                      ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                    {editSectionId === section.id ? (
+                      <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+                        <Input className="h-7 text-sm" value={editSectionTitle}
+                          onChange={(e) => setEditSectionTitle(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSaveSection()} autoFocus />
+                        <Button size="sm" className="h-7 px-2" onClick={handleSaveSection} disabled={savingSection}>
+                          {savingSection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditSectionId(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="font-medium truncate">{section.title}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">({section.lessons.length} bài)</span>
+                      </>
+                    )}
+                  </button>
+                  {editSectionId !== section.id && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                        onClick={() => { setEditSectionId(section.id); setEditSectionTitle(section.title); }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {confirmDeleteId === section.id ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-destructive font-medium">Xóa?</span>
+                          <Button variant="destructive" size="sm" className="h-7 px-2 text-xs"
+                            disabled={deletingId === section.id}
+                            onClick={() => handleDeleteSection(section.id)}>
+                            {deletingId === section.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Có'}
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
+                            onClick={() => setConfirmDeleteId(null)}>
+                            Không
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={() => setConfirmDeleteId(section.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+
+              {expandedSections[section.id] && (
+                <CardContent className="px-4 pb-4 space-y-1.5">
+                  {section.lessons.map((lesson) => (
+                    <div key={lesson.id}>
+                      {editLesson?.id === lesson.id ? (
+                        <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium mb-1 block">Tên bài học</label>
+                              <Input className="h-8 text-sm" value={editLesson.title}
+                                onChange={(e) => setEditLesson({ ...editLesson, title: e.target.value })} />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium mb-1 block">Loại</label>
+                              <select className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                value={editLesson.type}
+                                onChange={(e) => setEditLesson({ ...editLesson, type: e.target.value })}>
+                                {['VIDEO', 'TEXT', 'QUIZ', 'ASSIGNMENT', 'LIVE'].map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input type="checkbox" className="h-3.5 w-3.5"
+                                checked={editLesson.isFree} onChange={(e) => setEditLesson({ ...editLesson, isFree: e.target.checked })} />
+                              Miễn phí
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input type="checkbox" className="h-3.5 w-3.5"
+                                checked={editLesson.isPublished} onChange={(e) => setEditLesson({ ...editLesson, isPublished: e.target.checked })} />
+                              Công khai
+                            </label>
+                          </div>
+
+                          {editLesson.type === 'VIDEO' && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-medium">Video bài giảng</label>
+                                <div className="flex rounded-md border overflow-hidden text-xs">
+                                  <button type="button"
+                                    className={`px-3 py-1 transition-colors ${videoInputMode === 'upload' ? 'bg-primary text-white' : 'hover:bg-muted'}`}
+                                    onClick={() => setVideoInputMode('upload')}>
+                                    <Upload className="inline h-3 w-3 mr-1" />Upload
+                                  </button>
+                                  <button type="button"
+                                    className={`px-3 py-1 transition-colors ${videoInputMode === 'url' ? 'bg-primary text-white' : 'hover:bg-muted'}`}
+                                    onClick={() => setVideoInputMode('url')}>
+                                    <Video className="inline h-3 w-3 mr-1" />Link URL
+                                  </button>
+                                </div>
+                              </div>
+
+                              {videoInputMode === 'upload' ? (
+                                editLesson.videoKey ? (
+                                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 rounded px-3 py-2">
+                                    <Video className="h-4 w-4 shrink-0" />
+                                    <span className="flex-1 truncate font-mono text-xs">{editLesson.videoKey.split('/').pop()}</span>
+                                    <Button size="sm" variant="ghost"
+                                      className="h-6 text-xs text-destructive hover:text-destructive px-2"
+                                      disabled={deletingId === `video-${lesson.id}`}
+                                      onClick={() => handleDeleteVideo(lesson.id)}>
+                                      {deletingId === `video-${lesson.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Xóa'}
+                                    </Button>
+                                  </div>
+                                ) : uploadingLesson === lesson.id ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Đang tải lên... {uploadProgress}%
+                                    </div>
+                                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                      <div className="h-full bg-primary transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <label className="cursor-pointer inline-flex items-center gap-2 text-sm border rounded px-3 py-1.5 hover:bg-accent transition-colors">
+                                    <Upload className="h-4 w-4" />
+                                    Chọn file video
+                                    <input type="file" accept="video/*" className="hidden"
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) handleUploadVideo(lesson.id, f);
+                                        e.target.value = '';
+                                      }} />
+                                  </label>
+                                )
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <Input className="h-8 text-sm"
+                                    placeholder="https://youtube.com/watch?v=..."
+                                    value={editLesson.videoUrl ?? ''}
+                                    onChange={(e) => setEditLesson({ ...editLesson, videoUrl: e.target.value })}
+                                  />
+                                  {editLesson.videoUrl && (
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xs text-muted-foreground flex-1 truncate">
+                                        Link: <span className="text-primary">{editLesson.videoUrl}</span>
+                                      </p>
+                                      <a href={`/learn/${course.slug}?lesson=${editLesson.id}`} target="_blank" rel="noopener noreferrer"
+                                        className="shrink-0 flex items-center gap-1 text-xs text-blue-600 hover:underline font-medium">
+                                        <Eye className="h-3 w-3" />Xem thử
+                                      </a>
+                                    </div>
+                                  )}
+                                  <Button size="sm" variant="outline" className="h-7 text-xs"
+                                    disabled={savingLesson} onClick={handleSaveVideoUrl}>
+                                    {savingLesson ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+                                    Lưu link
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2 pt-1">
+                            <Button size="sm" onClick={handleSaveLesson} disabled={savingLesson}>
+                              {savingLesson ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                              Lưu
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditLesson(null)}>Hủy</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 py-1.5 px-3 rounded-md hover:bg-muted/50">
+                          <span className="text-xs text-muted-foreground w-5 shrink-0">{lesson.order}.</span>
+                          <span className="flex-1 text-sm truncate">{lesson.title}</span>
+                          {lesson.videoKey && <Video className="h-3.5 w-3.5 text-blue-500 shrink-0" />}
+                          <Badge variant="outline" className="text-xs hidden sm:inline-flex">{lesson.type}</Badge>
+                          {lesson.isFree && <Badge variant="secondary" className="text-xs hidden sm:inline-flex">Free</Badge>}
+                          {lesson.isPublished
+                            ? <Eye className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                            : <EyeOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+
+                          {confirmDeleteId === lesson.id ? (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-xs text-destructive font-medium">Xóa?</span>
+                              <Button variant="destructive" size="sm" className="h-6 px-2 text-xs"
+                                disabled={deletingId === lesson.id}
+                                onClick={() => handleDeleteLesson(lesson.id)}>
+                                {deletingId === lesson.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Có'}
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                                onClick={() => setConfirmDeleteId(null)}>
+                                Không
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1 shrink-0">
+                              {(lesson.videoKey || lesson.videoUrl) && (
+                                <a href={`/learn/${course.slug}?lesson=${lesson.id}`} target="_blank" rel="noopener noreferrer">
+                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                    <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                  </Button>
+                                </a>
+                              )}
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setEditLesson({ id: lesson.id, title: lesson.title, type: lesson.type, isFree: lesson.isFree, isPublished: lesson.isPublished, videoKey: lesson.videoKey, videoUrl: lesson.videoUrl });
+                                  setVideoInputMode(lesson.videoUrl ? 'url' : 'upload');
+                                }}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                                onClick={() => setConfirmDeleteId(lesson.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Add lesson */}
+                  <div className="flex gap-2 pt-1">
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="Tên bài học mới..."
+                      value={newLessonTitle[section.id] || ''}
+                      onChange={(e) => setNewLessonTitle((p) => ({ ...p, [section.id]: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddLesson(section.id)}
+                    />
+                    <Button size="sm" className="h-8 shrink-0"
+                      disabled={addingLesson[section.id] || !newLessonTitle[section.id]?.trim()}
+                      onClick={() => handleAddLesson(section.id)}>
+                      {addingLesson[section.id] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                      Thêm bài
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          ))}
         </div>
       )}
 
-      {showImport && (
-        <ImportFileModal
-          courseId={id}
-          onClose={() => setShowImport(false)}
-          onDone={(result) => {
-            setCourse((prev) => prev ? {
-              ...prev,
-              sections: [
-                ...prev.sections,
-                ...result.sections.map((s: any) => ({ ...s, order: s.order ?? 0, lessons: s.lessons || [] })),
-              ],
-            } : prev);
-            setShowImport(false);
-            setToast({ type: 'success', msg: `✨ Đã tạo ${result.sections.length} chương và ${result.totalLessons} bài học từ file!` });
-          }}
-        />
-      )}
+      {/* Tab: Modules */}
+      {tab === 'modules' && <InstructorModulesTab courseId={id} />}
     </div>
   );
 }

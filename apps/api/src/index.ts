@@ -31,6 +31,9 @@ import { vietRoutes } from './modules/viet/viet.routes';
 import { aiRoutes } from './modules/ai/ai.routes';
 import { mediaRoutes } from './modules/media/media.routes';
 import { siteSettingsRoutes } from './modules/site-settings/site-settings.routes';
+import { announcementRoutes } from './modules/announcements/announcement.routes';
+import { forumRoutes } from './modules/forum/forum.routes';
+import { quizRoutes } from './modules/quiz/quiz.routes';
 
 const NUM_WORKERS = os.cpus().length;
 
@@ -103,6 +106,9 @@ if (cluster.isPrimary) {
     await app.register(aiRoutes, { prefix: '/ai' });
     await app.register(mediaRoutes, { prefix: '/media' });
     await app.register(siteSettingsRoutes, { prefix: '/site-settings' });
+    await app.register(announcementRoutes, { prefix: '/announcements' });
+    await app.register(forumRoutes, { prefix: '/forum' });
+    await app.register(quizRoutes, { prefix: '/quiz' });
     await app.register(adminRoutes, { prefix: '/admin' });
     await app.register(classRoutes, { prefix: '/admin' });
     await app.register(liveSessionsRoutes, { prefix: '/admin' });

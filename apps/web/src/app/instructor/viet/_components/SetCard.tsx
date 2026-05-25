@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Loader2, Sparkles, Edit3, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Edit3, Trash2, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VietSet } from '@/types/viet';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/constants/viet';
@@ -10,11 +10,13 @@ interface Props {
   set: VietSet;
   busy: boolean;
   genBusy: boolean;
+  quizBusy: boolean;
   onDelete: () => void;
   onGenerateAll: () => void;
+  onGenerateQuiz: () => void;
 }
 
-export function SetCard({ set, busy, genBusy, onDelete, onGenerateAll }: Props) {
+export function SetCard({ set, busy, genBusy, quizBusy, onDelete, onGenerateAll, onGenerateQuiz }: Props) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4">
       <div className="flex-1 min-w-0">
@@ -34,6 +36,12 @@ export function SetCard({ set, busy, genBusy, onDelete, onGenerateAll }: Props) 
           className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {genBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           Tạo tất cả
+        </button>
+        <button onClick={onGenerateQuiz} disabled={quizBusy || (set._count?.items ?? 0) < 4}
+          title={(set._count?.items ?? 0) < 4 ? 'Cần ít nhất 4 mục' : 'Tạo Quiz Game'}
+          className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          {quizBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Gamepad2 className="h-3.5 w-3.5" />}
+          Tạo Quiz
         </button>
         <Link href={`/instructor/viet/set/${set.id}`}
           className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors">

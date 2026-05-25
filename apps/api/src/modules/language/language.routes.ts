@@ -189,7 +189,7 @@ export async function languageRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
-        _count: { select: { items: true } },
+        _count: { select: { items: true, children: true } },
         progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
       },
     });
@@ -204,7 +204,16 @@ export async function languageRoutes(app: FastifyInstance) {
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
         items: { orderBy: { order: 'asc' } },
-        _count: { select: { items: true } },
+        _count: { select: { items: true, children: true } },
+        parent: { select: { id: true, title: true } },
+        children: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            _count: { select: { items: true } },
+            exercises: { select: { id: true, title: true, type: true, isPublic: true } },
+          },
+        },
+        exercises: { select: { id: true, title: true, type: true, isPublic: true } },
       },
     });
     const itemIds = set.items.map(i => i.id);
@@ -213,6 +222,37 @@ export async function languageRoutes(app: FastifyInstance) {
     });
     const progressMap = Object.fromEntries(progresses.map(p => [p.itemId, p]));
     return { ...set, progressMap };
+  });
+
+  // List vocab sets as tree (parent sets with children)
+  app.get('/vocab-sets/tree', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const q = req.query as { language?: string; mine?: string; courseId?: string };
+    const where: any = { isPublic: true, parentId: null };
+    if (q.language) where.language = q.language;
+    if (q.courseId) where.courseId = q.courseId;
+    if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
+
+    const sets = await prisma.vocabSet.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        creator: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { items: true, children: true } },
+        children: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            _count: { select: { items: true } },
+            exercises: {
+              select: { id: true, title: true, type: true, isPublic: true },
+            },
+            progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
+          },
+        },
+        progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
+      },
+    });
+    return sets;
   });
 
   // Create vocab set (instructor/admin)
@@ -227,16 +267,35 @@ export async function languageRoutes(app: FastifyInstance) {
       coverUrl: z.string().optional().nullable(),
       isPublic: z.boolean().default(true),
       courseId: z.string().optional().nullable(),
+      parentId: z.string().optional().nullable(),
     }).parse(req.body);
     const set = await prisma.vocabSet.create({ data: { ...body, createdBy: sub } });
     return reply.status(201).send(set);
   });
 
+  // Create child vocab set (sub-topic inside a parent set)
+  app.post('/vocab-sets/:id/children', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id: parentId } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const parent = await prisma.vocabSet.findUniqueOrThrow({ where: { id: parentId }, select: { createdBy: true, language: true, targetLang: true } });
+    if (parent.createdBy !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Không có quyền' });
+    const body = z.object({
+      title: z.string().min(2).max(200),
+      description: z.string().optional().nullable(),
+      level: z.string().default('A1'),
+      isPublic: z.boolean().default(true),
+    }).parse(req.body);
+    const child = await prisma.vocabSet.create({
+      data: { ...body, language: parent.language, targetLang: parent.targetLang, createdBy: sub, parentId },
+    });
+    return reply.status(201).send(child);
+  });
+
   app.patch('/vocab-sets/:id', { preHandler: requireInstructor }, async (req) => {
     const { id } = req.params as { id: string };
-    const { sub } = req.user as { sub: string };
+    const { sub, role } = req.user as { sub: string; role: string };
     const set = await prisma.vocabSet.findUniqueOrThrow({ where: { id } });
-    if (set.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (set.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     const body = z.object({
       title: z.string().min(2).max(200).optional(),
       description: z.string().optional().nullable(),
@@ -244,8 +303,10 @@ export async function languageRoutes(app: FastifyInstance) {
       targetLang: z.string().optional(),
       level: z.string().optional(),
       coverUrl: z.string().optional().nullable(),
+      videoUrl: z.string().url().optional().nullable(),
       isPublic: z.boolean().optional(),
       courseId: z.string().nullable().optional(),
+      parentId: z.string().nullable().optional(),
     }).parse(req.body);
     return prisma.vocabSet.update({ where: { id }, data: body });
   });
@@ -600,6 +661,7 @@ export async function languageRoutes(app: FastifyInstance) {
       timeLimit: z.number().optional(),
       isPublic: z.boolean().default(true),
       courseId: z.string().optional(),
+      vocabSetId: z.string().optional(),
       questions: z.array(z.object({
         content: z.string().min(1),
         audioUrl: z.string().optional(),
@@ -671,6 +733,7 @@ export async function languageRoutes(app: FastifyInstance) {
         timeLimit: body.timeLimit,
         isPublic: body.isPublic,
         courseId: body.courseId,
+        vocabSetId: body.vocabSetId,
         createdBy: sub,
         questions: { create: result as any },
       },

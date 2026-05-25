@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
 import { extractText, structureVietWithAI } from '../../services/file-import';
+import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
+import { env } from '../../config/env';
+import crypto from 'crypto';
 
 // ─── SM-2 Spaced Repetition ───────────────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -664,6 +667,18 @@ export async function vietRoutes(app: FastifyInstance) {
     return reply.status(201).send({ imported: results.length, errors, results });
   });
 
+  // ─── Extract text only (preview before AI) ───────────────────────────────
+  app.post('/extract-preview', { preHandler: requireInstructor }, async (req, reply) => {
+    const data = await req.file({ limits: { fileSize: 20 * 1024 * 1024 } });
+    if (!data) throw { statusCode: 400, message: 'Không có file' };
+    const buffer = await data.toBuffer();
+    let text: string;
+    try { text = await extractText(buffer, data.mimetype, data.filename); }
+    catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
+    if (!text?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
+    return reply.send({ text: text.trim(), filename: data.filename });
+  });
+
   // ─── Smart Import (PDF / DOCX / XLSX / PPTX → AI structured) ─────────────
   app.post('/import-smart', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
@@ -735,12 +750,184 @@ export async function vietRoutes(app: FastifyInstance) {
             }
           }
         }
-        results.push({ setId: set.id, title: set.title, itemsCreated: set._count.items, exercisesGenerated });
+        results.push({ setId: set.id, title: set.title, itemsCreated: set._count.items, exercisesGenerated, items: set.items });
       } catch (e: any) {
         errors.push({ entry: entry?.title || '(không rõ)', error: e.message });
       }
     }
 
     return reply.status(201).send({ imported: results.length, errors, results });
+  });
+
+  // ─── DOCUMENT LIBRARY (upload, view, on-demand AI) ───────────────────────
+
+  app.post('/docs', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const data = await req.file({ limits: { fileSize: 30 * 1024 * 1024 } });
+    if (!data) throw { statusCode: 400, message: 'Không có file' };
+
+    const allowedMimes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg', 'image/png', 'image/webp',
+    ];
+    if (!allowedMimes.includes(data.mimetype)) {
+      throw { statusCode: 400, message: 'Định dạng file không được hỗ trợ' };
+    }
+
+    const buffer = await data.toBuffer();
+    const ext = data.filename.split('.').pop()?.toLowerCase() || 'bin';
+    const key = `viet-docs/${sub}/${crypto.randomBytes(8).toString('hex')}.${ext}`;
+    const bucket = env.MINIO_BUCKET_MATH_DOCS;
+
+    await minioClient.putObject(bucket, key, buffer, buffer.length, { 'Content-Type': data.mimetype });
+
+    let extractedText: string | null = null;
+    try {
+      const text = await extractText(buffer, data.mimetype, data.filename);
+      extractedText = text?.trim() || null;
+    } catch { /* image or unsupported */ }
+
+    const doc = await (prisma as any).vietDocument.create({
+      data: {
+        id: crypto.randomUUID(),
+        originalName: data.filename,
+        storedKey: key,
+        mimetype: data.mimetype,
+        size: buffer.length,
+        bucket,
+        extractedText,
+        createdBy: sub,
+        updatedAt: new Date(),
+      },
+    });
+
+    return reply.status(201).send(doc);
+  });
+
+  app.get('/docs', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const docs = await (prisma as any).vietDocument.findMany({
+      where: role === 'ADMIN' ? {} : { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, originalName: true, mimetype: true, size: true,
+        status: true, grade: true, category: true, errorMsg: true,
+        createdAt: true, updatedAt: true,
+        creator: { select: { id: true, name: true, email: true } },
+      },
+    });
+    return reply.send(docs);
+  });
+
+  app.get('/docs/:id/view-url', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).vietDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    const url = await getSignedUrl(doc.bucket, doc.storedKey, 1800);
+    return reply.send({ url, mimetype: doc.mimetype, originalName: doc.originalName });
+  });
+
+  app.get('/docs/:id/text', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).vietDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    return reply.send({ text: doc.extractedText, originalName: doc.originalName });
+  });
+
+  app.post('/docs/:id/analyze', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).vietDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    if (doc.status === 'analyzing') throw { statusCode: 409, message: 'Đang phân tích, vui lòng chờ' };
+    if (!doc.extractedText?.trim()) throw { statusCode: 400, message: 'Tài liệu không có nội dung văn bản để phân tích' };
+
+    const q = req.query as { grade?: string; category?: string; generateExercises?: string };
+    const opts = {
+      grade: q.grade ? parseInt(q.grade) : undefined,
+      category: q.category || doc.category || undefined,
+      generateExercises: q.generateExercises !== 'false',
+    };
+
+    await (prisma as any).vietDocument.update({ where: { id }, data: { status: 'analyzing', updatedAt: new Date() } });
+
+    let curriculum: any[];
+    try {
+      curriculum = await structureVietWithAI(doc.extractedText, opts);
+    } catch (e: any) {
+      await (prisma as any).vietDocument.update({ where: { id }, data: { status: 'error', errorMsg: e.message, updatedAt: new Date() } });
+      throw { statusCode: 500, message: `AI phân tích thất bại: ${e.message}` };
+    }
+
+    const results: any[] = [];
+    const errors: any[] = [];
+
+    for (const entry of curriculum) {
+      try {
+        const { items, generateExercises, ...setData } = entry;
+        const validItems = (items ?? []).filter((it: any) => it.word && it.meaning);
+        if (validItems.length === 0) continue;
+        const set = await prisma.vietSet.create({
+          data: {
+            title: setData.title,
+            category: (setData.category as any) ?? 'TU_VUNG',
+            grade: setData.grade ?? opts.grade ?? 3,
+            level: setData.level ?? 'co_ban',
+            isPublic: true,
+            createdBy: sub,
+            items: { create: validItems.map((it: any, i: number) => ({ ...it, order: it.order ?? i })) },
+          },
+          include: { items: true, _count: { select: { items: true } } },
+        });
+
+        let exercisesGenerated = 0;
+        if (generateExercises && set.items.length >= 2) {
+          const genTypes: Array<'MULTIPLE_CHOICE' | 'FILL_BLANK' | 'SPELLING' | 'MATCHING' | 'WORD_ORDER'> =
+            ['MULTIPLE_CHOICE', 'FILL_BLANK', 'SPELLING', 'MATCHING', 'WORD_ORDER'];
+          for (const type of genTypes) {
+            const questions = buildVietQuestions(set.items, type, 10);
+            if (!('error' in (questions as any))) {
+              await prisma.vietExercise.create({
+                data: {
+                  title: `${set.title} — ${TYPE_IMPORT_LABEL[type]}`,
+                  type: type as any, category: set.category, grade: set.grade,
+                  level: set.level, isPublic: true,
+                  setId: set.id, createdBy: sub,
+                  questions: { create: questions as any },
+                },
+              });
+              exercisesGenerated++;
+            }
+          }
+        }
+        results.push({ setId: set.id, title: set.title, itemsCreated: set._count.items, exercisesGenerated, items: set.items });
+      } catch (e: any) {
+        errors.push({ entry: entry?.title || '(không rõ)', error: e.message });
+      }
+    }
+
+    await (prisma as any).vietDocument.update({ where: { id }, data: { status: 'analyzed', updatedAt: new Date() } });
+    return reply.status(201).send({ imported: results.length, errors, results });
+  });
+
+  app.delete('/docs/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const doc = await (prisma as any).vietDocument.findUnique({ where: { id } });
+    if (!doc) throw { statusCode: 404, message: 'Không tìm thấy tài liệu' };
+    if (role !== 'ADMIN' && doc.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    try { await deleteObject(doc.bucket, doc.storedKey); } catch { /* minio may not have it */ }
+    await (prisma as any).vietDocument.delete({ where: { id } });
+    return reply.send({ ok: true });
   });
 }

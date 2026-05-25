@@ -63,3 +63,29 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 }
+
+/* ── Document viewer ── */
+.doc-viewer-excel table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8125rem;
+}
+.doc-viewer-excel td,
+.doc-viewer-excel th {
+  border: 1px solid #d1d5db;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.doc-viewer-excel tr:nth-child(even) td {
+  background-color: #f9fafb;
+}
+.doc-viewer-word img { max-width: 100%; height: auto; }
+.doc-viewer-word table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+.doc-viewer-word td, .doc-viewer-word th {
+  border: 1px solid #d1d5db;
+  padding: 4px 8px;
+}
