@@ -44,9 +44,11 @@ function FlashcardMode({ set, onExit, onComplete }: { set: VietSet; onExit: () =
 
   const speak = (text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'vi-VN'; utt.rate = 0.9;
-    window.speechSynthesis.speak(utt);
+    try {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = 'vi-VN'; utt.rate = 0.9;
+      window.speechSynthesis.speak(utt);
+    } catch {}
   };
 
   const rate = (quality: number) => {
@@ -192,9 +194,11 @@ function SpellingMode({ set, onExit }: { set: VietSet; onExit: () => void }) {
 
   const speak = (text: string, slow = false) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'vi-VN'; utt.rate = slow ? 0.5 : 0.85;
-    window.speechSynthesis.speak(utt);
+    try {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = 'vi-VN'; utt.rate = slow ? 0.5 : 0.85;
+      window.speechSynthesis.speak(utt);
+    } catch {}
   };
 
   const current = items[idx];

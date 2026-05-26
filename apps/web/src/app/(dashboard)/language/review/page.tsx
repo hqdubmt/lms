@@ -120,18 +120,22 @@ export default function GlobalReviewPage() {
 
   const spPlayWord = () => {
     if (!items[idx]) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(items[idx].word);
-    utt.lang = LANG_BCP47[items[idx].setLanguage] || 'en-US';
-    utt.rate = 0.85;
-    window.speechSynthesis.speak(utt);
+    try {
+      const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+      if (!synth) return;
+      synth.cancel();
+      const utt = new SpeechSynthesisUtterance(items[idx].word);
+      utt.lang = LANG_BCP47[items[idx].setLanguage] || 'en-US';
+      utt.rate = 0.85;
+      synth.speak(utt);
+    } catch {}
   };
 
   const spStartListening = () => {
     const item = items[idx];
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR || !item) return;
-    window.speechSynthesis.cancel();
+    try { window.speechSynthesis?.cancel(); } catch {}
     const rec = new SR();
     spRecRef.current = rec;
     rec.lang = LANG_BCP47[item.setLanguage] || 'en-US';

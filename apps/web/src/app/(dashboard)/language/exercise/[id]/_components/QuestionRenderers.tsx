@@ -181,9 +181,13 @@ export function WordOrder({ q, answer, onAnswer, submitted, result }: QuestionPr
 export function Dictation({ q, answer, onAnswer, submitted, result }: QuestionProps) {
   const [localValue, setLocalValue] = useState(answer || '');
   const playAudio = () => {
-    if (q.audioUrl) { new Audio(q.audioUrl).play(); return; }
-    const utt = new SpeechSynthesisUtterance(String(q.answer));
-    utt.lang = 'en'; window.speechSynthesis.speak(utt);
+    if (q.audioUrl) { new Audio(q.audioUrl).play().catch(() => {}); return; }
+    try {
+      const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+      if (!synth) return;
+      const utt = new SpeechSynthesisUtterance(String(q.answer));
+      utt.lang = 'en'; synth.speak(utt);
+    } catch {}
   };
   return (
     <div className="space-y-4">

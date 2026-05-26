@@ -22,10 +22,12 @@ interface AttemptResult {
 
 function speak(text: string) {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'vi-VN'; u.rate = 0.85;
-  window.speechSynthesis.speak(u);
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'vi-VN'; u.rate = 0.85;
+    window.speechSynthesis.speak(u);
+  } catch {}
 }
 
 // ── Word Order Input ──────────────────────────────────────────────────────────
