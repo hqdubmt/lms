@@ -27,6 +27,15 @@ interface EnrolledCourse {
   };
 }
 
+interface ClassCourseItem {
+  id: string; title: string; slug: string; thumbnailUrl?: string;
+  totalLessons: number; totalDuration: number; level: string;
+  instructor: { name: string };
+  _count: { enrollments: number };
+  className: string; classId: string;
+  enrolled: boolean; enrollStatus: string | null; progress: number;
+}
+
 interface PublicCourse {
   id: string; title: string; slug: string; thumbnailUrl?: string;
   totalLessons: number; totalDuration: number;
@@ -146,17 +155,20 @@ function Empty({ icon: Icon, text, action }: {
 function StudentView() {
   const [enrolled, setEnrolled] = useState<EnrolledCourse[]>([]);
   const [browse, setBrowse] = useState<PublicCourse[]>([]);
+  const [classCourses, setClassCourses] = useState<ClassCourseItem[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'my' | 'browse'>('my');
+  const [tab, setTab] = useState<'my' | 'class' | 'browse'>('my');
 
   useEffect(() => {
     Promise.all([
       api.get<EnrolledCourse[]>('/users/enrollments').catch(() => []),
       api.get<{ courses: PublicCourse[] }>('/courses?limit=50').catch(() => ({ courses: [] })),
-    ]).then(([enrollData, browseData]) => {
+      api.get<ClassCourseItem[]>('/users/class-courses').catch(() => []),
+    ]).then(([enrollData, browseData, classData]) => {
       setEnrolled(Array.isArray(enrollData) ? enrollData : []);
       setBrowse(browseData?.courses ?? []);
+      setClassCourses(Array.isArray(classData) ? classData : []);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -194,6 +206,7 @@ function StudentView() {
             <h1 className="text-2xl font-bold">Khoá học của tôi</h1>
             <p className="text-white/60 text-sm mt-1">
               {activeCount} đang học · {completedCount} đã hoàn thành · {enrolled.length} tổng
+              {classCourses.length > 0 && ` · ${classCourses.length} khoá học từ lớp`}
             </p>
           </div>
           <div className="flex gap-4">
@@ -213,7 +226,11 @@ function StudentView() {
       {/* ── Tabs + Search ── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <Tabs
-          tabs={[['my', 'Đang học'], ['browse', 'Khám phá']]}
+          tabs={[
+            ['my', 'Đang học'],
+            ...(classCourses.length > 0 ? [['class', `Khoá học lớp (${classCourses.length})`] as [string, string]] : []),
+            ['browse', 'Khám phá'],
+          ]}
           active={tab}
           onChange={setTab as any}
         />
@@ -289,6 +306,99 @@ function StudentView() {
             ))}
           </div>
         )
+      )}
+
+      {/* ── Class courses ── */}
+      {tab === 'class' && (
+        (() => {
+          const filtered = classCourses.filter((c) =>
+            c.title.toLowerCase().includes(search.toLowerCase())
+          );
+          const grouped = filtered.reduce<Record<string, ClassCourseItem[]>>((acc, c) => {
+            if (!acc[c.classId]) acc[c.classId] = [];
+            acc[c.classId].push(c);
+            return acc;
+          }, {});
+
+          return filtered.length === 0 ? (
+            <Empty icon={GraduationCap} text={search ? 'Không tìm thấy khoá học phù hợp' : 'Lớp của bạn chưa có khoá học nào'} />
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(grouped).map(([classId, items]) => (
+                <div key={classId}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-5 w-1 rounded-full bg-indigo-500" />
+                    <h2 className="font-semibold text-sm text-gray-700">{items[0].className}</h2>
+                    <span className="text-xs text-muted-foreground">({items.length} khoá học)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {items.map((course) => (
+                      <Link
+                        key={course.id}
+                        href={`/learn/${course.slug}`}
+                        className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all flex flex-col"
+                      >
+                        <CourseThumbnail src={course.thumbnailUrl} title={course.title} showPlay={course.enrolled}>
+                          {course.enrolled && course.enrollStatus === 'COMPLETED' && (
+                            <span className="absolute top-2 right-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold">
+                              Hoàn thành
+                            </span>
+                          )}
+                          {course.enrolled && course.enrollStatus === 'ACTIVE' && (
+                            <span className="absolute top-2 right-2 text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full font-semibold">
+                              Đang học
+                            </span>
+                          )}
+                          {!course.enrolled && (
+                            <span className="absolute top-2 left-2 text-xs bg-white/90 text-gray-700 px-2 py-0.5 rounded-full font-semibold border">
+                              Chưa đăng ký
+                            </span>
+                          )}
+                        </CourseThumbnail>
+                        <div className="p-4 flex-1 flex flex-col gap-3">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-sm leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
+                              {course.title}
+                            </h3>
+                            <p className="text-xs text-muted-foreground mt-1">{course.instructor.name}</p>
+                          </div>
+                          {course.enrolled && (
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">Tiến độ</span>
+                                <span className="font-semibold text-indigo-600">{Math.round(course.progress)}%</span>
+                              </div>
+                              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                                  style={{ width: `${course.progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <BookOpen className="h-3.5 w-3.5" />{course.totalLessons} bài
+                            </span>
+                            {course.totalDuration > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3.5 w-3.5" />{formatDuration(course.totalDuration)}
+                              </span>
+                            )}
+                            <span className="text-indigo-600 font-semibold flex items-center gap-0.5">
+                              {course.enrolled ? (course.progress > 0 ? 'Tiếp tục' : 'Bắt đầu') : 'Xem khoá học'}
+                              <ChevronRight className="h-3 w-3" />
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()
       )}
 
       {/* ── Browse courses ── */}

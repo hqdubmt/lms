@@ -72,6 +72,63 @@ export async function usersRoutes(app: FastifyInstance) {
     });
   });
 
+  // Get courses linked to user's classes
+  app.get('/class-courses', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+
+    const memberships: Array<{ classId: string }> = await prisma.classMember.findMany({
+      where: { userId: sub },
+      select: { classId: true },
+    });
+
+    if (memberships.length === 0) return [];
+
+    const classIds = memberships.map((m) => m.classId);
+
+    const [classCoursesRaw, userEnrollments] = await Promise.all([
+      (prisma as any).classCourse.findMany({
+        where: { classId: { in: classIds } },
+        include: {
+          class: { select: { id: true, name: true } },
+          course: {
+            select: {
+              id: true, title: true, slug: true, thumbnailUrl: true,
+              totalLessons: true, totalDuration: true, level: true,
+              instructor: { select: { name: true, avatarUrl: true } },
+              _count: { select: { enrollments: true } },
+            },
+          },
+        },
+      }),
+      prisma.enrollment.findMany({
+        where: { userId: sub },
+        select: { courseId: true, status: true, progress: true },
+      }),
+    ]);
+
+    const enrollmentMap = new Map(
+      (userEnrollments as Array<{ courseId: string; status: string; progress: number }>)
+        .map((e) => [e.courseId, e]),
+    );
+
+    const seen = new Set<string>();
+    const result: any[] = [];
+    for (const cc of classCoursesRaw as any[]) {
+      if (seen.has(cc.course.id)) continue;
+      seen.add(cc.course.id);
+      const enroll = enrollmentMap.get(cc.course.id);
+      result.push({
+        ...cc.course,
+        className: cc.class.name,
+        classId: cc.class.id,
+        enrolled: !!enroll,
+        enrollStatus: enroll?.status ?? null,
+        progress: enroll?.progress ?? 0,
+      });
+    }
+    return result;
+  });
+
   // Get user's schedule (live sessions for their courses/classes + sessions they created as instructor)
   app.get('/schedule', { preHandler: requireAuth }, async (req) => {
     const { sub, role } = req.user as { sub: string; role: string };
