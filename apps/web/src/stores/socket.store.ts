@@ -8,8 +8,6 @@ interface SocketState {
   disconnect: () => void;
 }
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
-
 export const useSocketStore = create<SocketState>((set, get) => ({
   socket: null,
   isConnected: false,
@@ -18,9 +16,16 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     const existing = get().socket;
     if (existing?.connected) return;
 
-    const socket = io(SOCKET_URL, {
+    // Use current origin so WebSocket goes through the Next.js proxy (avoids
+    // Mixed Content when accessing via HTTPS domains like Tailscale).
+    const origin = typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000');
+
+    const socket = io(origin, {
+      path: '/socket.io',
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       autoConnect: true,
     });
 

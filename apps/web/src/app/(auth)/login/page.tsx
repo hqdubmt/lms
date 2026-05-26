@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -26,7 +26,6 @@ const OAUTH_ERRORS: Record<string, string> = {
 };
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuthStore();
   const [error, setError] = useState('');
@@ -44,7 +43,9 @@ function LoginForm() {
     try {
       setError('');
       const res = await login(data.email, data.password);
-      router.push(res?.user?.role === 'ADMIN' ? '/admin' : '/dashboard');
+      // Hard navigation ensures cookies and auth state are fully committed
+      // before the protected route loads (avoids SPA cache/cookie timing issues).
+      window.location.href = res?.user?.role === 'ADMIN' ? '/admin' : '/dashboard';
     } catch (e: any) {
       setError(e.message || 'Đăng nhập thất bại');
     }

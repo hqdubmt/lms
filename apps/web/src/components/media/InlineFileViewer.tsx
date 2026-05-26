@@ -44,9 +44,32 @@ function ErrView({ fileUrl, name }: { fileUrl: string; name: string }) {
 // ─── Per-type viewers ──────────────────────────────────────────────────────────
 
 function PdfViewer({ fileUrl, name }: { fileUrl: string; name: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    setBlobUrl(null); setError(false);
+    fetch(fileUrl)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+        setBlobUrl(objectUrl);
+      })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [fileUrl]);
+
+  if (error) return <ErrView fileUrl={fileUrl} name={name} />;
+  if (!blobUrl) return <Spinner />;
   return (
     <iframe
-      src={fileUrl}
+      src={blobUrl}
       className="w-full h-full border-0"
       title={name}
       style={{ display: 'block', minHeight: '100%' }}
@@ -149,7 +172,25 @@ function PptxViewer({ fileUrl, name }: { fileUrl: string; name: string }) {
   const [officeUrl, setOfficeUrl] = useState('');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return;
+
+    // Extract mediaId and auth token from fileUrl (/api/media/:id/file?token=...)
+    const mediaId = fileUrl.match(/\/api\/media\/([^/?]+)\/file/)?.[1];
+    const authToken = new URLSearchParams(fileUrl.split('?')[1] ?? '').get('token');
+
+    if (mediaId) {
+      const qs = authToken ? `?token=${authToken}` : '';
+      fetch(`/api/media/${mediaId}/view-token${qs}`, { method: 'POST' })
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then(({ viewUrl }: { viewUrl: string }) => {
+          const abs = `${window.location.origin}${viewUrl}`;
+          setOfficeUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(abs)}`);
+        })
+        .catch(() => {
+          const abs = fileUrl.startsWith('http') ? fileUrl : `${window.location.origin}${fileUrl}`;
+          setOfficeUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(abs)}`);
+        });
+    } else {
       const abs = fileUrl.startsWith('http') ? fileUrl : `${window.location.origin}${fileUrl}`;
       setOfficeUrl(`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(abs)}`);
     }
@@ -157,13 +198,20 @@ function PptxViewer({ fileUrl, name }: { fileUrl: string; name: string }) {
 
   if (!officeUrl) return <Spinner />;
   return (
-    <iframe
-      key={officeUrl}
-      src={officeUrl}
-      className="w-full h-full border-0"
-      title={name}
-      style={{ display: 'block', minHeight: '100%' }}
-    />
+    <div className="w-full h-full flex flex-col">
+      <iframe
+        key={officeUrl}
+        src={officeUrl}
+        className="flex-1 w-full border-0"
+        title={name}
+        style={{ display: 'block' }}
+      />
+      <div className="shrink-0 flex items-center justify-center gap-3 py-2 bg-gray-50 border-t text-xs text-gray-400">
+        <span>Xem qua Office Online — cần kết nối internet</span>
+        <a href={fileUrl} download={name}
+          className="text-indigo-600 hover:underline font-medium">Tải xuống</a>
+      </div>
+    </div>
   );
 }
 

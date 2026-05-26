@@ -129,7 +129,7 @@ export default function AdminMediaPage() {
           {uploading ? 'Đang upload...' : 'Tải lên'}
         </button>
         <input ref={inputRef} type="file" multiple
-          accept="video/*,image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+          accept="video/*,image/*,.pdf,.doc,.docx,.xls,.xlsx,.pptx,.ppt,.txt"
           className="hidden" onChange={(e) => handleUpload(e.target.files)} />
       </div>
 

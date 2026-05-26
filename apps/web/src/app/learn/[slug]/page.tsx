@@ -8,7 +8,9 @@ import {
   ArrowLeft, Loader2, Lock, ExternalLink, Calendar, Clock, Video,
   PanelRightOpen, X, MessageCircle, Send, Trash2,
   HelpCircle, RefreshCw, AlertCircle, BookMarked, Sparkles, Languages,
+  Globe, Calculator, BookType, Image as ImageIcon, Film, Download,
 } from 'lucide-react';
+import { InlineFileViewer } from '@/components/media/InlineFileViewer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -53,6 +55,10 @@ interface LangVocabSet {
 interface LangExercise {
   id: string; title: string; type: string;
   _count: { questions: number };
+}
+interface LessonModuleItem {
+  id: string; contentType: string; contentId: string;
+  title: string; subtitle?: string; mimeType?: string; mediaType?: string;
 }
 
 interface QuizQuestion {
@@ -356,6 +362,9 @@ export default function LearnPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [contentPanel, setContentPanel] = useState<{ url: string; title: string } | null>(null);
+  const [lessonModules, setLessonModules] = useState<LessonModuleItem[]>([]);
+  const [mediaViewer, setMediaViewer] = useState<LessonModuleItem | null>(null);
 
   // ── Chat state ──
   const [chatOpen, setChatOpen] = useState(false);
@@ -425,9 +434,15 @@ export default function LearnPage() {
     if (activeLessonId === lessonId) return;
     setActiveLessonId(lessonId);
     setLoadingLesson(true);
+    setLessonModules([]);
+    setMediaViewer(null);
     try {
-      const data = await api.get<LessonDetail>(`/lessons/${lessonId}`);
+      const [data, mods] = await Promise.all([
+        api.get<LessonDetail>(`/lessons/${lessonId}`),
+        api.get<LessonModuleItem[]>(`/lessons/${lessonId}/modules`).catch(() => []),
+      ]);
       setActiveLesson(data);
+      setLessonModules(Array.isArray(mods) ? mods : []);
       if (data.progress?.isCompleted) setCompleted((p) => new Set([...p, lessonId]));
     } catch {
       setActiveLesson(null);
@@ -757,15 +772,15 @@ export default function LearnPage() {
                   <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Bộ từ vựng</p>
                     {langContent.vocabSets.map((v) => (
-                      <Link key={v.id} href={`/language/vocab/${v.id}`} target="_blank"
-                        className="flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group">
+                      <button key={v.id} onClick={() => setContentPanel({ url: `/language/vocab/${v.id}`, title: v.title })}
+                        className="w-full flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group text-left">
                         <BookMarked className="h-4 w-4 text-violet-500 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{v.title}</p>
                           <p className="text-xs text-gray-500">{v.language} · {v._count.items} từ</p>
                         </div>
-                        <ExternalLink className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
-                      </Link>
+                        <PanelRightOpen className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
+                      </button>
                     ))}
                   </div>
                 )}
@@ -773,18 +788,71 @@ export default function LearnPage() {
                   <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Bài tập</p>
                     {langContent.exercises.map((e) => (
-                      <Link key={e.id} href={`/language/exercise/${e.id}`} target="_blank"
-                        className="flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group">
+                      <button key={e.id} onClick={() => setContentPanel({ url: `/language/exercise/${e.id}`, title: e.title })}
+                        className="w-full flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2.5 hover:border-violet-300 transition-colors group text-left">
                         <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{e.title}</p>
                           <p className="text-xs text-gray-500">{e._count.questions} câu hỏi</p>
                         </div>
-                        <ExternalLink className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
-                      </Link>
+                        <PanelRightOpen className="h-3.5 w-3.5 text-violet-400 group-hover:text-violet-600 shrink-0" />
+                      </button>
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Lesson modules */}
+            {lessonModules.length > 0 && (
+              <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
+                  <BookMarked className="h-4 w-4 text-primary" />Nội dung học kèm
+                </h3>
+                <div className="space-y-1.5">
+                  {lessonModules.map((mod) => {
+                    const isMedia = mod.contentType === 'MEDIA_FILE';
+                    const isVideo = mod.mediaType === 'VIDEO';
+                    const isImage = mod.mediaType === 'IMAGE';
+                    const Icon = isVideo ? Film : isImage ? ImageIcon :
+                      mod.contentType === 'VOCAB_SET' || mod.contentType === 'LANG_EXERCISE' ? Globe :
+                      mod.contentType.startsWith('MATH_') ? Calculator :
+                      mod.contentType.startsWith('VIET_') ? BookType : FileText;
+                    const badgeClass = mod.contentType === 'VOCAB_SET' || mod.contentType === 'LANG_EXERCISE'
+                      ? 'bg-violet-100 text-violet-700'
+                      : mod.contentType.startsWith('MATH_') ? 'bg-blue-100 text-blue-700'
+                      : mod.contentType.startsWith('VIET_') ? 'bg-orange-100 text-orange-700'
+                      : 'bg-teal-100 text-teal-700';
+                    const contentUrl =
+                      mod.contentType === 'VOCAB_SET' ? `/language/vocab/${mod.contentId}` :
+                      mod.contentType === 'LANG_EXERCISE' ? `/language/exercise/${mod.contentId}` :
+                      mod.contentType === 'MATH_TOPIC' ? `/math/topic/${mod.contentId}` :
+                      mod.contentType === 'MATH_EXERCISE' ? `/math/exercise/${mod.contentId}` :
+                      mod.contentType === 'VIET_SET' ? `/viet/set/${mod.contentId}` :
+                      mod.contentType === 'VIET_EXERCISE' ? `/viet/exercise/${mod.contentId}` : '';
+
+                    return (
+                      <button
+                        key={mod.id}
+                        type="button"
+                        onClick={() => {
+                          if (isMedia) setMediaViewer(mod);
+                          else if (contentUrl) setContentPanel({ url: contentUrl, title: mod.title });
+                        }}
+                        className="w-full flex items-center gap-3 bg-background rounded-lg border px-3 py-2.5 hover:border-primary/40 transition-colors group text-left"
+                      >
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${badgeClass}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{mod.title}</p>
+                          {mod.subtitle && <p className="text-xs text-muted-foreground">{mod.subtitle}</p>}
+                        </div>
+                        <PanelRightOpen className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -800,6 +868,52 @@ export default function LearnPage() {
           </div>
         )}
       </main>
+
+      {/* ── Content panel (vocab / exercise inline) ── */}
+      {contentPanel && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setContentPanel(null)}>
+          <div className="w-full max-w-2xl h-full bg-background border-l shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="h-12 px-4 border-b flex items-center gap-3 shrink-0">
+              <BookMarked className="h-4 w-4 text-primary shrink-0" />
+              <p className="flex-1 text-sm font-semibold truncate min-w-0">{contentPanel.title}</p>
+              <button onClick={() => setContentPanel(null)}
+                className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <iframe src={contentPanel.url} className="flex-1 w-full border-0" title={contentPanel.title} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Media viewer panel (for MEDIA_FILE lesson modules) ── */}
+      {mediaViewer && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setMediaViewer(null)}>
+          <div className="w-full max-w-3xl h-full bg-background border-l shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="h-12 px-4 border-b flex items-center gap-3 shrink-0">
+              <FileText className="h-4 w-4 text-primary shrink-0" />
+              <p className="flex-1 text-sm font-semibold truncate min-w-0">{mediaViewer.title}</p>
+              {mediaViewer.subtitle && <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{mediaViewer.subtitle}</span>}
+              <a href={`/api/media/${mediaViewer.contentId}/file`} download={mediaViewer.title}
+                className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border rounded px-2 py-1 transition-colors">
+                <Download className="h-3 w-3" />Tải
+              </a>
+              <button onClick={() => setMediaViewer(null)}
+                className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <InlineFileViewer
+                item={{ id: mediaViewer.contentId, name: mediaViewer.title, mimeType: mediaViewer.mimeType ?? 'application/octet-stream', type: (mediaViewer.mediaType as any) ?? 'DOCUMENT' }}
+                fileUrl={`/api/media/${mediaViewer.contentId}/file${accessToken ? `?token=${accessToken}` : ''}`}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Chat panel overlay ── */}
       {chatOpen && (

@@ -379,7 +379,7 @@ export default function InstructorMediaPage() {
           <Upload className="h-4 w-4" />Tải lên
         </button>
         <input ref={inputRef} type="file" multiple
-          accept="video/*,image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+          accept="video/*,image/*,.pdf,.doc,.docx,.xls,.xlsx,.pptx,.ppt,.txt"
           className="hidden" onChange={(e) => { if (e.target.files?.length) setPendingFiles(Array.from(e.target.files)); }} />
       </div>
 

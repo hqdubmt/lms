@@ -179,10 +179,11 @@ model Lesson {
   isPublished   Boolean          @default(false)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
-  attachments   Attachment[]
-  section       Section          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  progress      LessonProgress[]
-  quizzes       Quiz[]
+  attachments    Attachment[]
+  section        Section          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress       LessonProgress[]
+  quizzes        Quiz[]
+  lessonModules  LessonModule[]
 
   @@index([sectionId])
 }
@@ -1001,6 +1002,18 @@ model CourseModule {
 
   @@unique([courseId, contentType, contentId])
   @@index([courseId])
+}
+
+model LessonModule {
+  id          String   @id @default(uuid())
+  lessonId    String
+  contentType String   // 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE' | 'MEDIA_FILE'
+  contentId   String
+  addedAt     DateTime @default(now())
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, contentType, contentId])
+  @@index([lessonId])
 }
 
 model ClassModule {

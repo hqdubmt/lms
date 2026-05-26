@@ -9,7 +9,7 @@ import {
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
     Image as ImageIcon, Gamepad2,
 } from 'lucide-react';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
 import { siteConfig } from '@/config/site';
 import { api } from '@/lib/api';
@@ -512,7 +512,8 @@ function MobileSidebar({
 const COLLAPSED_KEY = 'sidebar_collapsed';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const { user, accessToken, _hasHydrated, fetchMe, logout } = useAuthStore();
+    const { user, accessToken, fetchMe, logout } = useAuthStore();
+    const hydrated = useHydrated();
     const pathname = usePathname();
     const router = useRouter();
     const [showNotif, setShowNotif] = useState(false);
@@ -537,10 +538,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
 
     useEffect(() => {
-        if (!_hasHydrated) return;
+        if (!hydrated) return;
         if (!user && accessToken) fetchMe();
         else if (!user && !accessToken) router.replace('/login');
-    }, [user, accessToken, _hasHydrated, fetchMe, router]);
+    }, [user, accessToken, hydrated, fetchMe, router]);
 
     useEffect(() => {
         if (!user) return;
@@ -570,7 +571,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
-    if (!_hasHydrated || !user) return (
+    if (!hydrated || !user) return (
         <div className="min-h-screen flex items-center justify-center">
             <div className="animate-spin h-8 w-8 rounded-full border-4 border-primary border-t-transparent" />
         </div>

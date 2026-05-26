@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '@/lib/api';
@@ -25,7 +26,6 @@ interface User {
 interface AuthState {
   user: User | null;
   accessToken: string | null;
-  _hasHydrated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ user: User; accessToken: string }>;
   logout: () => Promise<void>;
@@ -38,7 +38,6 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       accessToken: null,
-      _hasHydrated: false,
       isLoading: false,
 
       setToken: (token) => {
@@ -71,9 +70,9 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         const { accessToken } = get();
         if (!accessToken) return;
+        if (!api.getToken()) api.setToken(accessToken);
         try {
           const user = await api.get<User>('/auth/me');
-          // If api client refreshed the token during the call, sync it to the store
           const freshToken = api.getToken();
           if (freshToken && freshToken !== accessToken) {
             set({ user, accessToken: freshToken });
@@ -82,8 +81,6 @@ export const useAuthStore = create<AuthState>()(
             set({ user });
           }
         } catch (err: any) {
-          // Only clear session on true authentication failure (both tokens invalid).
-          // Don't clear on network errors, server errors, etc.
           if (err?.message === 'Unauthorized') {
             api.setToken(null);
             set({ user: null, accessToken: null });
@@ -100,8 +97,31 @@ export const useAuthStore = create<AuthState>()(
           api.setToken(state.accessToken);
           setAuthCookie(state.accessToken);
         }
-        useAuthStore.setState({ _hasHydrated: true });
       },
     },
   ),
 );
+
+/**
+ * Trả về true khi Zustand persist đã rehydrate xong từ localStorage.
+ * Dùng persist.onFinishHydration thay vì setState(_hasHydrated) vì setState
+ * bên trong onRehydrateStorage có thể bị React batching nuốt mất trong Next.js.
+ */
+export function useHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!useAuthStore.persist) {
+      setHydrated(true);
+      return;
+    }
+    if (useAuthStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, []);
+
+  return hydrated;
+}

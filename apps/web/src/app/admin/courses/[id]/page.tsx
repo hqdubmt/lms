@@ -8,7 +8,10 @@ import {
   Pencil, Video, X, Upload, Check, Eye, EyeOff,
   Download, CheckCircle2, AlertCircle,
   CalendarDays, Calendar, Clock, ExternalLink, Play, BookMarked, Languages,
+  Film, FileText, Image as ImageIcon, HelpCircle, AlignLeft,
 } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth.store';
+import { InlineFileViewer } from '@/components/media/InlineFileViewer';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +33,7 @@ interface Section { id: string; title: string; order: number; lessons: Lesson[] 
 interface Lesson {
   id: string; title: string; type: string; order: number;
   isFree: boolean; isPublished: boolean; videoKey?: string; videoUrl?: string; videoDuration?: number;
+  textContent?: string;
 }
 interface Enrollment {
   id: string; progress: number; status: string; enrolledAt: string;
@@ -56,26 +60,36 @@ type Tab = 'info' | 'content' | 'enrollments' | 'sessions' | 'modules';
 
 // ─── Admin Modules Tab ────────────────────────────────────────────────────────
 
-type ContentType = 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE';
-interface ModuleLink { id: string; contentType: ContentType; contentId: string; addedAt: string; title: string; subtitle?: string; }
-interface PickerItem { id: string; title: string; subtitle?: string; contentType: ContentType; }
+type ContentType = 'VOCAB_SET' | 'LANG_EXERCISE' | 'MATH_TOPIC' | 'MATH_EXERCISE' | 'VIET_SET' | 'VIET_EXERCISE' | 'MEDIA_FILE';
+interface ModuleLink { id: string; contentType: ContentType; contentId: string; addedAt: string; title: string; subtitle?: string; mimeType?: string; mediaType?: string; }
+interface PickerItem { id: string; title: string; subtitle?: string; contentType: ContentType; mimeType?: string; mediaType?: string; }
+interface MediaPickerItem { id: string; name: string; fileSize: number; mimeType: string; type: 'VIDEO' | 'IMAGE' | 'DOCUMENT'; }
 
-const MODULE_TYPE_GROUP: Record<ContentType, 'lang' | 'math' | 'viet'> = {
+const MODULE_TYPE_GROUP: Record<ContentType, 'lang' | 'math' | 'viet' | 'media'> = {
   VOCAB_SET: 'lang', LANG_EXERCISE: 'lang',
   MATH_TOPIC: 'math', MATH_EXERCISE: 'math',
   VIET_SET: 'viet', VIET_EXERCISE: 'viet',
+  MEDIA_FILE: 'media',
 };
 const MODULE_TYPE_LABEL: Record<ContentType, string> = {
   VOCAB_SET: 'Bộ từ vựng', LANG_EXERCISE: 'Bài tập ngoại ngữ',
   MATH_TOPIC: 'Chủ đề toán', MATH_EXERCISE: 'Bài tập toán',
   VIET_SET: 'Bộ tiếng Việt', VIET_EXERCISE: 'Bài tập tiếng Việt',
+  MEDIA_FILE: 'Tài liệu',
 };
 const GROUP_COLORS = {
-  lang: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700' },
-  math: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
-  viet: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
+  lang:  { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700' },
+  math:  { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700'   },
+  viet:  { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
+  media: { bg: 'bg-teal-50',   text: 'text-teal-700',   border: 'border-teal-200',   badge: 'bg-teal-100 text-teal-700'   },
 };
-const GROUP_TITLES = { lang: 'Ngoại ngữ', math: 'Toán học', viet: 'Tiếng Việt' };
+const GROUP_TITLES = { lang: 'Ngoại ngữ', math: 'Toán học', viet: 'Tiếng Việt', media: 'Thư viện' };
+
+function mediaTypeIcon(mediaType?: string) {
+  if (mediaType === 'VIDEO') return Film;
+  if (mediaType === 'IMAGE') return ImageIcon;
+  return FileText;
+}
 
 function getModuleViewUrl(contentType: ContentType, contentId: string): string {
   switch (contentType) {
@@ -83,6 +97,7 @@ function getModuleViewUrl(contentType: ContentType, contentId: string): string {
     case 'LANG_EXERCISE': return `/instructor/language/exercise/${contentId}`;
     case 'MATH_TOPIC':   return `/instructor/math/topic/${contentId}`;
     case 'VIET_SET':     return `/instructor/viet/set/${contentId}`;
+    case 'MEDIA_FILE':   return '';
     default:             return '';
   }
 }
@@ -90,18 +105,403 @@ function getModuleParentUrl(contentType: ContentType): string {
   switch (contentType) {
     case 'VOCAB_SET': case 'LANG_EXERCISE': return '/instructor/language';
     case 'MATH_TOPIC': case 'MATH_EXERCISE': return '/instructor/math';
+    case 'MEDIA_FILE': return '';
     default: return '/instructor/viet';
   }
 }
 
+// ─── Quiz Management Section ──────────────────────────────────────────────────
+
+interface QuizQuestion {
+  id: string; question: string; options: string[]; answer: number; explanation?: string | null; order: number;
+}
+interface QuizFormState { question: string; options: string[]; answer: number; explanation: string; }
+const emptyQuizForm = (): QuizFormState => ({ question: '', options: ['', ''], answer: 0, explanation: '' });
+
+function QuizManagementSection({ lessonId }: { lessonId: string }) {
+  const [quizzes, setQuizzes] = useState<QuizQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<QuizFormState>(emptyQuizForm());
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<QuizQuestion[]>(`/lessons/${lessonId}/quizzes`)
+      .then(setQuizzes).catch(() => {}).finally(() => setLoading(false));
+  }, [lessonId]);
+
+  const openAdd = () => { setEditingId(null); setForm(emptyQuizForm()); setShowForm(true); };
+  const openEdit = (q: QuizQuestion) => {
+    setEditingId(q.id);
+    setForm({ question: q.question, options: [...q.options], answer: q.answer, explanation: q.explanation ?? '' });
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.question.trim() || form.options.filter((o) => o.trim()).length < 2) return;
+    setSaving(true);
+    const body = {
+      question: form.question.trim(),
+      options: form.options.filter((o) => o.trim()),
+      answer: form.answer,
+      explanation: form.explanation.trim() || undefined,
+    };
+    try {
+      if (editingId) {
+        const updated = await api.patch<QuizQuestion>(`/lessons/quizzes/${editingId}`, body);
+        setQuizzes((prev) => prev.map((q) => q.id === editingId ? updated : q));
+      } else {
+        const created = await api.post<QuizQuestion>(`/lessons/${lessonId}/quizzes`, body);
+        setQuizzes((prev) => [...prev, created]);
+      }
+      setShowForm(false);
+    } catch {}
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await api.delete(`/lessons/quizzes/${id}`);
+      setQuizzes((prev) => prev.filter((q) => q.id !== id));
+    } catch {}
+    setDeletingId(null);
+    setConfirmDeleteId(null);
+  };
+
+  const setOption = (i: number, val: string) =>
+    setForm((f) => { const opts = [...f.options]; opts[i] = val; return { ...f, options: opts }; });
+  const addOption = () => setForm((f) => ({ ...f, options: [...f.options, ''] }));
+  const removeOption = (i: number) =>
+    setForm((f) => {
+      const opts = f.options.filter((_, idx) => idx !== i);
+      return { ...f, options: opts, answer: f.answer >= opts.length ? Math.max(0, opts.length - 1) : f.answer };
+    });
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <HelpCircle className="h-3 w-3" />Câu hỏi Quiz ({quizzes.length})
+        </span>
+        <button type="button" onClick={openAdd}
+          className="flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+          <Plus className="h-3 w-3" />Thêm câu hỏi
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+      ) : quizzes.length === 0 && !showForm ? (
+        <p className="text-xs text-muted-foreground text-center py-2">Chưa có câu hỏi nào.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {quizzes.map((q, qi) => (
+            <div key={q.id} className="border rounded-lg p-2.5 text-xs bg-muted/20">
+              <div className="flex items-start gap-2">
+                <span className="text-muted-foreground shrink-0 mt-0.5">{qi + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium leading-snug">{q.question}</p>
+                  <div className="mt-1 space-y-0.5">
+                    {q.options.map((opt, oi) => (
+                      <div key={oi} className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded ${oi === q.answer ? 'bg-green-100 text-green-700 font-medium' : 'text-muted-foreground'}`}>
+                        <span className="shrink-0 w-4 text-center">{String.fromCharCode(65 + oi)}.</span>
+                        <span>{opt}</span>
+                        {oi === q.answer && <Check className="h-3 w-3 ml-auto shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button type="button" onClick={() => openEdit(q)}
+                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  {confirmDeleteId === q.id ? (
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => handleDelete(q.id)} disabled={deletingId === q.id}
+                        className="text-destructive hover:underline font-medium">
+                        {deletingId === q.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Xóa'}
+                      </button>
+                      <button type="button" onClick={() => setConfirmDeleteId(null)} className="text-muted-foreground hover:underline">Hủy</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmDeleteId(q.id)}
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="border rounded-lg p-3 space-y-2.5 bg-background">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold">{editingId ? 'Sửa câu hỏi' : 'Thêm câu hỏi mới'}</span>
+            <button type="button" onClick={() => setShowForm(false)}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block">Câu hỏi</label>
+            <textarea
+              value={form.question}
+              onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))}
+              rows={2}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+              placeholder="Nhập câu hỏi..."
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium">Đáp án (chọn đáp án đúng)</label>
+              {form.options.length < 6 && (
+                <button type="button" onClick={addOption}
+                  className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                  <Plus className="h-3 w-3" />Thêm đáp án
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {form.options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input type="radio" name={`admin-answer-${lessonId}`} checked={form.answer === i}
+                    onChange={() => setForm((f) => ({ ...f, answer: i }))}
+                    className="shrink-0 accent-green-600" />
+                  <span className="text-xs text-muted-foreground w-4 shrink-0">{String.fromCharCode(65 + i)}.</span>
+                  <input
+                    value={opt}
+                    onChange={(e) => setOption(i, e.target.value)}
+                    placeholder={`Đáp án ${String.fromCharCode(65 + i)}`}
+                    className="flex-1 h-7 rounded-md border border-input bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  {form.options.length > 2 && (
+                    <button type="button" onClick={() => removeOption(i)}
+                      className="text-muted-foreground hover:text-destructive shrink-0">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block">Giải thích (tùy chọn)</label>
+            <textarea
+              value={form.explanation}
+              onChange={(e) => setForm((f) => ({ ...f, explanation: e.target.value }))}
+              rows={2}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+              placeholder="Giải thích đáp án đúng..."
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" className="h-7 text-xs" onClick={handleSave} disabled={saving || !form.question.trim()}>
+              {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+              {editingId ? 'Cập nhật' : 'Thêm'}
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowForm(false)}>Hủy</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LessonModulesSection({ lessonId }: { lessonId: string }) {
+  const [modules, setModules] = useState<ModuleLink[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'lang' | 'math' | 'viet' | 'media'>('lang');
+  const [pickerItems, setPickerItems] = useState<{ lang: PickerItem[]; math: PickerItem[]; viet: PickerItem[]; media: PickerItem[] }>({ lang: [], math: [], viet: [], media: [] });
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<ModuleLink[]>(`/lessons/${lessonId}/modules`).then(setModules).catch(() => {});
+  }, [lessonId]);
+
+  const loadPicker = useCallback(async () => {
+    setPickerLoading(true);
+    try {
+      const [langData, mathData, vietData, mediaData] = await Promise.all([
+        api.get<{ vocabSets: any[]; exercises: any[] }>('/language/mine'),
+        api.get<{ topics: any[]; exercises: any[] }>('/math/mine'),
+        api.get<{ sets: any[]; exercises: any[] }>('/viet/mine'),
+        api.get<MediaPickerItem[]>('/media').catch(() => [] as MediaPickerItem[]),
+      ]);
+      const fmtBytes = (b: number) => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+      setPickerItems({
+        lang: [
+          ...langData.vocabSets.map((v: any) => ({ id: v.id, title: v.title, subtitle: `${v.language} · ${v._count?.items ?? 0} từ`, contentType: 'VOCAB_SET' as ContentType })),
+          ...langData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'LANG_EXERCISE' as ContentType })),
+        ],
+        math: [
+          ...mathData.topics.map((t: any) => ({ id: t.id, title: t.title, subtitle: `${t.subject} · Lớp ${t.grade}`, contentType: 'MATH_TOPIC' as ContentType })),
+          ...mathData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'MATH_EXERCISE' as ContentType })),
+        ],
+        viet: [
+          ...vietData.sets.map((s: any) => ({ id: s.id, title: s.title, subtitle: `${s.category} · ${s._count?.items ?? 0} mục`, contentType: 'VIET_SET' as ContentType })),
+          ...vietData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'VIET_EXERCISE' as ContentType })),
+        ],
+        media: (Array.isArray(mediaData) ? mediaData : []).map((m) => ({
+          id: m.id, title: m.name, subtitle: fmtBytes(m.fileSize),
+          contentType: 'MEDIA_FILE' as ContentType, mimeType: m.mimeType, mediaType: m.type,
+        })),
+      });
+    } catch {}
+    setPickerLoading(false);
+  }, []);
+
+  useEffect(() => { if (showPicker) loadPicker(); }, [showPicker, loadPicker]);
+
+  const handleAdd = async (item: PickerItem) => {
+    setAdding(item.id);
+    try {
+      const link = await api.post<ModuleLink>(`/lessons/${lessonId}/modules`, { contentType: item.contentType, contentId: item.id });
+      setModules((prev) => [...prev, { ...link, mimeType: item.mimeType, mediaType: item.mediaType }]);
+    } catch {}
+    setAdding(null);
+  };
+
+  const handleRemove = async (moduleId: string) => {
+    setRemoving(moduleId);
+    try {
+      await api.delete(`/lessons/${lessonId}/modules/${moduleId}`);
+      setModules((prev) => prev.filter((m) => m.id !== moduleId));
+    } catch {}
+    setRemoving(null);
+  };
+
+  const linkedIds = new Set(modules.map((m) => m.contentId));
+  const filteredPicker = pickerItems[pickerTab].filter((item) =>
+    !linkedIds.has(item.id) && (!search.trim() || item.title.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">Nội dung học kèm ({modules.length})</span>
+        <button
+          type="button"
+          onClick={() => setShowPicker(true)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline font-medium"
+        >
+          <Plus className="h-3 w-3" />Thêm
+        </button>
+      </div>
+
+      {modules.length > 0 && (
+        <div className="space-y-1">
+          {modules.map((m) => {
+            const colors = GROUP_COLORS[MODULE_TYPE_GROUP[m.contentType]];
+            const MIcon = mediaTypeIcon(m.mediaType);
+            return (
+              <div key={m.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/40 text-xs group">
+                {m.contentType === 'MEDIA_FILE' ? (
+                  <div className={`shrink-0 h-4 w-4 rounded flex items-center justify-center ${colors.badge}`}>
+                    <MIcon className="h-2.5 w-2.5" />
+                  </div>
+                ) : (
+                  <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-tight ${colors.badge}`}>
+                    {MODULE_TYPE_LABEL[m.contentType].split(' ').slice(-1)[0]}
+                  </span>
+                )}
+                <span className="flex-1 truncate font-medium">{m.title}</span>
+                {m.subtitle && <span className="text-muted-foreground shrink-0 hidden sm:inline">{m.subtitle}</span>}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(m.id)}
+                  disabled={removing === m.id}
+                  className="opacity-0 group-hover:opacity-100 shrink-0 text-destructive/60 hover:text-destructive transition-opacity"
+                >
+                  {removing === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPicker(false); }}>
+          <div className="bg-background rounded-xl shadow-2xl w-full max-w-lg flex flex-col border" style={{ maxHeight: '80vh' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+              <h3 className="font-bold text-sm">Thêm nội dung học kèm</h3>
+              <button onClick={() => setShowPicker(false)} className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex border-b px-4 shrink-0">
+              {(['lang', 'math', 'viet', 'media'] as const).map((g) => (
+                <button key={g} type="button" onClick={() => { setPickerTab(g); setSearch(''); }}
+                  className={cn('px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+                    pickerTab === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                  {GROUP_TITLES[g]}
+                </button>
+              ))}
+            </div>
+            <div className="px-4 pt-3 shrink-0">
+              <input placeholder="Tìm kiếm..." value={search} onChange={(e) => setSearch(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5 min-h-0">
+              {pickerLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : filteredPicker.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-8">
+                  {search ? 'Không tìm thấy kết quả' : 'Không có nội dung để thêm'}
+                </p>
+              ) : filteredPicker.map((item) => {
+                const colors = GROUP_COLORS[pickerTab];
+                const MediaIcon = mediaTypeIcon(item.mediaType);
+                return (
+                  <div key={item.id} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
+                    {pickerTab === 'media' ? (
+                      <div className={`shrink-0 h-7 w-7 rounded-lg flex items-center justify-center ${colors.badge}`}>
+                        <MediaIcon className="h-3.5 w-3.5" />
+                      </div>
+                    ) : (
+                      <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
+                        {MODULE_TYPE_LABEL[item.contentType]}
+                      </span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.title}</p>
+                      {item.subtitle && <p className="text-xs text-muted-foreground">{item.subtitle}</p>}
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs shrink-0"
+                      disabled={adding === item.id} onClick={() => handleAdd(item)}>
+                      {adding === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                      Thêm
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminModulesTab({ courseId }: { courseId: string }) {
+  const { accessToken } = useAuthStore();
   const [modules, setModules] = useState<ModuleLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filterGroup, setFilterGroup] = useState<'all' | 'lang' | 'math' | 'viet'>('all');
+  const [filterGroup, setFilterGroup] = useState<'all' | 'lang' | 'math' | 'viet' | 'media'>('all');
   const [showPicker, setShowPicker] = useState(false);
-  const [pickerTab, setPickerTab] = useState<'lang' | 'math' | 'viet'>('lang');
-  const [pickerItems, setPickerItems] = useState<{ lang: PickerItem[]; math: PickerItem[]; viet: PickerItem[] }>({ lang: [], math: [], viet: [] });
+  const [pickerTab, setPickerTab] = useState<'lang' | 'math' | 'viet' | 'media'>('lang');
+  const [pickerItems, setPickerItems] = useState<{ lang: PickerItem[]; math: PickerItem[]; viet: PickerItem[]; media: PickerItem[] }>({ lang: [], math: [], viet: [], media: [] });
   const [pickerLoading, setPickerLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
@@ -121,24 +521,31 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
   const loadPickerContent = useCallback(async () => {
     setPickerLoading(true);
     try {
-      const [langData, mathData, vietData] = await Promise.all([
+      const [langData, mathData, vietData, mediaData] = await Promise.all([
         api.get<{ vocabSets: any[]; exercises: any[] }>('/language/mine'),
         api.get<{ topics: any[]; exercises: any[] }>('/math/mine'),
         api.get<{ sets: any[]; exercises: any[] }>('/viet/mine'),
+        api.get<MediaPickerItem[]>('/media').catch(() => [] as MediaPickerItem[]),
       ]);
-      const langItems: PickerItem[] = [
-        ...langData.vocabSets.map((v: any) => ({ id: v.id, title: v.title, subtitle: `${v.language} · ${v._count?.items ?? 0} từ`, contentType: 'VOCAB_SET' as ContentType })),
-        ...langData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'LANG_EXERCISE' as ContentType })),
-      ];
-      const mathItems: PickerItem[] = [
-        ...mathData.topics.map((t: any) => ({ id: t.id, title: t.title, subtitle: `${t.subject} · Lớp ${t.grade}`, contentType: 'MATH_TOPIC' as ContentType })),
-        ...mathData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'MATH_EXERCISE' as ContentType })),
-      ];
-      const vietItems: PickerItem[] = [
-        ...vietData.sets.map((s: any) => ({ id: s.id, title: s.title, subtitle: `${s.category} · ${s._count?.items ?? 0} mục`, contentType: 'VIET_SET' as ContentType })),
-        ...vietData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'VIET_EXERCISE' as ContentType })),
-      ];
-      setPickerItems({ lang: langItems, math: mathItems, viet: vietItems });
+      const fmtBytes = (b: number) => b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+      setPickerItems({
+        lang: [
+          ...langData.vocabSets.map((v: any) => ({ id: v.id, title: v.title, subtitle: `${v.language} · ${v._count?.items ?? 0} từ`, contentType: 'VOCAB_SET' as ContentType })),
+          ...langData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'LANG_EXERCISE' as ContentType })),
+        ],
+        math: [
+          ...mathData.topics.map((t: any) => ({ id: t.id, title: t.title, subtitle: `${t.subject} · Lớp ${t.grade}`, contentType: 'MATH_TOPIC' as ContentType })),
+          ...mathData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'MATH_EXERCISE' as ContentType })),
+        ],
+        viet: [
+          ...vietData.sets.map((s: any) => ({ id: s.id, title: s.title, subtitle: `${s.category} · ${s._count?.items ?? 0} mục`, contentType: 'VIET_SET' as ContentType })),
+          ...vietData.exercises.map((e: any) => ({ id: e.id, title: e.title, subtitle: `${e.type} · ${e._count?.questions ?? 0} câu`, contentType: 'VIET_EXERCISE' as ContentType })),
+        ],
+        media: (Array.isArray(mediaData) ? mediaData : []).map((m) => ({
+          id: m.id, title: m.name, subtitle: fmtBytes(m.fileSize),
+          contentType: 'MEDIA_FILE' as ContentType, mimeType: m.mimeType, mediaType: m.type,
+        })),
+      });
     } catch {}
     setPickerLoading(false);
   }, []);
@@ -150,8 +557,9 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
     setAdding(item.id);
     try {
       const link = await api.post<ModuleLink>(`/courses/${courseId}/modules`, { contentType: item.contentType, contentId: item.id });
-      setModules((prev) => [...prev, link]);
-      setSelectedId(link.id);
+      const full: ModuleLink = { ...link, mimeType: item.mimeType, mediaType: item.mediaType };
+      setModules((prev) => [...prev, full]);
+      setSelectedId(full.id);
     } catch {}
     setAdding(null);
   };
@@ -178,6 +586,10 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
   );
   const viewUrl = selectedModule ? getModuleViewUrl(selectedModule.contentType, selectedModule.contentId) : '';
   const parentUrl = selectedModule ? getModuleParentUrl(selectedModule.contentType) : '';
+  const isMediaFile = selectedModule?.contentType === 'MEDIA_FILE';
+  const mediaFileUrl = isMediaFile
+    ? `/api/media/${selectedModule!.contentId}/file${accessToken ? `?token=${accessToken}` : ''}`
+    : '';
 
   return (
     <>
@@ -192,17 +604,12 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
           </div>
 
           {/* Filter tabs */}
-          <div className="flex border-b text-xs shrink-0">
-            {(['all', 'lang', 'math', 'viet'] as const).map((g) => (
-              <button
-                key={g}
-                onClick={() => setFilterGroup(g)}
-                className={cn(
-                  'px-2.5 py-2 font-medium border-b-2 transition-colors',
-                  filterGroup === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {g === 'all' ? 'Tất cả' : { lang: 'Ngoại ngữ', math: 'Toán', viet: 'Việt' }[g]}
+          <div className="flex border-b text-xs shrink-0 overflow-x-auto">
+            {(['all', 'lang', 'math', 'viet', 'media'] as const).map((g) => (
+              <button key={g} onClick={() => setFilterGroup(g)}
+                className={cn('px-2.5 py-2 font-medium border-b-2 transition-colors whitespace-nowrap',
+                  filterGroup === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                {g === 'all' ? 'Tất cả' : { lang: 'NN', math: 'Toán', viet: 'Việt', media: 'File' }[g]}
               </button>
             ))}
           </div>
@@ -220,26 +627,27 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
               filteredModules.map((m) => {
                 const colors = GROUP_COLORS[MODULE_TYPE_GROUP[m.contentType]];
                 return (
-                  <div
-                    key={m.id}
-                    onClick={() => setSelectedId(m.id)}
-                    className={cn(
-                      'flex items-start gap-2 px-4 py-3 cursor-pointer border-b hover:bg-muted/50 transition-colors group border-l-2',
-                      selectedId === m.id ? 'bg-primary/5 border-l-primary' : 'border-l-transparent',
+                  <div key={m.id} onClick={() => setSelectedId(m.id)}
+                    className={cn('flex items-start gap-2 px-4 py-3 cursor-pointer border-b hover:bg-muted/50 transition-colors group border-l-2',
+                      selectedId === m.id ? 'bg-primary/5 border-l-primary' : 'border-l-transparent')}>
+                    {m.contentType === 'MEDIA_FILE' ? (
+                      (() => { const MIcon = mediaTypeIcon(m.mediaType); return (
+                        <div className={`shrink-0 mt-0.5 h-5 w-5 rounded flex items-center justify-center ${colors.badge}`}>
+                          <MIcon className="h-3 w-3" />
+                        </div>
+                      ); })()
+                    ) : (
+                      <div className={`shrink-0 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-tight ${colors.badge}`}>
+                        {MODULE_TYPE_LABEL[m.contentType].split(' ').slice(-1)[0]}
+                      </div>
                     )}
-                  >
-                    <div className={`shrink-0 mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-tight ${colors.badge}`}>
-                      {MODULE_TYPE_LABEL[m.contentType].split(' ').slice(-1)[0]}
-                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium leading-tight truncate">{m.title}</p>
                       {m.subtitle && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{m.subtitle}</p>}
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRemove(m.id, m.title); }}
+                    <button onClick={(e) => { e.stopPropagation(); handleRemove(m.id, m.title); }}
                       disabled={removing === m.id}
-                      className="opacity-0 group-hover:opacity-100 h-5 w-5 rounded flex items-center justify-center text-destructive/60 hover:text-destructive shrink-0 transition-opacity mt-0.5"
-                    >
+                      className="opacity-0 group-hover:opacity-100 h-5 w-5 rounded flex items-center justify-center text-destructive/60 hover:text-destructive shrink-0 transition-opacity mt-0.5">
                       {removing === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                     </button>
                   </div>
@@ -266,36 +674,47 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
                   <p className="font-semibold text-sm truncate">{selectedModule.title}</p>
                   {selectedModule.subtitle && <p className="text-xs text-muted-foreground">{selectedModule.subtitle}</p>}
                 </div>
-                {(viewUrl || parentUrl) && (
-                  <a
-                    href={viewUrl || parentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline shrink-0"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />Mở đầy đủ
+                {!isMediaFile && (viewUrl || parentUrl) && (
+                  <a href={viewUrl || parentUrl} target="_blank" rel="noopener noreferrer"
+                    className="shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                    <ExternalLink className="h-3 w-3" />Mở
+                  </a>
+                )}
+                {isMediaFile && (
+                  <a href={mediaFileUrl} download={selectedModule.title}
+                    className="shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors">
+                    Tải xuống
                   </a>
                 )}
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
-                <div className={`h-16 w-16 rounded-2xl flex items-center justify-center ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].bg}`}>
-                  <BookMarked className={`h-8 w-8 ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].text}`} />
+              {isMediaFile ? (
+                <div className="flex-1 overflow-hidden">
+                  <InlineFileViewer
+                    item={{ id: selectedModule.contentId, name: selectedModule.title, mimeType: selectedModule.mimeType ?? 'application/octet-stream', type: (selectedModule.mediaType as any) ?? 'DOCUMENT' }}
+                    fileUrl={mediaFileUrl}
+                  />
                 </div>
-                <div>
-                  <p className="font-bold text-base">{selectedModule.title}</p>
-                  {selectedModule.subtitle && <p className="text-sm text-muted-foreground mt-1">{selectedModule.subtitle}</p>}
-                  <p className="text-xs text-muted-foreground mt-2">{MODULE_TYPE_LABEL[selectedModule.contentType]}</p>
+              ) : viewUrl ? (
+                <div className="flex-1 overflow-hidden">
+                  <iframe key={viewUrl} src={viewUrl} className="w-full h-full border-0" title={selectedModule.title} style={{ display: 'block' }} />
                 </div>
-                <a
-                  href={viewUrl || parentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Mở nội dung
-                </a>
-              </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
+                  <div className={`h-16 w-16 rounded-2xl flex items-center justify-center ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].bg}`}>
+                    <BookMarked className={`h-8 w-8 ${GROUP_COLORS[MODULE_TYPE_GROUP[selectedModule.contentType]].text}`} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-base">{selectedModule.title}</p>
+                    {selectedModule.subtitle && <p className="text-sm text-muted-foreground mt-1">{selectedModule.subtitle}</p>}
+                  </div>
+                  {parentUrl && (
+                    <a href={parentUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors">
+                      <ExternalLink className="h-4 w-4" />Mở trang quản lý
+                    </a>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -313,7 +732,7 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
               </button>
             </div>
             <div className="flex border-b px-4 shrink-0">
-              {(['lang', 'math', 'viet'] as const).map((g) => (
+              {(['lang', 'math', 'viet', 'media'] as const).map((g) => (
                 <button key={g} onClick={() => { setPickerTab(g); setSearch(''); }}
                   className={cn('px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
                     pickerTab === g ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
@@ -331,21 +750,34 @@ function AdminModulesTab({ courseId }: { courseId: string }) {
               ) : filteredPicker.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-sm text-muted-foreground">{search ? 'Không tìm thấy kết quả' : 'Không có nội dung để thêm'}</p>
-                  {!search && (
+                  {!search && pickerTab !== 'media' && (
                     <a href={pickerTab === 'lang' ? '/instructor/language' : pickerTab === 'math' ? '/instructor/math' : '/instructor/viet'}
                       target="_blank" rel="noopener noreferrer"
                       className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline font-medium">
                       <Plus className="h-3.5 w-3.5" />Tạo nội dung mới
                     </a>
                   )}
+                  {!search && pickerTab === 'media' && (
+                    <a href="/admin/media" target="_blank" rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline font-medium">
+                      <Plus className="h-3.5 w-3.5" />Tải file lên thư viện
+                    </a>
+                  )}
                 </div>
               ) : filteredPicker.map((item) => {
                 const colors = GROUP_COLORS[pickerTab];
+                const MediaIcon = mediaTypeIcon(item.mediaType);
                 return (
                   <div key={item.id} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
-                      {MODULE_TYPE_LABEL[item.contentType]}
-                    </div>
+                    {pickerTab === 'media' ? (
+                      <div className={`shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${colors.badge}`}>
+                        <MediaIcon className="h-4 w-4" />
+                      </div>
+                    ) : (
+                      <div className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
+                        {MODULE_TYPE_LABEL[item.contentType]}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{item.title}</p>
                       {item.subtitle && <p className="text-xs text-muted-foreground">{item.subtitle}</p>}
@@ -406,7 +838,7 @@ export default function CourseDetailPage() {
   const [savingSection, setSavingSection] = useState(false);
 
   // Edit lesson
-  type EditLesson = { id: string; title: string; type: string; isFree: boolean; isPublished: boolean; videoKey?: string; videoUrl?: string };
+  type EditLesson = { id: string; title: string; type: string; isFree: boolean; isPublished: boolean; videoKey?: string; videoUrl?: string; textContent?: string };
   const [editLesson, setEditLesson] = useState<EditLesson | null>(null);
   const [videoInputMode, setVideoInputMode] = useState<'upload' | 'url'>('upload');
   const [savingLesson, setSavingLesson] = useState(false);
@@ -577,6 +1009,7 @@ export default function CourseDetailPage() {
         isFree: editLesson.isFree,
         isPublished: editLesson.isPublished,
         videoUrl: editLesson.videoUrl ?? undefined,
+        textContent: editLesson.textContent ?? undefined,
       });
       setEditLesson(null);
       await loadCourse();
@@ -836,30 +1269,31 @@ export default function CourseDetailPage() {
             <Card key={section.id}>
               <CardHeader className="pb-2 pt-4 px-4">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setExpandedSections((p) => ({ ...p, [section.id]: !p[section.id] }))}
-                    className="flex items-center gap-2 flex-1 text-left min-w-0">
-                    {expandedSections[section.id]
-                      ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                      : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
-                    {editSectionId === section.id ? (
-                      <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
-                        <Input className="h-7 text-sm" value={editSectionTitle}
-                          onChange={(e) => setEditSectionTitle(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSaveSection()} autoFocus />
-                        <Button size="sm" className="h-7 px-2" onClick={handleSaveSection} disabled={savingSection}>
-                          {savingSection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditSectionId(null)}>
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="font-medium truncate">{section.title}</span>
-                        <span className="text-xs text-muted-foreground shrink-0">({section.lessons.length} bài)</span>
-                      </>
-                    )}
-                  </button>
+                  {editSectionId === section.id ? (
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {expandedSections[section.id]
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <Input className="h-7 text-sm" value={editSectionTitle}
+                        onChange={(e) => setEditSectionTitle(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveSection()} autoFocus />
+                      <Button size="sm" className="h-7 px-2" onClick={handleSaveSection} disabled={savingSection}>
+                        {savingSection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditSectionId(null)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setExpandedSections((p) => ({ ...p, [section.id]: !p[section.id] }))}
+                      className="flex items-center gap-2 flex-1 text-left min-w-0">
+                      {expandedSections[section.id]
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <span className="font-medium truncate">{section.title}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">({section.lessons.length} bài)</span>
+                    </button>
+                  )}
                   {editSectionId !== section.id && (
                     <div className="flex gap-1 shrink-0">
                       <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
@@ -924,6 +1358,28 @@ export default function CourseDetailPage() {
                               Công khai
                             </label>
                           </div>
+
+                          {editLesson.type === 'TEXT' && (
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium flex items-center gap-1">
+                                <AlignLeft className="h-3 w-3" />Nội dung văn bản
+                              </label>
+                              <textarea
+                                value={editLesson.textContent ?? ''}
+                                onChange={(e) => setEditLesson({ ...editLesson, textContent: e.target.value })}
+                                rows={10}
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y font-mono"
+                                placeholder="Nhập nội dung bài học (hỗ trợ Markdown)..."
+                              />
+                              <p className="text-xs text-muted-foreground">Hỗ trợ Markdown: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách</p>
+                            </div>
+                          )}
+
+                          {editLesson.type === 'QUIZ' && (
+                            <div className="border-t pt-3">
+                              <QuizManagementSection lessonId={editLesson.id} />
+                            </div>
+                          )}
 
                           {/* Video upload / URL */}
                           {editLesson.type === 'VIDEO' && (
@@ -1009,6 +1465,10 @@ export default function CourseDetailPage() {
                             </div>
                           )}
 
+                          <div className="border-t pt-3">
+                            <LessonModulesSection lessonId={editLesson.id} />
+                          </div>
+
                           <div className="flex gap-2 pt-1">
                             <Button size="sm" onClick={handleSaveLesson} disabled={savingLesson}>
                               {savingLesson ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
@@ -1053,7 +1513,7 @@ export default function CourseDetailPage() {
                                 </a>
                               )}
                               <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                                onClick={() => { setVideoInputMode(lesson.videoUrl ? 'url' : 'upload'); setEditLesson({ id: lesson.id, title: lesson.title, type: lesson.type, isFree: lesson.isFree, isPublished: lesson.isPublished, videoKey: lesson.videoKey, videoUrl: lesson.videoUrl }); }}>
+                                onClick={() => { setVideoInputMode(lesson.videoUrl ? 'url' : 'upload'); setEditLesson({ id: lesson.id, title: lesson.title, type: lesson.type, isFree: lesson.isFree, isPublished: lesson.isPublished, videoKey: lesson.videoKey, videoUrl: lesson.videoUrl, textContent: lesson.textContent }); }}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
                               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive"

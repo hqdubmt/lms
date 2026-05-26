@@ -9,7 +9,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
-  allowedDevOrigins: ['103.82.24.142', '100.109.210.10', process.env.ALLOWED_DEV_ORIGIN].filter(Boolean) as string[],
+  allowedDevOrigins: ['103.82.24.142', '100.109.210.10', 'hqdu.tamarin-pinecone.ts.net', process.env.ALLOWED_DEV_ORIGIN].filter(Boolean) as string[],
   generateBuildId: async () => buildId,
 
   experimental: {
@@ -70,10 +70,16 @@ const config: NextConfig = {
   },
 
   async rewrites() {
+    const apiDest = process.env.INTERNAL_API_URL || 'http://localhost:4000';
     return [
+      // Proxy Socket.IO through Next.js so WSS works on HTTPS domains (Tailscale etc.)
+      {
+        source: '/socket.io/:path*',
+        destination: `${apiDest}/socket.io/:path*`,
+      },
       {
         source: '/api/:path*',
-        destination: `${process.env.INTERNAL_API_URL || 'http://localhost:4000'}/:path*`,
+        destination: `${apiDest}/:path*`,
       },
     ];
   },

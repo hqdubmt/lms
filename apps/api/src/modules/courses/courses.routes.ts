@@ -550,7 +550,7 @@ export async function coursesRoutes(app: FastifyInstance) {
 
   // ─── COURSE MODULES ──────────────────────────────────────────────────────────
 
-  async function resolveModuleContent(contentType: string, contentId: string): Promise<{ title: string; subtitle?: string }> {
+  async function resolveModuleContent(contentType: string, contentId: string): Promise<{ title: string; subtitle?: string; mimeType?: string; mediaType?: string }> {
     try {
       if (contentType === 'VOCAB_SET') {
         const r = await prisma.vocabSet.findUnique({ where: { id: contentId }, select: { title: true, language: true, _count: { select: { items: true } } } });
@@ -576,6 +576,15 @@ export async function coursesRoutes(app: FastifyInstance) {
         const r = await prisma.vietExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
         return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
       }
+      if (contentType === 'MEDIA_FILE') {
+        const r = await (prisma as any).media.findUnique({ where: { id: contentId }, select: { name: true, mimeType: true, type: true, fileSize: true } });
+        if (r) {
+          const ext = r.mimeType.split('/').pop()?.toUpperCase() ?? 'FILE';
+          const kb = r.fileSize < 1024 * 1024 ? `${(r.fileSize / 1024).toFixed(0)} KB` : `${(r.fileSize / 1024 / 1024).toFixed(1)} MB`;
+          return { title: r.name, subtitle: `${ext} · ${kb}`, mimeType: r.mimeType, mediaType: r.type };
+        }
+        return { title: contentId };
+      }
     } catch {}
     return { title: contentId };
   }
@@ -593,8 +602,8 @@ export async function coursesRoutes(app: FastifyInstance) {
       });
       const resolved = await Promise.all(
         links.map(async (link: any) => {
-          const { title, subtitle } = await resolveModuleContent(link.contentType, link.contentId);
-          return { id: link.id, contentType: link.contentType, contentId: link.contentId, addedAt: link.addedAt, title, subtitle };
+          const extra = await resolveModuleContent(link.contentType, link.contentId);
+          return { id: link.id, contentType: link.contentType, contentId: link.contentId, addedAt: link.addedAt, ...extra };
         }),
       );
       return resolved;
@@ -608,7 +617,7 @@ export async function coursesRoutes(app: FastifyInstance) {
     const { sub, role } = req.user as { sub: string; role: string };
     const { id } = req.params as { id: string };
     const { contentType, contentId } = z.object({
-      contentType: z.enum(['VOCAB_SET', 'LANG_EXERCISE', 'MATH_TOPIC', 'MATH_EXERCISE', 'VIET_SET', 'VIET_EXERCISE']),
+      contentType: z.enum(['VOCAB_SET', 'LANG_EXERCISE', 'MATH_TOPIC', 'MATH_EXERCISE', 'VIET_SET', 'VIET_EXERCISE', 'MEDIA_FILE']),
       contentId: z.string().min(1),
     }).parse(req.body);
     try {
@@ -620,8 +629,8 @@ export async function coursesRoutes(app: FastifyInstance) {
         update: {},
         create: { id: crypto.randomUUID(), courseId: id, contentType, contentId },
       });
-      const { title, subtitle } = await resolveModuleContent(contentType, contentId);
-      return reply.status(201).send({ ...link, title, subtitle });
+      const extra = await resolveModuleContent(contentType, contentId);
+      return reply.status(201).send({ ...link, ...extra });
     } catch (e: any) {
       if (e.code === 'P2002') return reply.status(409).send({ error: 'Nội dung đã được liên kết' });
       return reply.status(500).send({ error: e.message });

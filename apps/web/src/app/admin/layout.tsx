@@ -9,7 +9,7 @@ import {
   LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
   Image as ImageIcon, Palette,
 } from 'lucide-react';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
 import { siteConfig } from '@/config/site';
 import { useBranding } from '@/hooks/useBranding';
@@ -185,7 +185,8 @@ function DesktopSidebar({
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, accessToken, _hasHydrated, fetchMe, logout } = useAuthStore();
+  const { user, accessToken, fetchMe, logout } = useAuthStore();
+  const hydrated = useHydrated();
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -205,15 +206,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   useEffect(() => {
-    if (!_hasHydrated) return;
+    if (!hydrated) return;
     if (!user && accessToken) fetchMe();
     else if (!user && !accessToken) router.replace('/login');
     else if (user && user.role !== 'ADMIN') router.replace('/dashboard');
-  }, [user, accessToken, _hasHydrated, fetchMe, router]);
+  }, [user, accessToken, hydrated, fetchMe, router]);
 
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
-  if (!_hasHydrated || !user || user.role !== 'ADMIN') {
+  if (!hydrated || !user || user.role !== 'ADMIN') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin h-8 w-8 rounded-full border-4 border-primary border-t-transparent" />

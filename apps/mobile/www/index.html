@@ -126,7 +126,23 @@
 
 <!-- App WebView -->
 <div id="appFrame">
-  <iframe id="lmsFrame" sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts allow-top-navigation"></iframe>
+  <!--
+    sandbox:
+    - allow-autoplay        : cho phép video/audio tự động phát (FIX chính)
+    - allow-downloads       : cho phép tải file
+    - allow-forms           : submit form
+    - allow-modals          : alert/confirm/prompt
+    - allow-popups          : window.open
+    - allow-presentation    : fullscreen API
+    - allow-same-origin     : cookies, localStorage, API requests
+    - allow-scripts         : chạy JS
+    - allow-top-navigation-by-user-activation : điều hướng top frame chỉ khi user tương tác
+  -->
+  <iframe
+    id="lmsFrame"
+    allow="autoplay; fullscreen; camera; microphone; clipboard-read; clipboard-write; web-share"
+    sandbox="allow-autoplay allow-downloads allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
+  ></iframe>
 </div>
 
 <!-- Error -->
@@ -140,65 +156,116 @@
   </div>
 </div>
 
-<script type="module">
-import { Preferences } from 'https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm';
-
+<script>
+// ── Storage helpers (dùng localStorage, Capacitor Preferences là bonus nếu có) ──
 const PREF_KEY = 'serverUrl';
-const splash = document.getElementById('splash');
-const setup = document.getElementById('setup');
-const appFrame = document.getElementById('appFrame');
-const errorScreen = document.getElementById('errorScreen');
-const lmsFrame = document.getElementById('lmsFrame');
-const urlInput = document.getElementById('urlInput');
-const connectBtn = document.getElementById('connectBtn');
-const errMsg = document.getElementById('errMsg');
-
-function show(el) {
-  [splash, setup, appFrame, errorScreen].forEach(e => e.style.display = 'none');
-  el.style.display = 'flex';
-}
 
 async function getUrl() {
+  // Thử Capacitor Preferences trước (native), fallback localStorage
   try {
-    const { value } = await Preferences.get({ key: PREF_KEY });
-    return value || '';
-  } catch { return localStorage.getItem(PREF_KEY) || ''; }
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
+      const { value } = await Preferences.get({ key: PREF_KEY });
+      if (value) return value;
+    }
+  } catch {}
+  return localStorage.getItem(PREF_KEY) || '';
 }
 
 async function saveUrl(url) {
+  localStorage.setItem(PREF_KEY, url);
   try {
-    await Preferences.set({ key: PREF_KEY, value: url });
-  } catch { localStorage.setItem(PREF_KEY, url); }
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
+      await Preferences.set({ key: PREF_KEY, value: url });
+    }
+  } catch {}
 }
 
 async function clearUrl() {
-  try { await Preferences.remove({ key: PREF_KEY }); }
-  catch { localStorage.removeItem(PREF_KEY); }
+  localStorage.removeItem(PREF_KEY);
+  try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
+      await Preferences.remove({ key: PREF_KEY });
+    }
+  } catch {}
 }
+
+// ── UI refs ──
+const splash        = document.getElementById('splash');
+const setup         = document.getElementById('setup');
+const appFrame      = document.getElementById('appFrame');
+const errorScreen   = document.getElementById('errorScreen');
+const lmsFrame      = document.getElementById('lmsFrame');
+const urlInput      = document.getElementById('urlInput');
+const connectBtn    = document.getElementById('connectBtn');
+const errMsg        = document.getElementById('errMsg');
+
+const SCREENS = [splash, setup, appFrame, errorScreen];
+function show(el) {
+  SCREENS.forEach(e => e.style.display = 'none');
+  el.style.display = 'flex';
+}
+
+// ── Load app ──
+let loadTimer = null;
 
 function loadApp(url) {
   show(appFrame);
-  lmsFrame.src = url;
-  lmsFrame.onerror = () => show(errorScreen);
-  // Timeout fallback if iframe doesn't load
-  const t = setTimeout(() => {
-    if (!lmsFrame.contentDocument || lmsFrame.contentDocument.URL === 'about:blank') {
-      show(errorScreen);
+  if (loadTimer) clearTimeout(loadTimer);
+
+  lmsFrame.src = '';
+  // Nhỏ delay để reset iframe trước khi gán src mới
+  setTimeout(() => {
+    lmsFrame.src = url;
+  }, 50);
+
+  loadTimer = setTimeout(() => {
+    try {
+      // Nếu iframe không load được (blank page), hiện màn lỗi
+      const doc = lmsFrame.contentDocument;
+      if (!doc || doc.URL === 'about:blank' || doc.URL === '') {
+        show(errorScreen);
+      }
+    } catch {
+      // Cross-origin → iframe đã load thành công (không thể đọc contentDocument)
+      clearTimeout(loadTimer);
     }
-  }, 12000);
-  lmsFrame.onload = () => clearTimeout(t);
+  }, 15000);
+
+  lmsFrame.onload = () => {
+    if (loadTimer) clearTimeout(loadTimer);
+  };
+
+  lmsFrame.onerror = () => {
+    if (loadTimer) clearTimeout(loadTimer);
+    show(errorScreen);
+  };
 }
 
-async function init() {
-  await new Promise(r => setTimeout(r, 1600));
-  const url = await getUrl();
-  if (url) {
-    loadApp(url);
-  } else {
-    show(setup);
-  }
+// ── Android back button: điều hướng lịch sử trong iframe ──
+function setupAndroidBack() {
+  if (!window.Capacitor || !window.Capacitor.isNativePlatform()) return;
+  try {
+    import('https://cdn.jsdelivr.net/npm/@capacitor/app@6/+esm').then(({ App }) => {
+      App.addListener('backButton', ({ canGoBack }) => {
+        // Thử điều hướng back bên trong iframe trước
+        try {
+          const iframeWin = lmsFrame.contentWindow;
+          if (iframeWin && iframeWin.history && iframeWin.history.length > 1) {
+            iframeWin.history.back();
+            return;
+          }
+        } catch {}
+        // Nếu iframe ở trang gốc, thoát app
+        if (!canGoBack) App.exitApp();
+      });
+    }).catch(() => {});
+  } catch {}
 }
 
+// ── Connect button ──
 connectBtn.addEventListener('click', async () => {
   const url = urlInput.value.trim().replace(/\/$/, '');
   if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
@@ -227,6 +294,18 @@ document.getElementById('changeServerBtn').addEventListener('click', async () =>
   connectBtn.textContent = 'Kết nối';
   show(setup);
 });
+
+// ── Khởi động ──
+async function init() {
+  await new Promise(r => setTimeout(r, 1600));
+  setupAndroidBack();
+  const url = await getUrl();
+  if (url) {
+    loadApp(url);
+  } else {
+    show(setup);
+  }
+}
 
 init();
 </script>

@@ -420,4 +420,96 @@ export async function lessonsRoutes(app: FastifyInstance) {
 
     return { score, correct, total: quizzes.length, results };
   });
+
+  // ─── LESSON MODULES ──────────────────────────────────────────────────────────
+
+  async function resolveModuleContent(contentType: string, contentId: string): Promise<{ title: string; subtitle?: string; mimeType?: string; mediaType?: string }> {
+    try {
+      if (contentType === 'VOCAB_SET') {
+        const r = await prisma.vocabSet.findUnique({ where: { id: contentId }, select: { title: true, language: true, _count: { select: { items: true } } } });
+        return r ? { title: r.title, subtitle: `${r.language} · ${r._count.items} từ` } : { title: contentId };
+      }
+      if (contentType === 'LANG_EXERCISE') {
+        const r = await prisma.langExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+      if (contentType === 'MATH_TOPIC') {
+        const r = await prisma.mathTopic.findUnique({ where: { id: contentId }, select: { title: true, subject: true, _count: { select: { concepts: true } } } });
+        return r ? { title: r.title, subtitle: `${r.subject} · ${r._count.concepts} khái niệm` } : { title: contentId };
+      }
+      if (contentType === 'MATH_EXERCISE') {
+        const r = await prisma.mathExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+      if (contentType === 'VIET_SET') {
+        const r = await prisma.vietSet.findUnique({ where: { id: contentId }, select: { title: true, category: true, _count: { select: { items: true } } } });
+        return r ? { title: r.title, subtitle: `${r.category} · ${r._count.items} mục` } : { title: contentId };
+      }
+      if (contentType === 'VIET_EXERCISE') {
+        const r = await prisma.vietExercise.findUnique({ where: { id: contentId }, select: { title: true, type: true, _count: { select: { questions: true } } } });
+        return r ? { title: r.title, subtitle: `${r.type} · ${r._count.questions} câu` } : { title: contentId };
+      }
+      if (contentType === 'MEDIA_FILE') {
+        const r = await (prisma as any).media.findUnique({ where: { id: contentId }, select: { name: true, mimeType: true, type: true, fileSize: true } });
+        if (r) {
+          const ext = r.mimeType.split('/').pop()?.toUpperCase() ?? 'FILE';
+          const kb = r.fileSize < 1024 * 1024 ? `${(r.fileSize / 1024).toFixed(0)} KB` : `${(r.fileSize / 1024 / 1024).toFixed(1)} MB`;
+          return { title: r.name, subtitle: `${ext} · ${kb}`, mimeType: r.mimeType, mediaType: r.type };
+        }
+        return { title: contentId };
+      }
+    } catch {}
+    return { title: contentId };
+  }
+
+  // List modules for a lesson
+  app.get('/:id/modules', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const hasAccess = await checkLessonAccess(sub, role, id);
+    if (!hasAccess) return reply.status(403).send({ error: 'Không có quyền' });
+    const links = await (prisma as any).lessonModule.findMany({
+      where: { lessonId: id },
+      orderBy: { addedAt: 'asc' },
+    });
+    const resolved = await Promise.all(
+      links.map(async (link: any) => {
+        const extra = await resolveModuleContent(link.contentType, link.contentId);
+        return { id: link.id, contentType: link.contentType, contentId: link.contentId, addedAt: link.addedAt, ...extra };
+      }),
+    );
+    return resolved;
+  });
+
+  // Add module to lesson (instructor only)
+  app.post('/:id/modules', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id } = req.params as { id: string };
+    const { contentType, contentId } = z.object({
+      contentType: z.enum(['VOCAB_SET', 'LANG_EXERCISE', 'MATH_TOPIC', 'MATH_EXERCISE', 'VIET_SET', 'VIET_EXERCISE', 'MEDIA_FILE']),
+      contentId: z.string().min(1),
+    }).parse(req.body);
+    const lesson = await prisma.lesson.findUnique({ where: { id }, include: { section: { select: { course: { select: { instructorId: true } } } } } });
+    if (!lesson) return reply.status(404).send({ error: 'Không tìm thấy bài học' });
+    if (lesson.section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Không có quyền' });
+    const crypto = require('crypto');
+    const link = await (prisma as any).lessonModule.upsert({
+      where: { lessonId_contentType_contentId: { lessonId: id, contentType, contentId } },
+      update: {},
+      create: { id: crypto.randomUUID(), lessonId: id, contentType, contentId },
+    });
+    const extra = await resolveModuleContent(contentType, contentId);
+    return reply.status(201).send({ ...link, ...extra });
+  });
+
+  // Remove module from lesson (instructor only)
+  app.delete('/:id/modules/:moduleId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const { id, moduleId } = req.params as { id: string; moduleId: string };
+    const lesson = await prisma.lesson.findUnique({ where: { id }, include: { section: { select: { course: { select: { instructorId: true } } } } } });
+    if (!lesson) return reply.status(404).send({ error: 'Không tìm thấy bài học' });
+    if (lesson.section.course.instructorId !== sub && role !== 'ADMIN') return reply.status(403).send({ error: 'Không có quyền' });
+    await (prisma as any).lessonModule.delete({ where: { id: moduleId } });
+    return { message: 'Đã gỡ' };
+  });
 }

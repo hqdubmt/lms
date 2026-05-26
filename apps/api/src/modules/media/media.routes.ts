@@ -47,6 +47,13 @@ async function canAccessMedia(
   return false;
 }
 
+// In-memory store for temporary PPTX/document view tokens (15-min TTL)
+const viewTokens = new Map<string, { mediaId: string; expiry: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, d] of viewTokens) { if (d.expiry < now) viewTokens.delete(t); }
+}, 5 * 60 * 1000);
+
 export async function mediaRoutes(app: FastifyInstance) {
   // Upload file
   app.post('/upload', { preHandler: requireInstructor }, async (req, reply) => {
@@ -206,6 +213,49 @@ export async function mediaRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
       select: { id: true, name: true, fileSize: true, mimeType: true, type: true, access: true, createdAt: true },
     });
+  });
+
+  // Generate short-lived view token (for Office Online PPTX preview)
+  app.post('/:id/view-token', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const query = req.query as { token?: string };
+    let userId: string, role: string;
+    try {
+      let payload: any;
+      if (query.token) payload = (app as any).jwt.verify(query.token);
+      else { await req.jwtVerify(); payload = req.user; }
+      userId = payload.sub; role = payload.role;
+    } catch { return reply.status(401).send({ error: 'Unauthorized' }); }
+
+    const media = await prisma.media.findUnique({ where: { id } });
+    if (!media) return reply.status(404).send({ error: 'Không tìm thấy file' });
+    const allowed = await canAccessMedia(media, userId, role);
+    if (!allowed) return reply.status(403).send({ error: 'Không có quyền' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    viewTokens.set(token, { mediaId: id, expiry: Date.now() + 15 * 60 * 1000 });
+    return { token, viewUrl: `/api/media/view-doc/${token}` };
+  });
+
+  // Serve file via view token — no auth required (for Office Online)
+  app.get('/view-doc/:token', async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const entry = viewTokens.get(token);
+    if (!entry || entry.expiry < Date.now()) {
+      viewTokens.delete(token);
+      return reply.status(410).send({ error: 'Link đã hết hạn' });
+    }
+    const media = await prisma.media.findUnique({ where: { id: entry.mediaId } });
+    if (!media) return reply.status(404).send({ error: 'Không tìm thấy' });
+    try {
+      const stat = await minioClient.statObject(env.MINIO_BUCKET_MEDIA, media.fileKey);
+      const stream = await minioClient.getObject(env.MINIO_BUCKET_MEDIA, media.fileKey);
+      reply.header('Content-Type', media.mimeType);
+      reply.header('Content-Length', String(stat.size));
+      reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(media.name)}"`);
+      reply.header('Cache-Control', 'private, max-age=900');
+      return reply.send(stream);
+    } catch { return reply.status(500).send({ error: 'Lỗi tải file' }); }
   });
 
   // Rename media

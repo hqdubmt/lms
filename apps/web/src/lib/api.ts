@@ -35,24 +35,30 @@ class ApiClient {
     });
 
     if (res.status === 401) {
-      // Try refresh
-      const refreshRes = await fetch(`${this.baseUrl}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (refreshRes.ok) {
-        const { accessToken } = await refreshRes.json();
-        this.accessToken = accessToken;
-        if (typeof document !== 'undefined') {
-          document.cookie = `auth_token=${accessToken}; path=/; samesite=lax; max-age=900`;
+      // Only skip refresh for endpoints that ARE the auth flow itself — not protected auth routes like /auth/me.
+      const isAuthEndpoint = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'].includes(path);
+      if (!isAuthEndpoint) {
+        // Try refresh for protected endpoints
+        const refreshRes = await fetch(`${this.baseUrl}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (refreshRes.ok) {
+          const { accessToken } = await refreshRes.json();
+          this.accessToken = accessToken;
+          if (typeof document !== 'undefined') {
+            document.cookie = `auth_token=${accessToken}; path=/; samesite=lax; max-age=900`;
+          }
+          headers['Authorization'] = `Bearer ${accessToken}`;
+          const retry = await fetch(`${this.baseUrl}${path}`, { ...options, headers, credentials: 'include' });
+          if (!retry.ok) throw new Error(await retry.text());
+          return retry.json();
         }
-        headers['Authorization'] = `Bearer ${accessToken}`;
-        const retry = await fetch(`${this.baseUrl}${path}`, { ...options, headers, credentials: 'include' });
-        if (!retry.ok) throw new Error(await retry.text());
-        return retry.json();
+        this.accessToken = null;
+        throw new Error('Unauthorized');
       }
-      this.accessToken = null;
-      throw new Error('Unauthorized');
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || 'Unauthorized');
     }
 
     if (!res.ok) {

@@ -1,0 +1,64 @@
+name: Build & Push Docker (multi-arch)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - '.github/workflows/docker.yml'
+
+jobs:
+  build-push:
+    name: Build linux/amd64 + linux/arm64
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Get short commit SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # ── API ──────────────────────────────────────────────────────────────
+      - name: Build & push lms-api
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/api
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            hqdu/lms-api:latest
+            hqdu/lms-api:${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── WEB ──────────────────────────────────────────────────────────────
+      - name: Build & push lms-web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            hqdu/lms-web:latest
+            hqdu/lms-web:${{ steps.sha.outputs.short }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_APP_NAME=${{ secrets.NEXT_PUBLIC_APP_NAME || 'MasterLMS' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
