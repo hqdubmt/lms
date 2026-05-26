@@ -21,17 +21,10 @@ echo "║      MasterLMS - Update Script      ║"
 echo "╚═════════════════════════════════════╝"
 echo ""
 
-# Pull code mới nhất (nếu dùng git)
-if [ -d "$(dirname "$DEPLOY_DIR")/.git" ]; then
-  info "Pull code mới nhất..."
-  git -C "$(dirname "$DEPLOY_DIR")" pull --rebase
-  success "Code đã được cập nhật"
-fi
-
-# Build lại images
-info "Build lại Docker images..."
-docker compose build
-success "Build hoàn tất"
+# Pull images mới nhất từ Docker Hub
+info "Pull images mới từ Docker Hub..."
+docker compose pull
+success "Pull images hoàn tất"
 
 # Chạy migrations
 info "Chạy database migrations..."

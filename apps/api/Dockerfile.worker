@@ -1,17 +1,17 @@
 FROM node:20-alpine AS base
 WORKDIR /app
-# Install FFmpeg for video processing
 RUN apk add --no-cache ffmpeg libc6-compat
 
 FROM base AS deps
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci && npx prisma generate
+RUN npm install --omit=dev && npx prisma generate
 
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm install
 COPY . .
-RUN npm run build
+RUN npx prisma generate && npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
