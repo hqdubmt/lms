@@ -56,36 +56,47 @@ interface SmartImportResult {
 
 type Mode = 'menu' | 'flashcard' | 'srs' | 'test' | 'list' | 'write' | 'pairs' | 'listen' | 'speak' | 'image' | 'dialogue' | 'voicechat';
 
-function ss() {
-  try { return typeof window !== 'undefined' && window.speechSynthesis || null; } catch { return null; }
+let _currentAudio: HTMLAudioElement | null = null;
+
+function cancelSpeak() {
+  if (_currentAudio) { try { _currentAudio.pause(); _currentAudio.src = ''; } catch {} _currentAudio = null; }
+  // Also cancel browser TTS if running (desktop/web)
+  try { if (typeof window !== 'undefined') window.speechSynthesis?.cancel(); } catch {}
+  // Notify Capacitor parent frame too
+  if (typeof window !== 'undefined' && window !== window.top) {
+    try { window.parent.postMessage({ type: 'TTS_CANCEL' }, '*'); } catch {}
+  }
 }
 
 function speak(text: string, lang: string, rate = 1) {
-  // In Capacitor mobile iframe, delegate TTS to parent frame (cross-origin workaround)
+  cancelSpeak();
+  // Primary: server-side TTS proxy — works on http://, no permissions needed
+  try {
+    const audio = new Audio(`/api/language/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`);
+    if (rate !== 1) audio.playbackRate = rate;
+    _currentAudio = audio;
+    audio.play().catch(() => {
+      // Fallback: browser speech synthesis
+      _ttsWebFallback(text, lang, rate);
+    });
+    audio.onended = () => { if (_currentAudio === audio) _currentAudio = null; };
+    return;
+  } catch {}
+  _ttsWebFallback(text, lang, rate);
+}
+
+function _ttsWebFallback(text: string, lang: string, rate = 1) {
+  // In Capacitor mobile iframe, delegate to parent frame
   if (typeof window !== 'undefined' && window !== window.top) {
     try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang }, '*'); } catch {}
     return;
   }
-  const synth = ss(); if (!synth) return;
-  const doSpeak = () => {
-    try {
-      synth.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = lang;
-      if (rate !== 1) utt.rate = rate;
-      synth.speak(utt);
-    } catch {}
-  };
-  if (synth.getVoices().length > 0) { doSpeak(); }
-  else { synth.addEventListener('voiceschanged', doSpeak, { once: true }); setTimeout(doSpeak, 500); }
-}
-
-function cancelSpeak() {
-  if (typeof window !== 'undefined' && window !== window.top) {
-    try { window.parent.postMessage({ type: 'TTS_CANCEL' }, '*'); } catch {}
-    return;
-  }
-  try { ss()?.cancel(); } catch {}
+  try {
+    const synth = window.speechSynthesis; if (!synth) return;
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = lang; if (rate !== 1) utt.rate = rate;
+    synth.speak(utt);
+  } catch {}
 }
 
 // ─── Flashcard Mode ─────────────────────────────────────────────────────────
@@ -1420,9 +1431,9 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
       if (onDone) setTimeout(onDone, ms);
       return;
     }
-    const synth = ss();
-    if (!synth) { onDone?.(); return; }
     try {
+      const synth = window.speechSynthesis;
+      if (!synth) { onDone?.(); return; }
       synth.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.lang = langCode; utt.rate = 0.9;

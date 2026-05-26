@@ -127,19 +127,17 @@ export default function GlobalReviewPage() {
   const spPlayWord = () => {
     if (!items[idx]) return;
     const lang = LANG_BCP47[items[idx].setLanguage] || 'en-US';
-    // In Capacitor mobile iframe, delegate TTS to parent frame
-    if (typeof window !== 'undefined' && window !== window.top) {
-      try { window.parent.postMessage({ type: 'TTS_SPEAK', text: items[idx].word, lang }, '*'); } catch {}
-      return;
-    }
+    const text = items[idx].word;
     try {
-      const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
-      if (!synth) return;
-      synth.cancel();
-      const utt = new SpeechSynthesisUtterance(items[idx].word);
-      utt.lang = lang;
-      utt.rate = 0.85;
-      synth.speak(utt);
+      const audio = new Audio(`/api/language/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`);
+      audio.playbackRate = 0.85;
+      audio.play().catch(() => {
+        if (typeof window !== 'undefined' && window !== window.top) {
+          try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang }, '*'); } catch {}
+        } else {
+          try { const s = window.speechSynthesis; if (!s) return; s.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = lang; u.rate = 0.85; s.speak(u); } catch {}
+        }
+      });
     } catch {}
   };
 

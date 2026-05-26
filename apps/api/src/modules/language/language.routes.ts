@@ -153,6 +153,29 @@ function buildQuestions(pool: VocabItemLike[], type: ExerciseType, count: number
 
 export async function languageRoutes(app: FastifyInstance) {
 
+  // ─── TTS PROXY ────────────────────────────────────────────────────────────
+  // Proxies to Google Translate TTS so clients on http:// can play audio
+  // without needing a secure context or browser speech synthesis support.
+  app.get('/tts', async (req, reply) => {
+    const { text, lang } = req.query as { text?: string; lang?: string };
+    if (!text) return reply.status(400).send({ error: 'text required' });
+    const safeText = String(text).slice(0, 200);
+    const safeLang = /^[a-z]{2}(-[A-Z]{2,4})?$/.test(lang || '') ? lang! : 'en-US';
+    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(safeText)}&tl=${safeLang}&client=gtx`;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MasterLMS/1.0)' },
+      });
+      if (!res.ok) return reply.status(502).send({ error: 'TTS upstream error' });
+      reply.header('Content-Type', 'audio/mpeg');
+      reply.header('Cache-Control', 'public, max-age=86400');
+      reply.header('Access-Control-Allow-Origin', '*');
+      return reply.send(Buffer.from(await res.arrayBuffer()));
+    } catch {
+      return reply.status(503).send({ error: 'TTS service unavailable' });
+    }
+  });
+
   // ─── STATS ────────────────────────────────────────────────────────────────
 
   app.get('/stats', { preHandler: requireAuth }, async (req) => {
