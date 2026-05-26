@@ -46,7 +46,7 @@ RUN cd apps/web && npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-RUN apk add --no-cache nginx supervisor ffmpeg curl openssl
+RUN apk add --no-cache nginx supervisor ffmpeg curl openssl espeak-ng
 
 # ── node_modules (hoisted at monorepo root) → shared by api + worker ──
 COPY --from=api-builder /mono/node_modules ./node_modules

@@ -14,6 +14,7 @@ COPY . .
 RUN npx prisma generate && npm run build
 
 FROM base AS runner
+RUN apk add --no-cache espeak-ng
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist

@@ -42,9 +42,13 @@ function FlashcardMode({ set, onExit, onComplete }: { set: VietSet; onExit: () =
   const items = set.items;
   const current = items[idx];
 
-  const speak = (text: string) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const speak = async (text: string) => {
     try {
+      const audio = new Audio(`/api/viet/tts?text=${encodeURIComponent(text)}&lang=vi-VN`);
+      await audio.play(); return;
+    } catch {}
+    try {
+      if (typeof window === 'undefined' || !window.speechSynthesis) return;
       const utt = new SpeechSynthesisUtterance(text);
       utt.lang = 'vi-VN'; utt.rate = 0.9;
       window.speechSynthesis.speak(utt);
@@ -192,9 +196,14 @@ function SpellingMode({ set, onExit }: { set: VietSet; onExit: () => void }) {
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
 
-  const speak = (text: string, slow = false) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const speak = async (text: string, slow = false) => {
     try {
+      const url = `/api/viet/tts?text=${encodeURIComponent(text)}&lang=vi-VN${slow ? '&slow=1' : ''}`;
+      const audio = new Audio(url);
+      await audio.play(); return;
+    } catch {}
+    try {
+      if (typeof window === 'undefined' || !window.speechSynthesis) return;
       const utt = new SpeechSynthesisUtterance(text);
       utt.lang = 'vi-VN'; utt.rate = slow ? 0.5 : 0.85;
       window.speechSynthesis.speak(utt);

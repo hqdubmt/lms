@@ -6,6 +6,7 @@ import { extractText, structureVietWithAI } from '../../services/file-import';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
+import { serveTTS } from '../../services/tts';
 
 // ─── SM-2 Spaced Repetition ───────────────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -102,6 +103,19 @@ const TYPE_IMPORT_LABEL: Record<string, string> = {
 };
 
 export async function vietRoutes(app: FastifyInstance) {
+  // ─── TTS PROXY ────────────────────────────────────────────────────────────
+  app.get('/tts', async (req, reply) => {
+    const { text, lang, slow } = req.query as { text?: string; lang?: string; slow?: string };
+    if (!text) return reply.status(400).send({ error: 'text required' });
+    const safeLang = /^[a-z]{2}(-[A-Z]{2,4})?$/i.test(lang || '') ? lang! : 'vi-VN';
+    const result = await serveTTS(text, safeLang, slow === '1');
+    if (!result) return reply.status(503).send({ error: 'TTS service unavailable' });
+    reply.header('Content-Type', result.contentType);
+    reply.header('Cache-Control', 'public, max-age=86400');
+    reply.header('Access-Control-Allow-Origin', '*');
+    return reply.send(result.audio);
+  });
+
   // ─── STATS & LEADERBOARD ──────────────────────────────────────────────────
 
   app.get('/stats', { preHandler: requireAuth }, async (req) => {

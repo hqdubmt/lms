@@ -4,6 +4,7 @@ import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
 import * as XLSX from 'xlsx';
 import { extractText, structureLangWithAI } from '../../services/file-import';
+import { serveTTS } from '../../services/tts';
 
 // ─── SM-2 Spaced Repetition Algorithm ─────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -157,23 +158,15 @@ export async function languageRoutes(app: FastifyInstance) {
   // Proxies to Google Translate TTS so clients on http:// can play audio
   // without needing a secure context or browser speech synthesis support.
   app.get('/tts', async (req, reply) => {
-    const { text, lang } = req.query as { text?: string; lang?: string };
+    const { text, lang, slow } = req.query as { text?: string; lang?: string; slow?: string };
     if (!text) return reply.status(400).send({ error: 'text required' });
-    const safeText = String(text).slice(0, 200);
-    const safeLang = /^[a-z]{2}(-[A-Z]{2,4})?$/.test(lang || '') ? lang! : 'en-US';
-    const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(safeText)}&tl=${safeLang}&client=gtx`;
-    try {
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MasterLMS/1.0)' },
-      });
-      if (!res.ok) return reply.status(502).send({ error: 'TTS upstream error' });
-      reply.header('Content-Type', 'audio/mpeg');
-      reply.header('Cache-Control', 'public, max-age=86400');
-      reply.header('Access-Control-Allow-Origin', '*');
-      return reply.send(Buffer.from(await res.arrayBuffer()));
-    } catch {
-      return reply.status(503).send({ error: 'TTS service unavailable' });
-    }
+    const safeLang = /^[a-z]{2}(-[A-Z]{2,4})?$/i.test(lang || '') ? lang! : 'en-US';
+    const result = await serveTTS(text, safeLang, slow === '1');
+    if (!result) return reply.status(503).send({ error: 'TTS service unavailable' });
+    reply.header('Content-Type', result.contentType);
+    reply.header('Cache-Control', 'public, max-age=86400');
+    reply.header('Access-Control-Allow-Origin', '*');
+    return reply.send(result.audio);
   });
 
   // ─── STATS ────────────────────────────────────────────────────────────────

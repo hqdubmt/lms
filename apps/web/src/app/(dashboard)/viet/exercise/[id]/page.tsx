@@ -20,9 +20,13 @@ interface AttemptResult {
 }
 
 
-function speak(text: string) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+async function speak(text: string) {
   try {
+    const audio = new Audio(`/api/viet/tts?text=${encodeURIComponent(text)}&lang=vi-VN`);
+    await audio.play(); return;
+  } catch {}
+  try {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'vi-VN'; u.rate = 0.85;
