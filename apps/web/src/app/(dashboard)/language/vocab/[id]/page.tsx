@@ -62,11 +62,21 @@ function ss() {
 
 function speak(text: string, lang: string) {
   const synth = ss(); if (!synth) return;
-  try {
-    synth.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = lang; synth.speak(utt);
-  } catch {}
+  const doSpeak = () => {
+    try {
+      synth.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = lang; synth.speak(utt);
+    } catch {}
+  };
+  // Chờ voices load nếu chưa có (thường gặp trên Android)
+  if (synth.getVoices().length > 0) {
+    doSpeak();
+  } else {
+    synth.addEventListener('voiceschanged', doSpeak, { once: true });
+    // Timeout fallback: thử luôn sau 500ms dù chưa có voices
+    setTimeout(doSpeak, 500);
+  }
 }
 
 // ─── Flashcard Mode ─────────────────────────────────────────────────────────
@@ -556,8 +566,10 @@ function ListenMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
     } catch {}
   }, [item.word, set.language]);
 
+  // Auto-play chỉ trên Electron desktop (đã có autoplay policy); mobile WebView chặn auto-play
   useEffect(() => {
-    if (!done) playWord();
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
+    if (!done && isElectron) playWord();
   }, [idx, done, playWord]);
 
   const handleSelect = (translation: string) => {
@@ -607,9 +619,9 @@ function ListenMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
       <Card className="p-8 shadow-md text-center">
         <p className="text-sm text-muted-foreground mb-4">Từ này có nghĩa là gì?</p>
         <button onClick={playWord}
-          className="inline-flex flex-col items-center gap-3 px-8 py-6 rounded-2xl bg-primary/10 border-2 border-primary/20 hover:bg-primary/20 transition-all mx-auto">
-          <Volume2 className="h-10 w-10 text-primary" />
-          <span className="font-semibold text-primary text-sm">Nghe lại</span>
+          className="inline-flex flex-col items-center gap-3 px-8 py-6 rounded-2xl bg-primary/10 border-2 border-primary/20 hover:bg-primary/20 active:scale-95 transition-all mx-auto">
+          <Volume2 className="h-12 w-12 text-primary" />
+          <span className="font-bold text-primary">Nhấn để nghe</span>
         </button>
         {item.pronunciation && <div className="mt-3 text-muted-foreground text-sm">[{item.pronunciation}]</div>}
       </Card>
@@ -790,8 +802,8 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
       </div>
 
       {!supported && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Trình duyệt của bạn chưa hỗ trợ nhận dạng giọng nói. Hãy dùng Chrome hoặc Edge.
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          📱 Thiết bị không hỗ trợ nhận dạng giọng nói. Bạn có thể tự luyện: nghe phát âm rồi tự đánh giá bên dưới.
         </div>
       )}
 
@@ -841,6 +853,30 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
               <span className="text-sm font-medium text-red-600">Đang nghe... (nhấn để dừng)</span>
             </button>
           )}
+        </div>
+      )}
+
+      {/* Self-assessment khi không có STT */}
+      {!supported && score === null && (
+        <div className="space-y-3">
+          <p className="text-sm text-center text-muted-foreground">Sau khi nghe và tự luyện đọc, bạn thấy mình phát âm:</p>
+          <div className="grid grid-cols-3 gap-3">
+            <button onClick={() => { setScore(95); setTranscript(item.word); setScores(s => [...s, 95]); }}
+              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-green-300 bg-green-50 hover:bg-green-100 active:scale-95 transition-all text-green-700">
+              <span className="text-2xl">😊</span>
+              <span className="text-xs font-semibold">Rất chuẩn</span>
+            </button>
+            <button onClick={() => { setScore(70); setTranscript(item.word); setScores(s => [...s, 70]); }}
+              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-yellow-300 bg-yellow-50 hover:bg-yellow-100 active:scale-95 transition-all text-yellow-700">
+              <span className="text-2xl">🙂</span>
+              <span className="text-xs font-semibold">Tạm được</span>
+            </button>
+            <button onClick={() => { setScore(30); setTranscript(''); setScores(s => [...s, 30]); }}
+              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-red-300 bg-red-50 hover:bg-red-100 active:scale-95 transition-all text-red-700">
+              <span className="text-2xl">😅</span>
+              <span className="text-xs font-semibold">Cần luyện</span>
+            </button>
+          </div>
         </div>
       )}
 

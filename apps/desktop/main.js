@@ -8,6 +8,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('allow-running-insecure-content');
 // Tắt web security warnings trong dev
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+// Bật Web Speech API (TTS + STT)
+app.commandLine.appendSwitch('enable-speech-dispatcher');
+app.commandLine.appendSwitch('use-fake-ui-for-media-stream', 'false');
 
 const store = new Store({
   name: 'masterlms-config',

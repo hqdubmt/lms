@@ -75,7 +75,13 @@ export default function GlobalReviewPage() {
   const [spListening, setSpListening] = useState(false);
   const [spTranscript, setSpTranscript] = useState('');
   const [spScore, setSpScore] = useState<number | null>(null);
+  const [spSupported, setSpSupported] = useState(true);
   const spRecRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) setSpSupported(false);
+  }, []);
 
   useEffect(() => {
     api.get<ReviewItem[]>('/language/review')
@@ -338,25 +344,48 @@ export default function GlobalReviewPage() {
             </div>
           </Card>
 
-          <div className="flex justify-center">
-            {!spListening ? (
-              <button onClick={spStartListening}
-                className="flex flex-col items-center gap-3 px-10 py-6 rounded-2xl border-2 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 transition-all group">
-                <div className="h-14 w-14 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                  <Mic className="h-7 w-7 text-primary" />
-                </div>
-                <span className="text-sm font-medium text-primary">Nhấn để nói</span>
-              </button>
-            ) : (
-              <button onClick={() => { spRecRef.current?.stop(); setSpListening(false); }}
-                className="flex flex-col items-center gap-3 px-10 py-6 rounded-2xl border-2 border-red-400 bg-red-50 animate-pulse">
-                <div className="h-14 w-14 rounded-full bg-red-100 flex items-center justify-center">
-                  <Radio className="h-7 w-7 text-red-500" />
-                </div>
-                <span className="text-sm font-medium text-red-600">Đang nghe... nhấn để dừng</span>
-              </button>
-            )}
-          </div>
+          {spSupported ? (
+            <div className="flex justify-center">
+              {!spListening ? (
+                <button onClick={spStartListening}
+                  className="flex flex-col items-center gap-3 px-10 py-6 rounded-2xl border-2 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 active:scale-95 transition-all group">
+                  <div className="h-14 w-14 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                    <Mic className="h-7 w-7 text-primary" />
+                  </div>
+                  <span className="text-sm font-medium text-primary">Nhấn để nói</span>
+                </button>
+              ) : (
+                <button onClick={() => { spRecRef.current?.stop(); setSpListening(false); }}
+                  className="flex flex-col items-center gap-3 px-10 py-6 rounded-2xl border-2 border-red-400 bg-red-50 animate-pulse">
+                  <div className="h-14 w-14 rounded-full bg-red-100 flex items-center justify-center">
+                    <Radio className="h-7 w-7 text-red-500" />
+                  </div>
+                  <span className="text-sm font-medium text-red-600">Đang nghe... nhấn để dừng</span>
+                </button>
+              )}
+            </div>
+          ) : spScore === null && (
+            <div className="space-y-3">
+              <p className="text-sm text-center text-muted-foreground">Nghe mẫu rồi tự luyện đọc, bạn đánh giá:</p>
+              <div className="grid grid-cols-3 gap-3">
+                <button onClick={() => { setSpScore(95); setSpTranscript(item.word); }}
+                  className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-green-300 bg-green-50 hover:bg-green-100 active:scale-95 transition-all text-green-700">
+                  <span className="text-2xl">😊</span>
+                  <span className="text-xs font-semibold">Rất chuẩn</span>
+                </button>
+                <button onClick={() => { setSpScore(70); setSpTranscript(item.word); }}
+                  className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-yellow-300 bg-yellow-50 hover:bg-yellow-100 active:scale-95 transition-all text-yellow-700">
+                  <span className="text-2xl">🙂</span>
+                  <span className="text-xs font-semibold">Tạm được</span>
+                </button>
+                <button onClick={() => { setSpScore(30); setSpTranscript(''); }}
+                  className="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 border-red-300 bg-red-50 hover:bg-red-100 active:scale-95 transition-all text-red-700">
+                  <span className="text-2xl">😅</span>
+                  <span className="text-xs font-semibold">Cần luyện</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {spScore !== null && (
             <div className={cn('rounded-xl border-2 p-4 space-y-2',
