@@ -4,7 +4,8 @@ RUN apk add --no-cache libc6-compat
 
 FROM base AS deps
 COPY package*.json ./
-RUN npm install
+COPY apps/web/package*.json ./apps/web/
+RUN npm install --workspace=apps/web
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
@@ -14,7 +15,7 @@ ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_APP_NAME=MasterLMS
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME
-RUN npm run build
+RUN cd apps/web && npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
