@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MasterLMS - Cài đặt</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 560px; height: 480px;
+    background: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    color: #fff;
+    user-select: none;
+  }
+  .titlebar {
+    -webkit-app-region: drag;
+    height: 36px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+  }
+  .titlebar-btn {
+    -webkit-app-region: no-drag;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+  .btn-close { background: #ff5f57; }
+  .btn-min { background: #ffbd2e; }
+  .btn-max { background: #28c840; }
+  .titlebar-title {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    margin-right: 60px;
+  }
+  .content {
+    padding: 40px 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .logo {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 24px rgba(59,130,246,0.3);
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .desc {
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  label {
+    display: block;
+    width: 100%;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .input-wrap {
+    width: 100%;
+    position: relative;
+    margin-bottom: 8px;
+  }
+  input[type="url"], input[type="text"] {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+    font-family: inherit;
+  }
+  input:focus {
+    border-color: #3b82f6;
+    background: rgba(59,130,246,0.08);
+  }
+  input::placeholder { color: rgba(255,255,255,0.25); }
+  .hint {
+    font-size: 11.5px;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+  .hint code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+  }
+  .btn {
+    width: 100%;
+    padding: 13px;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    font-family: inherit;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn:active { transform: scale(0.99); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error {
+    font-size: 12px;
+    color: #f87171;
+    margin-top: -20px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .error.show { display: block; }
+  .current-url {
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    text-align: center;
+    margin-top: 16px;
+    display: none;
+  }
+  .current-url.show { display: block; }
+  .current-url span {
+    color: #60a5fa;
+    font-weight: 500;
+  }
+</style>
+</head>
+<body>
+<div class="titlebar">
+  <button class="titlebar-btn btn-close" onclick="window.close()"></button>
+  <button class="titlebar-btn btn-min"></button>
+  <button class="titlebar-btn btn-max"></button>
+  <div class="titlebar-title">Cài đặt MasterLMS</div>
+</div>
+
+<div class="content">
+  <div class="logo">📚</div>
+  <h1>Kết nối với máy chủ</h1>
+  <p class="desc">Nhập địa chỉ máy chủ LMS của trường bạn để bắt đầu<br>học tập và giảng dạy trực tuyến.</p>
+
+  <label for="serverUrl">Địa chỉ máy chủ (URL)</label>
+  <div class="input-wrap">
+    <input type="text" id="serverUrl" placeholder="http://192.168.1.100:3000 hoặc https://lms.truong.edu.vn" autocomplete="off" spellcheck="false">
+  </div>
+  <p class="hint">
+    Ví dụ: <code>http://192.168.1.100:3000</code> hoặc <code>https://lms.truong.edu.vn</code><br>
+    Liên hệ quản trị viên nhà trường để lấy địa chỉ này.
+  </p>
+
+  <p class="error" id="errorMsg">Vui lòng nhập địa chỉ máy chủ hợp lệ (bắt đầu bằng http:// hoặc https://)</p>
+
+  <button class="btn" id="saveBtn" onclick="save()">Kết nối ngay</button>
+
+  <p class="current-url" id="currentUrlInfo">Đang kết nối: <span id="currentUrlSpan"></span></p>
+</div>
+
+<script>
+  async function init() {
+    if (window.electronAPI) {
+      const url = await window.electronAPI.getServerUrl();
+      if (url) {
+        document.getElementById('serverUrl').value = url;
+        document.getElementById('currentUrlInfo').classList.add('show');
+        document.getElementById('currentUrlSpan').textContent = url;
+        document.getElementById('saveBtn').textContent = 'Cập nhật kết nối';
+      }
+    }
+  }
+
+  async function save() {
+    const input = document.getElementById('serverUrl');
+    const url = input.value.trim();
+    const errorEl = document.getElementById('errorMsg');
+
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      errorEl.classList.add('show');
+      input.focus();
+      return;
+    }
+    errorEl.classList.remove('show');
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Đang kết nối...';
+
+    try {
+      if (window.electronAPI) {
+        await window.electronAPI.setServerUrl(url);
+      }
+      window.close();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Kết nối ngay';
+      errorEl.textContent = 'Lỗi khi lưu cài đặt. Vui lòng thử lại.';
+      errorEl.classList.add('show');
+    }
+  }
+
+  document.getElementById('serverUrl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+    document.getElementById('errorMsg').classList.remove('show');
+  });
+
+  init();
+</script>
+</body>
+</html>
