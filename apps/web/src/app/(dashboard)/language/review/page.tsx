@@ -126,12 +126,18 @@ export default function GlobalReviewPage() {
 
   const spPlayWord = () => {
     if (!items[idx]) return;
+    const lang = LANG_BCP47[items[idx].setLanguage] || 'en-US';
+    // In Capacitor mobile iframe, delegate TTS to parent frame
+    if (typeof window !== 'undefined' && window !== window.top) {
+      try { window.parent.postMessage({ type: 'TTS_SPEAK', text: items[idx].word, lang }, '*'); } catch {}
+      return;
+    }
     try {
       const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
       if (!synth) return;
       synth.cancel();
       const utt = new SpeechSynthesisUtterance(items[idx].word);
-      utt.lang = LANG_BCP47[items[idx].setLanguage] || 'en-US';
+      utt.lang = lang;
       utt.rate = 0.85;
       synth.speak(utt);
     } catch {}
@@ -141,7 +147,11 @@ export default function GlobalReviewPage() {
     const item = items[idx];
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR || !item) return;
-    try { window.speechSynthesis?.cancel(); } catch {}
+    if (typeof window !== 'undefined' && window !== window.top) {
+      try { window.parent.postMessage({ type: 'TTS_CANCEL' }, '*'); } catch {}
+    } else {
+      try { window.speechSynthesis?.cancel(); } catch {}
+    }
     const rec = new SR();
     spRecRef.current = rec;
     rec.lang = LANG_BCP47[item.setLanguage] || 'en-US';

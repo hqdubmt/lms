@@ -295,6 +295,30 @@ document.getElementById('changeServerBtn').addEventListener('click', async () =>
   show(setup);
 });
 
+// ── TTS bridge: relay speechSynthesis from cross-origin iframe ──
+window.addEventListener('message', function(e) {
+  if (!e.data || typeof e.data.type !== 'string') return;
+  if (e.data.type === 'TTS_SPEAK') {
+    try {
+      const text = String(e.data.text || '');
+      const lang = String(e.data.lang || 'en-US');
+      if (!text) return;
+      speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = lang;
+      const doSpeak = () => speechSynthesis.speak(utt);
+      if (speechSynthesis.getVoices().length > 0) {
+        doSpeak();
+      } else {
+        speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
+        setTimeout(doSpeak, 400);
+      }
+    } catch {}
+  } else if (e.data.type === 'TTS_CANCEL') {
+    try { speechSynthesis.cancel(); } catch {}
+  }
+});
+
 // ── Khởi động ──
 async function init() {
   await new Promise(r => setTimeout(r, 1600));

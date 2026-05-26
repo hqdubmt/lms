@@ -182,10 +182,15 @@ export function Dictation({ q, answer, onAnswer, submitted, result }: QuestionPr
   const [localValue, setLocalValue] = useState(answer || '');
   const playAudio = () => {
     if (q.audioUrl) { new Audio(q.audioUrl).play().catch(() => {}); return; }
+    const text = String(q.answer);
+    if (typeof window !== 'undefined' && window !== window.top) {
+      try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang: 'en' }, '*'); } catch {}
+      return;
+    }
     try {
       const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
       if (!synth) return;
-      const utt = new SpeechSynthesisUtterance(String(q.answer));
+      const utt = new SpeechSynthesisUtterance(text);
       utt.lang = 'en'; synth.speak(utt);
     } catch {}
   };

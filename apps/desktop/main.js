@@ -2,6 +2,14 @@ const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, glo
 const path = require('path');
 const Store = require('electron-store');
 
+// Read saved server URL early so we can register it as a secure origin for Web Speech API
+const _earlyStore = new Store({ name: 'masterlms-config', defaults: { serverUrl: '' } });
+const _savedUrl = (_earlyStore.get('serverUrl') || '').toString().trim().replace(/\/$/, '');
+if (_savedUrl) {
+  // Allows SpeechRecognition on http:// origins (requires HTTPS by default)
+  app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', _savedUrl);
+}
+
 // Bật autoplay media không cần user gesture (fix video/audio im lặng)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Cho phép mixed content (http server trong https context)

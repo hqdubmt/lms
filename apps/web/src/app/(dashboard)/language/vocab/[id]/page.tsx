@@ -60,23 +60,32 @@ function ss() {
   try { return typeof window !== 'undefined' && window.speechSynthesis || null; } catch { return null; }
 }
 
-function speak(text: string, lang: string) {
+function speak(text: string, lang: string, rate = 1) {
+  // In Capacitor mobile iframe, delegate TTS to parent frame (cross-origin workaround)
+  if (typeof window !== 'undefined' && window !== window.top) {
+    try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang }, '*'); } catch {}
+    return;
+  }
   const synth = ss(); if (!synth) return;
   const doSpeak = () => {
     try {
       synth.cancel();
       const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = lang; synth.speak(utt);
+      utt.lang = lang;
+      if (rate !== 1) utt.rate = rate;
+      synth.speak(utt);
     } catch {}
   };
-  // Chờ voices load nếu chưa có (thường gặp trên Android)
-  if (synth.getVoices().length > 0) {
-    doSpeak();
-  } else {
-    synth.addEventListener('voiceschanged', doSpeak, { once: true });
-    // Timeout fallback: thử luôn sau 500ms dù chưa có voices
-    setTimeout(doSpeak, 500);
+  if (synth.getVoices().length > 0) { doSpeak(); }
+  else { synth.addEventListener('voiceschanged', doSpeak, { once: true }); setTimeout(doSpeak, 500); }
+}
+
+function cancelSpeak() {
+  if (typeof window !== 'undefined' && window !== window.top) {
+    try { window.parent.postMessage({ type: 'TTS_CANCEL' }, '*'); } catch {}
+    return;
   }
+  try { ss()?.cancel(); } catch {}
 }
 
 // ─── Flashcard Mode ─────────────────────────────────────────────────────────
@@ -557,13 +566,7 @@ function ListenMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   }));
 
   const playWord = useCallback(() => {
-    const synth = ss(); if (!synth) return;
-    try {
-      synth.cancel();
-      const utt = new SpeechSynthesisUtterance(item.word);
-      utt.lang = set.language;
-      synth.speak(utt);
-    } catch {}
+    speak(item.word, set.language);
   }, [item.word, set.language]);
 
   // Auto-play chỉ trên Electron desktop (đã có autoplay policy); mobile WebView chặn auto-play
@@ -712,19 +715,13 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   }, []);
 
   const playWord = (rate = 1) => {
-    const synth = ss(); if (!synth) return;
-    try {
-      synth.cancel();
-      const utt = new SpeechSynthesisUtterance(item.word);
-      utt.lang = langCode; utt.rate = rate;
-      synth.speak(utt);
-    } catch {}
+    speak(item.word, langCode, rate);
   };
 
   const startListening = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
-    try { ss()?.cancel(); } catch {}
+    cancelSpeak();
     const rec = new SR();
     recRef.current = rec;
     rec.lang = langCode;
@@ -1408,7 +1405,7 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   useEffect(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) setSupported(false);
-    return () => { try { ss()?.cancel(); } catch {} recRef.current?.stop(); };
+    return () => { cancelSpeak(); recRef.current?.stop(); };
   }, []);
 
   useEffect(() => {
@@ -1416,6 +1413,13 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   }, [chatLog]);
 
   const doAISpeak = (text: string, onDone?: () => void) => {
+    if (typeof window !== 'undefined' && window !== window.top) {
+      try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang: langCode }, '*'); } catch {}
+      // Estimate speech duration: ~400ms per word, min 1.5s
+      const ms = Math.max(1500, text.split(' ').length * 400);
+      if (onDone) setTimeout(onDone, ms);
+      return;
+    }
     const synth = ss();
     if (!synth) { onDone?.(); return; }
     try {
@@ -1456,7 +1460,7 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   const startListening = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
-    try { ss()?.cancel(); } catch {}
+    cancelSpeak();
     const rec = new SR();
     recRef.current = rec;
     rec.lang = langCode; rec.continuous = false; rec.interimResults = false; rec.maxAlternatives = 3;
@@ -1472,7 +1476,7 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   };
 
   const goNext = () => {
-    try { ss()?.cancel(); } catch {}
+    cancelSpeak();
     const next = idxRef.current + 1;
     if (next >= turns.length) { setPhase('done'); return; }
     idxRef.current = next;
@@ -1481,7 +1485,7 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   };
 
   const restart = () => {
-    try { ss()?.cancel(); } catch {}
+    cancelSpeak();
     idxRef.current = 0;
     setPhase('ready'); setIdx(0); setScores([]); setChatLog([]); setCorrect(false);
   };
