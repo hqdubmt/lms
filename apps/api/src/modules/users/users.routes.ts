@@ -85,48 +85,40 @@ export async function usersRoutes(app: FastifyInstance) {
 
     const classIds = memberships.map((m) => m.classId);
 
-    const [classCoursesRaw, userEnrollments] = await Promise.all([
-      (prisma as any).classCourse.findMany({
-        where: { classId: { in: classIds } },
-        include: {
-          class: { select: { id: true, name: true } },
-          course: {
-            select: {
-              id: true, title: true, slug: true, thumbnailUrl: true,
-              totalLessons: true, totalDuration: true, level: true,
-              instructor: { select: { name: true, avatarUrl: true } },
-              _count: { select: { enrollments: true } },
-            },
-          },
-        },
-      }),
-      prisma.enrollment.findMany({
-        where: { userId: sub },
-        select: { courseId: true, status: true, progress: true },
-      }),
-    ]);
+    // Raw SQL to safely handle any orphaned ClassCourse records
+    const rows: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT ON (co.id)
+        co.id, co.title, co.slug, co."thumbnailUrl",
+        co."totalLessons", co."totalDuration", co.level,
+        u.name as instructor_name, u."avatarUrl" as instructor_avatar,
+        cl.id as class_id, cl.name as class_name,
+        e.status as enroll_status,
+        COALESCE(e.progress, 0) as progress
+      FROM "ClassCourse" cc
+      JOIN "Class" cl ON cl.id = cc."classId"
+      JOIN "Course" co ON co.id = cc."courseId"
+      JOIN "User" u ON u.id = co."instructorId"
+      LEFT JOIN "Enrollment" e ON e."courseId" = co.id AND e."userId"::text = ${sub}
+      WHERE cc."classId"::text = ANY(${classIds})
+      ORDER BY co.id, co.title
+    `;
 
-    const enrollmentMap = new Map(
-      (userEnrollments as Array<{ courseId: string; status: string; progress: number }>)
-        .map((e) => [e.courseId, e]),
-    );
-
-    const seen = new Set<string>();
-    const result: any[] = [];
-    for (const cc of classCoursesRaw as any[]) {
-      if (seen.has(cc.course.id)) continue;
-      seen.add(cc.course.id);
-      const enroll = enrollmentMap.get(cc.course.id);
-      result.push({
-        ...cc.course,
-        className: cc.class.name,
-        classId: cc.class.id,
-        enrolled: !!enroll,
-        enrollStatus: enroll?.status ?? null,
-        progress: enroll?.progress ?? 0,
-      });
-    }
-    return result;
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      thumbnailUrl: r.thumbnailUrl,
+      totalLessons: r.totalLessons,
+      totalDuration: r.totalDuration,
+      level: r.level,
+      instructor: { name: r.instructor_name, avatarUrl: r.instructor_avatar },
+      _count: { enrollments: 0 },
+      className: r.class_name,
+      classId: r.class_id,
+      enrolled: !!r.enroll_status,
+      enrollStatus: r.enroll_status ?? null,
+      progress: Number(r.progress),
+    }));
   });
 
   // Get user's schedule (live sessions for their courses/classes + sessions they created as instructor)
