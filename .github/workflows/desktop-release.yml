@@ -1,0 +1,141 @@
+name: Build Desktop App
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build Windows
+        working-directory: apps/desktop
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.msi
+          retention-days: 7
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build macOS
+        working-directory: apps/desktop
+        run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: |
+            apps/desktop/dist/*.dmg
+          retention-days: 7
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build Linux
+        working-directory: apps/desktop
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+          retention-days: 7
+
+  release:
+    needs: [build-windows, build-mac, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || format('desktop-v{0}', github.event.inputs.version) }}
+          name: MasterLMS Desktop ${{ github.ref_name || format('v{0}', github.event.inputs.version) }}
+          body: |
+            ## Tải về MasterLMS Desktop
+
+            | Hệ điều hành | File | Ghi chú |
+            |---|---|---|
+            | 🪟 Windows | `MasterLMS-Setup-*.exe` | Cài đặt đầy đủ |
+            | 🪟 Windows | `MasterLMS-*.exe` (Portable) | Không cần cài đặt |
+            | 🍎 macOS | `MasterLMS-*.dmg` | Intel + Apple Silicon |
+            | 🐧 Linux | `MasterLMS-*.AppImage` | Chạy trực tiếp |
+            | 🐧 Linux | `MasterLMS-*.deb` | Ubuntu/Debian |
+
+            ### Cách sử dụng
+            1. Tải file phù hợp với hệ điều hành
+            2. Cài đặt và mở ứng dụng
+            3. Nhập địa chỉ máy chủ LMS của trường
+            4. Đăng nhập và sử dụng
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
