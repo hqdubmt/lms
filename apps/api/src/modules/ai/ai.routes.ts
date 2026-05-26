@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { ollamaChat, ollamaStream, checkOllamaHealth, SYSTEM_PROMPTS, type ChatMessage } from '../../services/ollama';
+import { transcribeWithWhisper } from '../../services/stt';
 
 const chatBodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(4000) })).max(20),
@@ -52,6 +53,18 @@ export async function aiRoutes(app: FastifyInstance) {
     } finally {
       reply.raw.end();
     }
+  });
+
+  // ─── Speech-to-text (OpenAI Whisper) ─────────────────────────────────────────
+  app.post('/stt', { preHandler: requireAuth }, async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.status(400).send({ error: 'audio file required' });
+    const buf = await data.toBuffer();
+    const mimeType = data.mimetype || 'audio/webm';
+    const lang = typeof (req.query as any).lang === 'string' ? (req.query as any).lang : undefined;
+    const transcript = await transcribeWithWhisper(buf, mimeType, lang);
+    if (transcript === null) return reply.status(503).send({ error: 'STT không khả dụng' });
+    return reply.send({ transcript });
   });
 
   // ─── Explain a question (non-streaming) ──────────────────────────────────────

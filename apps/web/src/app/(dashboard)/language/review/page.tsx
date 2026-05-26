@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { startSTT, isSTTAvailable, type STTHandle } from '@/lib/stt';
 
 interface ReviewItem {
   id: string; word: string; translation: string; pronunciation?: string;
@@ -76,11 +77,10 @@ export default function GlobalReviewPage() {
   const [spTranscript, setSpTranscript] = useState('');
   const [spScore, setSpScore] = useState<number | null>(null);
   const [spSupported, setSpSupported] = useState(true);
-  const spRecRef = useRef<any>(null);
+  const spRecRef = useRef<STTHandle | null>(null);
 
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || !window.isSecureContext) setSpSupported(false);
+    setSpSupported(isSTTAvailable());
   }, []);
 
   useEffect(() => {
@@ -120,7 +120,7 @@ export default function GlobalReviewPage() {
     setFlipped(false);
     setSelected(null);
     setSpTranscript(''); setSpScore(null); setSpListening(false);
-    spRecRef.current?.stop();
+    spRecRef.current?.stop(); spRecRef.current = null;
     if (m === 'quiz' && items.length > 0) setChoices(buildChoices(items[idx], items));
   };
 
@@ -143,27 +143,20 @@ export default function GlobalReviewPage() {
 
   const spStartListening = () => {
     const item = items[idx];
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || !item) return;
-    if (typeof window !== 'undefined' && window !== window.top) {
-      try { window.parent.postMessage({ type: 'TTS_CANCEL' }, '*'); } catch {}
-    } else {
-      try { window.speechSynthesis?.cancel(); } catch {}
-    }
-    const rec = new SR();
-    spRecRef.current = rec;
-    rec.lang = LANG_BCP47[item.setLanguage] || 'en-US';
-    rec.continuous = false; rec.interimResults = false;
+    if (!item) return;
+    try { window.speechSynthesis?.cancel(); } catch {}
+    const lang = LANG_BCP47[item.setLanguage] || 'en-US';
     setSpListening(true); setSpTranscript(''); setSpScore(null);
-    rec.onresult = (e: any) => {
-      const heard = e.results[0][0].transcript;
-      setSpTranscript(heard);
-      setSpScore(pronounceSimilarity(item.word, heard));
-      setSpListening(false);
-    };
-    rec.onerror = () => setSpListening(false);
-    rec.onend = () => setSpListening(false);
-    rec.start();
+    startSTT({
+      lang,
+      maxSeconds: 6,
+      onResult: (heard) => {
+        setSpTranscript(heard);
+        setSpScore(pronounceSimilarity(item.word, heard));
+      },
+      onEnd: () => setSpListening(false),
+      onError: () => setSpListening(false),
+    }).then(handle => { spRecRef.current = handle; });
   };
 
   const spSubmit = async (score: number) => {

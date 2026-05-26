@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Bot, X, Send, Loader2, RotateCcw, Minimize2, Maximize2 } from 'lucide-react';
+import { Bot, X, Send, Loader2, RotateCcw, Minimize2, Maximize2, Mic, MicOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
+import { startSTT, isSTTAvailable, type STTHandle } from '@/lib/stt';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -38,9 +39,12 @@ export function AiChat() {
   const [streaming, setStreaming] = useState(false);
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
   const [ollamaModel, setOllamaModel] = useState<string>('qwen2.5:1.5b');
+  const [micListening, setMicListening] = useState(false);
+  const [micAvailable, setMicAvailable] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const sttRef = useRef<STTHandle | null>(null);
 
   const subject = detectSubject(pathname);
   const meta = SUBJECT_META[subject];
@@ -50,6 +54,7 @@ export function AiChat() {
       .then(r => r.json())
       .then(d => { setOllamaOk(d.available); if (d.model) setOllamaModel(d.model); })
       .catch(() => setOllamaOk(false));
+    setMicAvailable(isSTTAvailable());
   }, []);
 
   useEffect(() => {
@@ -139,6 +144,23 @@ export function AiChat() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleMic = () => {
+    if (micListening) {
+      sttRef.current?.stop(); sttRef.current = null;
+      setMicListening(false);
+      return;
+    }
+    setMicListening(true);
+    const lang = subject === 'viet' ? 'vi-VN' : subject === 'language' ? 'en-US' : 'vi-VN';
+    startSTT({
+      lang,
+      maxSeconds: 10,
+      onResult: (t) => setInput(prev => prev ? `${prev} ${t}` : t),
+      onEnd: () => { setMicListening(false); sttRef.current = null; },
+      onError: () => { setMicListening(false); sttRef.current = null; },
+    }).then(h => { sttRef.current = h; });
   };
 
   if (!open) {
@@ -248,6 +270,15 @@ export function AiChat() {
                 style={{ lineHeight: '1.5' }}
               />
               <div className="flex flex-col gap-1 shrink-0">
+                {micAvailable && !streaming && (
+                  <button onClick={handleMic}
+                    className={cn('h-9 w-9 rounded-xl flex items-center justify-center transition-colors',
+                      micListening ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-gray-100 hover:bg-gray-200')}>
+                    {micListening
+                      ? <MicOff className="h-4 w-4 text-white" />
+                      : <Mic className="h-4 w-4 text-gray-600" />}
+                  </button>
+                )}
                 {streaming ? (
                   <button onClick={handleStop}
                     className="h-9 w-9 rounded-xl bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors">

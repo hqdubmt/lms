@@ -16,6 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { startSTT, isSTTAvailable, type STTHandle } from '@/lib/stt';
 
 interface VocabItem {
   id: string; word: string; translation: string; pronunciation?: string;
@@ -716,13 +717,12 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   const [scores, setScores] = useState<number[]>([]);
   const [done, setDone] = useState(false);
   const [supported, setSupported] = useState(true);
-  const recRef = useRef<any>(null);
+  const recRef = useRef<STTHandle | null>(null);
 
   const item = items[idx];
 
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || !window.isSecureContext) setSupported(false);
+    setSupported(isSTTAvailable());
   }, []);
 
   const playWord = (rate = 1) => {
@@ -730,31 +730,22 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   };
 
   const startListening = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
     cancelSpeak();
-    const rec = new SR();
-    recRef.current = rec;
-    rec.lang = langCode;
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    setListening(true);
-    setTranscript('');
-    setScore(null);
-    rec.onresult = (e: any) => {
-      const heard = e.results[0][0].transcript;
-      setTranscript(heard);
-      setScore(pronounceSimilarity(item.word, heard));
-      setListening(false);
-    };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    rec.start();
+    setListening(true); setTranscript(''); setScore(null);
+    startSTT({
+      lang: langCode,
+      maxSeconds: 6,
+      onResult: (heard) => {
+        setTranscript(heard);
+        setScore(pronounceSimilarity(item.word, heard));
+      },
+      onEnd: () => setListening(false),
+      onError: () => setListening(false),
+    }).then(handle => { recRef.current = handle; });
   };
 
   const stopListening = () => {
-    recRef.current?.stop();
+    recRef.current?.stop(); recRef.current = null;
     setListening(false);
   };
 
@@ -1408,14 +1399,13 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   const [scores, setScores] = useState<boolean[]>([]);
   const [chatLog, setChatLog] = useState<Array<{ role: 'ai' | 'user'; text: string; ok?: boolean }>>([]);
   const [supported, setSupported] = useState(true);
-  const recRef = useRef<any>(null);
+  const recRef = useRef<STTHandle | null>(null);
   const idxRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   idxRef.current = idx;
 
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || !window.isSecureContext) setSupported(false);
+    setSupported(isSTTAvailable());
     return () => { cancelSpeak(); recRef.current?.stop(); };
   }, []);
 
@@ -1424,21 +1414,21 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   }, [chatLog]);
 
   const doAISpeak = (text: string, onDone?: () => void) => {
-    if (typeof window !== 'undefined' && window !== window.top) {
-      try { window.parent.postMessage({ type: 'TTS_SPEAK', text, lang: langCode }, '*'); } catch {}
-      // Estimate speech duration: ~400ms per word, min 1.5s
-      const ms = Math.max(1500, text.split(' ').length * 400);
-      if (onDone) setTimeout(onDone, ms);
-      return;
-    }
     try {
-      const synth = window.speechSynthesis;
-      if (!synth) { onDone?.(); return; }
-      synth.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = langCode; utt.rate = 0.9;
-      if (onDone) utt.onend = onDone;
-      synth.speak(utt);
+      const audio = new Audio(`/api/language/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(langCode)}`);
+      audio.onended = () => onDone?.();
+      audio.onerror = () => {
+        try {
+          const synth = window.speechSynthesis;
+          if (!synth) { onDone?.(); return; }
+          synth.cancel();
+          const utt = new SpeechSynthesisUtterance(text);
+          utt.lang = langCode; utt.rate = 0.9;
+          if (onDone) utt.onend = () => onDone?.();
+          synth.speak(utt);
+        } catch { onDone?.(); }
+      };
+      audio.play().catch(() => audio.onerror?.(new Event('error')));
     } catch { onDone?.(); }
   };
 
@@ -1469,21 +1459,15 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
   };
 
   const startListening = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
     cancelSpeak();
-    const rec = new SR();
-    recRef.current = rec;
-    rec.lang = langCode; rec.continuous = false; rec.interimResults = false; rec.maxAlternatives = 3;
     setPhase('listening');
-    let handled = false;
-    rec.onresult = (e: any) => {
-      if (handled) return; handled = true;
-      handleResponseRef.current?.(e.results[0][0].transcript);
-    };
-    rec.onerror = () => { if (!handled) { handled = true; setPhase('user_turn'); } };
-    rec.onend = () => { if (!handled) { handled = true; setPhase('user_turn'); } };
-    rec.start();
+    startSTT({
+      lang: langCode,
+      maxSeconds: 8,
+      onResult: (heard) => { handleResponseRef.current?.(heard); },
+      onEnd: () => { setPhase(p => p === 'listening' ? 'user_turn' : p); },
+      onError: () => { setPhase(p => p === 'listening' ? 'user_turn' : p); },
+    }).then(handle => { recRef.current = handle; });
   };
 
   const goNext = () => {
