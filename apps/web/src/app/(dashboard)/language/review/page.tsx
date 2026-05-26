@@ -80,7 +80,7 @@ export default function GlobalReviewPage() {
 
   useEffect(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) setSpSupported(false);
+    if (!SR || !window.isSecureContext) setSpSupported(false);
   }, []);
 
   useEffect(() => {

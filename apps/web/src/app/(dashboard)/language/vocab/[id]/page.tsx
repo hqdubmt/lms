@@ -711,7 +711,7 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
 
   useEffect(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) setSupported(false);
+    if (!SR || !window.isSecureContext) setSupported(false);
   }, []);
 
   const playWord = (rate = 1) => {
@@ -1404,7 +1404,7 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
 
   useEffect(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) setSupported(false);
+    if (!SR || !window.isSecureContext) setSupported(false);
     return () => { cancelSpeak(); recRef.current?.stop(); };
   }, []);
 
@@ -1598,7 +1598,21 @@ function VoiceChatGame({ turns, langCode, onExit, onReimport }: {
             </button>
           )}
           {phase === 'user_turn' && !supported && (
-            <p className="text-sm text-muted-foreground py-3">Không hỗ trợ STT trên trình duyệt này</p>
+            <div className="flex flex-col items-center gap-3 w-full">
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center w-full">
+                📱 Thiết bị không hỗ trợ nhận dạng giọng nói. Tự đánh giá câu trả lời của bạn:
+              </p>
+              <div className="grid grid-cols-2 gap-2 w-full">
+                <button onClick={() => { handleResponseRef.current?.(currentTurn?.keywords[0] || ''); }}
+                  className="py-3 rounded-xl border-2 border-green-200 bg-green-50 text-green-700 text-sm font-semibold active:scale-95 transition-all">
+                  ✓ Trả lời đúng
+                </button>
+                <button onClick={() => { handleResponseRef.current?.(''); }}
+                  className="py-3 rounded-xl border-2 border-red-200 bg-red-50 text-red-700 text-sm font-semibold active:scale-95 transition-all">
+                  ✗ Chưa trả lời được
+                </button>
+              </div>
+            </div>
           )}
           {phase === 'listening' && (
             <button onClick={() => recRef.current?.stop()}
