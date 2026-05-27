@@ -338,7 +338,8 @@ window.addEventListener('message', function(e) {
     try { if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; } } catch {}
   }
 
-  function startWebSpeech(lang) {
+  // onFail: called when Web Speech is unavailable or fails mid-session → fall back to MediaRecorder
+  function startWebSpeech(lang, onFail) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return false;
     try {
@@ -353,14 +354,19 @@ window.addEventListener('message', function(e) {
         sendResult(ev.results[0][0].transcript);
         stopAll();
       };
-      _rec.onerror = function() {
+      _rec.onerror = function(ev) {
         if (done) return; done = true;
-        sendResult('', 'Không nhận ra giọng nói');
-        stopAll();
+        _rec = null;
+        // User denied mic → report immediately; other errors → try MediaRecorder fallback
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+          sendResult('', 'Không có quyền dùng micro');
+        } else {
+          onFail();
+        }
       };
       _rec.onend = function() {
-        if (!done) { done = true; sendResult('', 'Không nhận ra giọng nói'); }
-        stopAll();
+        // ended without result → try MediaRecorder fallback
+        if (!done) { done = true; _rec = null; onFail(); }
       };
       _rec.start();
       return true;
@@ -371,7 +377,8 @@ window.addEventListener('message', function(e) {
     if (!navigator.mediaDevices) { sendResult('', 'Micro không khả dụng'); return; }
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
       _stream = stream;
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
+        ? 'audio/webm;codecs=opus' : 'audio/webm';
       _mediaRec = new MediaRecorder(stream, { mimeType: mimeType });
       const chunks = [];
       _mediaRec.ondataavailable = function(ev) { if (ev.data.size > 0) chunks.push(ev.data); };
@@ -401,12 +408,14 @@ window.addEventListener('message', function(e) {
       stopAll();
       const lang = e.data.lang || 'vi-VN';
       const maxSec = e.data.maxSeconds || 8;
-      // Try Web Speech first (works in Capacitor/Android native context)
-      if (!startWebSpeech(lang)) {
-        // Fallback: MediaRecorder → server
-        const serverUrl = (window._serverUrl || '').replace(/\/$/, '');
-        const authToken = e.data.authToken || null;
-        startMediaRecorder(lang, maxSec, serverUrl, authToken);
+      const serverUrl = (window._serverUrl || '').replace(/\/$/, '');
+      const authToken = e.data.authToken || null;
+
+      function doMediaRecorder() { startMediaRecorder(lang, maxSec, serverUrl, authToken); }
+
+      // Try Web Speech first; if unavailable or fails → MediaRecorder → server
+      if (!startWebSpeech(lang, doMediaRecorder)) {
+        doMediaRecorder();
       }
     } else if (e.data.type === 'STT_STOP') {
       stopAll();

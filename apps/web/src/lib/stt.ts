@@ -3,9 +3,9 @@
 //  1. postMessage bridge  — when inside a cross-origin iframe (mobile wrapper)
 //     The outer wrapper page (secure context) handles recording and returns transcript
 //
-//  2. Web Speech API       — when in secure context with SpeechRecognition available
-//     Electron (unsafely-treat-insecure-origin-as-secure + disable-web-security)
-//     Chrome/Firefox on HTTPS
+//  2. Web Speech API       — when SpeechRecognition available
+//     Electron: always attempted (has its own security model)
+//     Browser: requires secure context (HTTPS / localhost)
 //
 //  3. MediaRecorder → server Whisper — general fallback (requires valid OPENAI_API_KEY)
 //
@@ -26,6 +26,9 @@ export interface STTHandle {
 
 const isInIframe = () =>
   typeof window !== 'undefined' && window !== window.top;
+
+const isElectron = () =>
+  typeof navigator !== 'undefined' && /Electron/.test(navigator.userAgent);
 
 function hasWebSpeech(): boolean {
   if (typeof window === 'undefined') return false;
@@ -70,7 +73,14 @@ function startBridgeSTT(opts: STTOptions): STTHandle {
   }, (maxSec + 3) * 1000);
 
   window.addEventListener('message', onMsg);
-  try { window.parent.postMessage({ type: 'STT_START', lang: opts.lang, maxSeconds: maxSec }, '*'); } catch {}
+  try {
+    window.parent.postMessage({
+      type: 'STT_START',
+      lang: opts.lang,
+      maxSeconds: maxSec,
+      authToken: api.getToken() ?? null,
+    }, '*');
+  } catch {}
   opts.onStart?.();
 
   return {
@@ -158,8 +168,10 @@ export async function startSTT(opts: STTOptions): Promise<STTHandle> {
     return startBridgeSTT(opts);
   }
 
-  // Secure context with Web Speech API (Electron, HTTPS browser)
-  if (hasWebSpeech() && window.isSecureContext) {
+  // Web Speech API:
+  // - In Electron: always try (Electron has its own security model, no isSecureContext needed)
+  // - In browser: require secure context (HTTPS / localhost)
+  if (hasWebSpeech() && (window.isSecureContext || isElectron())) {
     return new Promise<STTHandle>((resolve) => {
       let handle: STTHandle;
       const onFail = async () => {
