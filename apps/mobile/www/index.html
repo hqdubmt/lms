@@ -319,6 +319,101 @@ window.addEventListener('message', function(e) {
   }
 });
 
+// ── STT bridge: mic recording on behalf of cross-origin iframe ──
+(function() {
+  let _rec = null;       // SpeechRecognition instance
+  let _mediaRec = null;  // MediaRecorder fallback
+  let _stream = null;
+
+  function sendResult(transcript, error) {
+    const frame = document.getElementById('lmsFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'STT_RESULT', transcript: transcript || '', error: error || null }, '*');
+    }
+  }
+
+  function stopAll() {
+    try { if (_rec) { _rec.stop(); _rec = null; } } catch {}
+    try { if (_mediaRec && _mediaRec.state === 'recording') _mediaRec.stop(); _mediaRec = null; } catch {}
+    try { if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; } } catch {}
+  }
+
+  function startWebSpeech(lang) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return false;
+    try {
+      _rec = new SR();
+      _rec.lang = lang || 'vi-VN';
+      _rec.continuous = false;
+      _rec.interimResults = false;
+      _rec.maxAlternatives = 3;
+      let done = false;
+      _rec.onresult = function(ev) {
+        if (done) return; done = true;
+        sendResult(ev.results[0][0].transcript);
+        stopAll();
+      };
+      _rec.onerror = function() {
+        if (done) return; done = true;
+        sendResult('', 'Không nhận ra giọng nói');
+        stopAll();
+      };
+      _rec.onend = function() {
+        if (!done) { done = true; sendResult('', 'Không nhận ra giọng nói'); }
+        stopAll();
+      };
+      _rec.start();
+      return true;
+    } catch { return false; }
+  }
+
+  function startMediaRecorder(lang, maxSec, serverUrl, authToken) {
+    if (!navigator.mediaDevices) { sendResult('', 'Micro không khả dụng'); return; }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+      _stream = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+      _mediaRec = new MediaRecorder(stream, { mimeType: mimeType });
+      const chunks = [];
+      _mediaRec.ondataavailable = function(ev) { if (ev.data.size > 0) chunks.push(ev.data); };
+      _mediaRec.onstop = function() {
+        stopAll();
+        if (chunks.length === 0) { sendResult('', 'Không ghi được âm thanh'); return; }
+        const blob = new Blob(chunks, { type: mimeType });
+        const form = new FormData();
+        form.append('audio', blob, 'rec.webm');
+        const langCode = (lang || 'vi').slice(0, 2);
+        const headers = {};
+        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+        fetch(serverUrl + '/api/ai/stt?lang=' + langCode, {
+          method: 'POST', body: form, headers: headers, credentials: 'include'
+        }).then(function(r) { return r.json(); })
+          .then(function(j) { sendResult(j.transcript || '', j.error || null); })
+          .catch(function() { sendResult('', 'Lỗi kết nối STT'); });
+      };
+      _mediaRec.start(250);
+      setTimeout(function() { if (_mediaRec && _mediaRec.state === 'recording') _mediaRec.stop(); }, maxSec * 1000);
+    }).catch(function() { sendResult('', 'Không có quyền dùng micro'); });
+  }
+
+  window.addEventListener('message', function(e) {
+    if (!e.data || typeof e.data.type !== 'string') return;
+    if (e.data.type === 'STT_START') {
+      stopAll();
+      const lang = e.data.lang || 'vi-VN';
+      const maxSec = e.data.maxSeconds || 8;
+      // Try Web Speech first (works in Capacitor/Android native context)
+      if (!startWebSpeech(lang)) {
+        // Fallback: MediaRecorder → server
+        const serverUrl = (window._serverUrl || '').replace(/\/$/, '');
+        const authToken = e.data.authToken || null;
+        startMediaRecorder(lang, maxSec, serverUrl, authToken);
+      }
+    } else if (e.data.type === 'STT_STOP') {
+      stopAll();
+    }
+  });
+})();
+
 // ── Khởi động ──
 async function init() {
   await new Promise(r => setTimeout(r, 1600));
