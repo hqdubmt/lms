@@ -2,11 +2,7 @@
 // Priority:
 //   1. MediaRecorder → OpenAI Whisper (works everywhere: Android WebView, Electron, browser)
 //   2. Web Speech API fallback (Chrome browser on HTTPS only — kept as option)
-//
-// We intentionally prefer MediaRecorder because Web Speech API:
-//   - Doesn't work in Android WebView
-//   - Requires HTTPS / secure context (unreliable in Electron over HTTP)
-//   - Requires Google servers (blocked in some regions)
+import { api } from '@/lib/api';
 
 export interface STTOptions {
   lang: string;          // BCP-47 e.g. 'en-US', 'vi-VN'
@@ -61,13 +57,8 @@ async function startMediaRecorderSTT(opts: STTOptions): Promise<STTHandle> {
       const form = new FormData();
       form.append('audio', blob, 'rec.webm');
       const langCode = opts.lang.slice(0, 2);
-      const res = await fetch(`/api/ai/stt?lang=${langCode}`, {
-        method: 'POST',
-        body: form,
-        credentials: 'include',
-      });
-      if (!res.ok) { opts.onError?.(`Server lỗi ${res.status}`); opts.onEnd(); return; }
-      const json = await res.json();
+      // api.upload() automatically includes Authorization Bearer header
+      const json = await api.upload<{ transcript?: string }>(`/ai/stt?lang=${langCode}`, form);
       if (json.transcript) opts.onResult(json.transcript);
       else opts.onError?.('Không nhận ra giọng nói');
     } catch {
