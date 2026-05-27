@@ -5,11 +5,11 @@ RUN apk add --no-cache libc6-compat
 FROM base AS deps
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm install --omit=dev && npx prisma generate
+RUN npm install --omit=dev --legacy-peer-deps && npx prisma generate
 
 FROM base AS builder
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY . .
 RUN npx prisma generate && npm run build
 
