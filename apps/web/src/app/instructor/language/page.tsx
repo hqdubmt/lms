@@ -298,7 +298,12 @@ export default function InstructorLanguagePage() {
     setBusy((b) => ({ ...b, [id]: false }));
   };
 
-  const allSets = folders;
+  // Flatten folder → children so GenExerciseForm shows child sets (which actually have vocab items)
+  const allSets: (VocabSet & { parentTitle?: string })[] = folders.flatMap(f => {
+    const children: VocabSet[] = (f as any).children ?? [];
+    if (children.length > 0) return children.map(c => ({ ...c, parentTitle: f.title }));
+    return [f];
+  });
 
   if (!ready || loading) return (
     <div className="space-y-4 animate-pulse p-6">

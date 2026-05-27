@@ -11,7 +11,7 @@ import type { VocabSet } from '@/types/language';
 import { LEVELS } from '@/constants/language';
 
 interface Props {
-  sets: VocabSet[];
+  sets: (VocabSet & { parentTitle?: string })[];
   onClose: () => void;
 }
 
@@ -71,9 +71,32 @@ export function GenExerciseForm({ sets, onClose }: Props) {
               <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={vocabSetId} onChange={e => setVocabSetId(e.target.value)} required>
                 <option value="">-- Chọn bộ từ vựng --</option>
-                {sets.map(s => (
-                  <option key={s.id} value={s.id}>{s.title} ({s._count?.items ?? 0} từ)</option>
-                ))}
+                {(() => {
+                  // Group by parentTitle, then render optgroup per folder
+                  const grouped = new Map<string, typeof sets>();
+                  sets.forEach(s => {
+                    const key = s.parentTitle ?? '';
+                    if (!grouped.has(key)) grouped.set(key, []);
+                    grouped.get(key)!.push(s);
+                  });
+                  return Array.from(grouped.entries()).map(([parent, children]) =>
+                    parent ? (
+                      <optgroup key={parent} label={`📁 ${parent}`}>
+                        {children.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.title} ({s._count?.items ?? 0} từ)
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      children.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.title} ({s._count?.items ?? 0} từ)
+                        </option>
+                      ))
+                    )
+                  );
+                })()}
               </select>
             )}
           </div>
