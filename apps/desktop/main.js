@@ -2,13 +2,15 @@ const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, glo
 const path = require('path');
 const Store = require('electron-store');
 
-// Read saved server URL early so we can register it as a secure origin for Web Speech API
+// Register server URL + common local addresses as secure origins (for mic / MediaRecorder)
 const _earlyStore = new Store({ name: 'masterlms-config', defaults: { serverUrl: '' } });
 const _savedUrl = (_earlyStore.get('serverUrl') || '').toString().trim().replace(/\/$/, '');
-if (_savedUrl) {
-  // Allows SpeechRecognition on http:// origins (requires HTTPS by default)
-  app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', _savedUrl);
-}
+const _secureOrigins = [
+  'http://localhost', 'http://localhost:3000', 'http://localhost:4000',
+  'http://127.0.0.1', 'http://127.0.0.1:3000',
+  _savedUrl,
+].filter(Boolean).join(',');
+app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', _secureOrigins);
 
 // Bật autoplay media không cần user gesture (fix video/audio im lặng)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -16,9 +18,11 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('allow-running-insecure-content');
 // Tắt web security warnings trong dev
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
-// Bật Web Speech API (TTS + STT)
+// Mic / MediaRecorder
 app.commandLine.appendSwitch('enable-speech-dispatcher');
 app.commandLine.appendSwitch('use-fake-ui-for-media-stream', 'false');
+// Cho phép getUserMedia từ bất kỳ origin nào
+app.commandLine.appendSwitch('disable-web-security');
 
 const store = new Store({
   name: 'masterlms-config',

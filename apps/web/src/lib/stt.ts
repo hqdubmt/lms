@@ -1,10 +1,16 @@
-// Shared STT utility:
-// 1. Web Speech API (browser / Electron with secure context)
-// 2. MediaRecorder → server OpenAI Whisper fallback (Android / HTTP context)
+// Shared STT utility
+// Priority:
+//   1. MediaRecorder → OpenAI Whisper (works everywhere: Android WebView, Electron, browser)
+//   2. Web Speech API fallback (Chrome browser on HTTPS only — kept as option)
+//
+// We intentionally prefer MediaRecorder because Web Speech API:
+//   - Doesn't work in Android WebView
+//   - Requires HTTPS / secure context (unreliable in Electron over HTTP)
+//   - Requires Google servers (blocked in some regions)
 
 export interface STTOptions {
   lang: string;          // BCP-47 e.g. 'en-US', 'vi-VN'
-  maxSeconds?: number;   // max recording duration for MediaRecorder fallback (default 8)
+  maxSeconds?: number;   // max recording time before auto-stop (default 8)
   onStart?: () => void;
   onResult: (transcript: string) => void;
   onEnd: () => void;
@@ -15,6 +21,11 @@ export interface STTHandle {
   stop: () => void;
 }
 
+function hasMediaRecorder(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(navigator.mediaDevices?.getUserMedia && (window as any).MediaRecorder);
+}
+
 function hasWebSpeech(): boolean {
   if (typeof window === 'undefined') return false;
   return !!(
@@ -23,9 +34,10 @@ function hasWebSpeech(): boolean {
   );
 }
 
-// MediaRecorder fallback — records audio then sends to server Whisper
+// ── MediaRecorder → Whisper ───────────────────────────────────────────────────
 async function startMediaRecorderSTT(opts: STTOptions): Promise<STTHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
   const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
     ? 'audio/webm;codecs=opus'
     : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
@@ -34,13 +46,13 @@ async function startMediaRecorderSTT(opts: STTOptions): Promise<STTHandle> {
 
   const recorder = new MediaRecorder(stream, { mimeType });
   const chunks: Blob[] = [];
-  let stopped = false;
 
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
   recorder.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
-    if (stopped && chunks.length === 0) { opts.onEnd(); return; }
+    if (chunks.length === 0) { opts.onEnd(); return; }
+
     const blob = new Blob(chunks, { type: mimeType });
     try {
       const form = new FormData();
@@ -51,6 +63,7 @@ async function startMediaRecorderSTT(opts: STTOptions): Promise<STTHandle> {
         body: form,
         credentials: 'include',
       });
+      if (!res.ok) { opts.onError?.(`Server lỗi ${res.status}`); opts.onEnd(); return; }
       const json = await res.json();
       if (json.transcript) opts.onResult(json.transcript);
       else opts.onError?.('Không nhận ra giọng nói');
@@ -65,20 +78,19 @@ async function startMediaRecorderSTT(opts: STTOptions): Promise<STTHandle> {
     if (recorder.state === 'recording') recorder.stop();
   }, maxSec * 1000);
 
-  recorder.start();
+  recorder.start(250); // collect data every 250ms
   opts.onStart?.();
 
   return {
     stop: () => {
       clearTimeout(autoStop);
-      stopped = true;
       if (recorder.state === 'recording') recorder.stop();
     },
   };
 }
 
-// Web Speech API
-function startWebSpeechSTT(opts: STTOptions): STTHandle {
+// ── Web Speech API (browser/HTTPS only) ───────────────────────────────────────
+function startWebSpeechSTT(opts: STTOptions, fallback: () => Promise<STTHandle>): STTHandle {
   const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const rec = new SR();
   rec.lang = opts.lang;
@@ -87,48 +99,88 @@ function startWebSpeechSTT(opts: STTOptions): STTHandle {
   rec.maxAlternatives = 3;
 
   let handled = false;
+  let handle: STTHandle = { stop: () => { try { rec.stop(); } catch {} } };
 
   rec.onresult = (e: any) => {
     if (handled) return;
     handled = true;
-    const transcript = e.results[0][0].transcript;
-    opts.onResult(transcript);
+    opts.onResult(e.results[0][0].transcript);
     opts.onEnd();
   };
-  rec.onerror = (e: any) => {
+
+  rec.onerror = async (e: any) => {
     if (handled) return;
     handled = true;
+    // Errors that mean "unavailable" → fall back to MediaRecorder/Whisper
+    const fallbackErrors = ['not-allowed', 'service-not-allowed', 'network', 'audio-capture', 'aborted'];
+    if (fallbackErrors.includes(e.error) && hasMediaRecorder()) {
+      try {
+        handle = await fallback();
+        return;
+      } catch { /* fall through */ }
+    }
     opts.onError?.(e.error || 'lỗi mic');
     opts.onEnd();
   };
+
   rec.onend = () => {
     if (!handled) { handled = true; opts.onEnd(); }
   };
 
-  rec.start();
-  opts.onStart?.();
-
-  return { stop: () => { try { rec.stop(); } catch {} } };
-}
-
-// Main entry — picks the right method automatically
-export async function startSTT(opts: STTOptions): Promise<STTHandle> {
-  if (hasWebSpeech()) {
-    return startWebSpeechSTT(opts);
-  }
-  // Mobile / insecure context → server-side Whisper
   try {
-    return await startMediaRecorderSTT(opts);
-  } catch (err: any) {
-    opts.onError?.(err?.message || 'Không thể dùng micro');
-    opts.onEnd();
-    return { stop: () => {} };
+    rec.start();
+    opts.onStart?.();
+  } catch {
+    // Synchronous throw (e.g. insecure context) → use MediaRecorder immediately
+    if (hasMediaRecorder()) {
+      fallback().then(h => { handle = h; });
+    } else {
+      opts.onError?.('Mic không khả dụng');
+      opts.onEnd();
+    }
   }
+
+  return { stop: () => handle.stop() };
 }
 
-// Synchronous check: can we do STT at all?
+// ── Public API ────────────────────────────────────────────────────────────────
+export async function startSTT(opts: STTOptions): Promise<STTHandle> {
+  // Always try MediaRecorder first on mobile / non-HTTPS environments
+  // Use Web Speech API only when we're in a secure browser context (HTTPS)
+  const isSecure = typeof window !== 'undefined' && window.isSecureContext;
+  const preferWebSpeech = isSecure && hasWebSpeech() && !hasMediaRecorder();
+
+  if (preferWebSpeech) {
+    const fallback = () => startMediaRecorderSTT(opts);
+    return startWebSpeechSTT(opts, fallback);
+  }
+
+  if (hasMediaRecorder()) {
+    try {
+      return await startMediaRecorderSTT(opts);
+    } catch (err: any) {
+      // getUserMedia denied → try Web Speech as last resort
+      if (hasWebSpeech()) {
+        const noFallback = () => Promise.resolve({ stop: () => {} } as STTHandle);
+        return startWebSpeechSTT(opts, noFallback);
+      }
+      opts.onError?.(err?.message || 'Không thể dùng micro');
+      opts.onEnd();
+      return { stop: () => {} };
+    }
+  }
+
+  if (hasWebSpeech()) {
+    const fallback = () => startMediaRecorderSTT(opts);
+    return startWebSpeechSTT(opts, fallback);
+  }
+
+  opts.onError?.('Thiết bị không hỗ trợ micro');
+  opts.onEnd();
+  return { stop: () => {} };
+}
+
 export function isSTTAvailable(): boolean {
   if (typeof window === 'undefined') return false;
-  if (hasWebSpeech()) return true;
-  return !!(navigator.mediaDevices && typeof MediaRecorder !== 'undefined');
+  return hasMediaRecorder() || hasWebSpeech();
 }
