@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g. 1.0.0)'
+        description: 'Version (e.g. 1.1.0)'
         required: true
-        default: '1.0.0'
+        default: '1.1.0'
 
 jobs:
   # ─── DESKTOP: WINDOWS ───────────────────────────────────────────
@@ -193,15 +193,22 @@ jobs:
           tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
           name: MasterLMS ${{ github.ref_name || format('v{0}', inputs.version) }}
           body: |
+            ## Tính năng mới
+
+            - **AI đa nhà cung cấp**: Groq (llama-3.3-70b) → Gemini Flash 2.0 → Ollama — tự động fallback
+            - **Tray menu**: Hiển thị trạng thái AI real-time khi click chuột phải
+            - **Màn hình cài đặt**: Hiện thị trạng thái AI (online/offline) sau khi kết nối server
+            - **Mobile**: Thêm badge AI và feature pills trong splash/setup screen
+
             ## 📥 Tải MasterLMS
 
             | Nền tảng | File | Ghi chú |
             |---|---|---|
             | 🪟 Windows | `MasterLMS-Setup-*.exe` | Cài đặt (khuyến nghị) |
-            | 🪟 Windows | `MasterLMS-*.exe` Portable | Chạy thẳng, không cài |
-            | 🍎 macOS | `MasterLMS-*.dmg` | Intel + Apple Silicon |
+            | 🪟 Windows | `MasterLMS-*-win.zip` | Portable, chạy thẳng |
+            | 🍎 macOS | `MasterLMS-*-mac.zip` | Intel + Apple Silicon |
             | 🐧 Linux | `MasterLMS-*.AppImage` | Chạy trực tiếp |
-            | 🐧 Linux | `MasterLMS-*.deb` | Ubuntu/Debian |
+            | 🐧 Linux | `masterlms-desktop_*.deb` | Ubuntu/Debian |
             | 🤖 Android | `MasterLMS-*-android.apk` | Cài từ file APK |
             | 🍏 iOS | Xem ghi chú bên dưới | — |
 
@@ -215,6 +222,13 @@ jobs:
             - Tải file `.apk` về điện thoại
             - Bật **Cài ứng dụng từ nguồn không rõ** trong Cài đặt → Bảo mật
             - Mở file APK để cài đặt
+
+            ### Kích hoạt AI (tuỳ chọn — trên server)
+            Thêm vào `deploy/.env` để dùng AI miễn phí:
+            ```
+            GROQ_API_KEY=gsk_...        # console.groq.com — 6000 req/ngày
+            GOOGLE_GEMINI_API_KEY=AIza... # aistudio.google.com — 1500 req/ngày
+            ```
 
             ### iOS — TestFlight / Enterprise
             > iOS yêu cầu tài khoản Apple Developer ($99/năm) để phân phối.

@@ -51,7 +51,10 @@ else
   warn "QUAN TRỌNG: Mở file deploy/.env và điền:"
   warn "  - FRONTEND_URL=http://IP_hoặc_domain_server"
   warn "  - SMTP_USER, SMTP_PASS (nếu cần gửi email)"
-  warn "  - Các API keys tuỳ chọn (Google OAuth, AI, VNPay...)"
+  warn "  - AI keys (tuỳ chọn, miễn phí):"
+  warn "      GROQ_API_KEY=gsk_...          (console.groq.com)"
+  warn "      GOOGLE_GEMINI_API_KEY=AIza... (aistudio.google.com)"
+  warn "  - Các API keys tuỳ chọn khác (Google OAuth, VNPay...)"
   echo ""
   read -p "Nhấn Enter sau khi đã chỉnh sửa .env để tiếp tục..."
 fi
@@ -137,6 +140,8 @@ sleep 10
 
 API_STATUS=$(curl -sf http://localhost/api/health 2>/dev/null && echo "OK" || echo "FAIL")
 WEB_STATUS=$(curl -sf http://localhost/ 2>/dev/null | grep -q "MasterLMS" && echo "OK" || echo "FAIL")
+AI_RAW=$(curl -sf http://localhost/api/ai/health 2>/dev/null || echo "{}")
+AI_STATUS=$(echo "$AI_RAW" | python3 -c "import sys,json; d=json.load(sys.stdin); print('Online — ' + (d.get('provider') or 'unknown')) if d.get('available') else print('Offline (rule-based)')" 2>/dev/null || echo "Không kiểm tra được")
 
 echo ""
 echo "╔════════════════════════════════════════════════╗"
@@ -144,6 +149,7 @@ echo "║              Kết quả cài đặt                  ║"
 echo "╠════════════════════════════════════════════════╣"
 printf "║  API:    %-38s║\n" "$([ "$API_STATUS" = "OK" ] && echo "✓ http://localhost/api/health" || echo "✗ Chưa phản hồi")"
 printf "║  Web:    %-38s║\n" "$([ "$WEB_STATUS" = "OK" ] && echo "✓ http://localhost" || echo "✗ Chưa phản hồi")"
+printf "║  AI:     %-38s║\n" "$AI_STATUS"
 echo "╠════════════════════════════════════════════════╣"
 echo "║  Truy cập:  $FRONTEND_URL"
 echo "║"

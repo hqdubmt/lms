@@ -29,6 +29,12 @@
   }
   #splash h1 { font-size: 30px; font-weight: 700; color: #fff; }
   #splash p { font-size: 14px; color: rgba(255,255,255,0.45); }
+  #splash .ai-badge {
+    font-size: 11px; font-weight: 600;
+    color: #a78bfa; background: rgba(124,58,237,0.15);
+    border: 1px solid rgba(124,58,237,0.3);
+    padding: 3px 10px; border-radius: 20px; margin-top: -8px;
+  }
   .dots { display: flex; gap: 7px; margin-top: 6px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; animation: bounce 1.2s ease-in-out infinite; }
   .dot:nth-child(1) { background: #3b82f6; }
@@ -47,7 +53,12 @@
   }
   #setup .logo { width: 72px; height: 72px; background: linear-gradient(135deg,#3b82f6,#6366f1); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 20px; box-shadow: 0 8px 28px rgba(59,130,246,.35); }
   #setup h2 { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 8px; text-align: center; }
-  #setup .desc { font-size: 13px; color: rgba(255,255,255,.45); text-align: center; line-height: 1.6; margin-bottom: 32px; }
+  #setup .desc { font-size: 13px; color: rgba(255,255,255,.45); text-align: center; line-height: 1.6; margin-bottom: 16px; }
+  #setup .features { display: flex; gap: 6px; margin-bottom: 22px; flex-wrap: wrap; justify-content: center; }
+  #setup .feat { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid; }
+  #setup .feat-ai   { color: #a78bfa; border-color: rgba(124,58,237,.3); background: rgba(124,58,237,.12); }
+  #setup .feat-chat { color: #34d399; border-color: rgba(5,150,105,.3); background: rgba(5,150,105,.12); }
+  #setup .feat-stt  { color: #60a5fa; border-color: rgba(37,99,235,.3); background: rgba(37,99,235,.12); }
   #setup label { align-self: flex-start; font-size: 11px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; width: 100%; }
   #setup input {
     width: 100%; padding: 14px 16px;
@@ -107,6 +118,7 @@
   <div class="logo">📚</div>
   <h1>MasterLMS</h1>
   <p>Nền tảng học tập thông minh</p>
+  <div class="ai-badge">🤖 AI Groq · Gemini · Ollama</div>
   <div class="dots">
     <div class="dot"></div><div class="dot"></div><div class="dot"></div>
   </div>
@@ -117,6 +129,11 @@
   <div class="logo">📚</div>
   <h2>Kết nối máy chủ</h2>
   <p class="desc">Nhập địa chỉ máy chủ LMS của trường để bắt đầu học tập và giảng dạy.</p>
+  <div class="features">
+    <span class="feat feat-ai">🤖 AI đa nhà cung cấp</span>
+    <span class="feat feat-chat">💬 Chat thông minh</span>
+    <span class="feat feat-stt">🎤 Nhận dạng giọng nói</span>
+  </div>
   <label for="urlInput">Địa chỉ máy chủ</label>
   <input type="url" id="urlInput" placeholder="http://192.168.1.100:3000" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
   <p class="hint">Ví dụ: <code>http://192.168.1.100:3000</code><br>hoặc <code>https://lms.truong.edu.vn</code></p>
@@ -276,6 +293,7 @@ connectBtn.addEventListener('click', async () => {
   connectBtn.disabled = true;
   connectBtn.textContent = 'Đang kết nối...';
   await saveUrl(url);
+  window._serverUrl = url;
   loadApp(url);
 });
 
@@ -423,10 +441,17 @@ window.addEventListener('message', function(e) {
   });
 })();
 
+// ── Lưu serverUrl cho STT bridge dùng ──
+async function updateServerUrlGlobal() {
+  const url = await getUrl();
+  if (url) window._serverUrl = url.replace(/\/$/, '');
+}
+
 // ── Khởi động ──
 async function init() {
-  await new Promise(r => setTimeout(r, 1600));
+  await new Promise(r => setTimeout(r, 1500));
   setupAndroidBack();
+  await updateServerUrlGlobal();
   const url = await getUrl();
   if (url) {
     loadApp(url);

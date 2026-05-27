@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 
-import Link from 'next/link';
+
 import {
   Plus, Loader2, X, Sparkles,
-  Search, Calculator, Brain, FileUp,
+  Search, Calculator, Brain, FileUp, Bot, WifiOff,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
@@ -29,6 +29,8 @@ export default function InstructorMathPage() {
   const [showImport, setShowImport] = useState(false);
   const [showTopicForm, setShowTopicForm] = useState(false);
   const [showGenForm, setShowGenForm] = useState(false);
+  const [aiOnline, setAiOnline] = useState<boolean | null>(null);
+  const [aiLabel, setAiLabel] = useState('AI');
 
   const load = async () => {
     try {
@@ -44,7 +46,17 @@ export default function InstructorMathPage() {
     }
   };
 
-  useEffect(() => { if (ready) load(); }, [ready]);
+  useEffect(() => {
+    if (!ready) return;
+    load();
+    api.get<{ available: boolean; provider: string; model: string }>('/ai/health')
+      .then((r) => {
+        setAiOnline(r.available);
+        const names: Record<string, string> = { groq: 'Groq 70B', gemini: 'Gemini Flash', ollama: 'Ollama 7B' };
+        setAiLabel(names[r.provider] ?? r.model ?? 'AI');
+      })
+      .catch(() => setAiOnline(false));
+  }, [ready]);
 
   if (!ready || loading) return (
     <div className="flex items-center justify-center min-h-[50vh]">
@@ -107,7 +119,19 @@ export default function InstructorMathPage() {
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Calculator className="h-5 w-5 text-blue-300" />Toán học
             </h1>
-            <p className="text-white/60 text-sm mt-0.5">{topics.length} chủ đề · {exercises.length} bài tập</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-white/60 text-sm">{topics.length} chủ đề · {exercises.length} bài tập</p>
+              {aiOnline === true && (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-0.5 rounded-full">
+                  <Bot className="h-2.5 w-2.5" />{aiLabel} · Online
+                </span>
+              )}
+              {aiOnline === false && (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-900/40 border border-red-700/50 px-2 py-0.5 rounded-full">
+                  <WifiOff className="h-2.5 w-2.5" />AI · Offline
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <button onClick={() => { setShowTopicForm(true); setShowGenForm(false); setShowImport(false); }}

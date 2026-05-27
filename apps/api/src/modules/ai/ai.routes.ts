@@ -1,7 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
-import { ollamaChat, ollamaStream, checkOllamaHealth, SYSTEM_PROMPTS, type ChatMessage } from '../../services/ollama';
+import { SYSTEM_PROMPTS } from '../../services/ollama';
+import { aiChatOnce, aiChatStream, checkAllProviders, type ChatMessage } from '../../services/ai-provider';
 import { transcribeWithWhisper } from '../../services/stt';
 
 const chatBodySchema = z.object({
@@ -19,8 +20,8 @@ const explainBodySchema = z.object({
 export async function aiRoutes(app: FastifyInstance) {
   // ─── Health check ─────────────────────────────────────────────────────────────
   app.get('/health', async (_req, reply) => {
-    const ok = await checkOllamaHealth();
-    return reply.send({ available: ok, model: process.env.OLLAMA_MODEL || 'qwen2.5:7b' });
+    const status = await checkAllProviders();
+    return reply.send(status);
   });
 
   // ─── Streaming chat ───────────────────────────────────────────────────────────
@@ -44,11 +45,11 @@ export async function aiRoutes(app: FastifyInstance) {
     });
 
     try {
-      for await (const token of ollamaStream(fullMessages)) {
+      for await (const token of aiChatStream(fullMessages)) {
         reply.raw.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
       reply.raw.write('data: [DONE]\n\n');
-    } catch (err) {
+    } catch {
       reply.raw.write(`data: ${JSON.stringify({ error: 'AI không khả dụng' })}\n\n`);
     } finally {
       reply.raw.end();
@@ -80,7 +81,7 @@ export async function aiRoutes(app: FastifyInstance) {
     userMessage += '\n\nHãy giải thích tại sao đáp án đúng là vậy, ngắn gọn (2-4 câu).';
 
     try {
-      const explanation = await ollamaChat([
+      const explanation = await aiChatOnce([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ]);

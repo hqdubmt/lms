@@ -178,17 +178,21 @@ function AnalyzePanel({ doc, onAnalyzed, onClose }: {
           <input type="checkbox" checked={generateExercises} onChange={(e) => setGenerateExercises(e.target.checked)} className="rounded" />
           Tự động tạo bài tập sau khi phân tích
         </label>
+        <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 rounded-xl p-3">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5 text-red-400" />
+          <span>AI phân tích tài liệu theo từng đoạn (~800 ký tự) và trích xuất từ vựng, thành ngữ, ca dao, bài tập. Groq/Gemini: <strong>~30 giây</strong> · Ollama: <strong>2–4 phút</strong>.</span>
+        </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
         {loading && (
           <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl p-3">
-            <Loader2 className="h-4 w-4 animate-spin" />AI đang phân tích... (15–60 giây)
+            <Loader2 className="h-4 w-4 animate-spin" />AI đang phân tích tài liệu... (2–4 phút)
           </div>
         )}
         <div className="flex gap-2 pt-1">
           <button onClick={run} disabled={loading}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 disabled:opacity-60">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {loading ? 'Đang xử lý...' : 'Bắt đầu phân tích'}
+            {loading ? 'AI đang xử lý...' : 'Bắt đầu phân tích'}
           </button>
           <button onClick={onClose} disabled={loading} className="px-4 py-2 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50">Huỷ</button>
         </div>

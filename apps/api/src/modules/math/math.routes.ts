@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
-import { extractText, structureMathWithAI } from '../../services/file-import';
+import { extractText, structureMathWithAI, generateMathQuestionsWithAI } from '../../services/file-import';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
@@ -422,8 +422,15 @@ export async function mathRoutes(app: FastifyInstance) {
       include: { concepts: true },
     });
 
-    const questions = buildMathQuestions(topic.concepts, body.type, body.questionCount);
-    if ('error' in (questions as any)) throw { statusCode: 400, message: (questions as any).error };
+    // Thử AI trước, fallback sang rule-based nếu thất bại
+    let questions: any[] | { error: string };
+    const aiQuestions = await generateMathQuestionsWithAI(topic.concepts as any, body.type, body.questionCount);
+    if (aiQuestions && aiQuestions.length > 0) {
+      questions = aiQuestions;
+    } else {
+      questions = buildMathQuestions(topic.concepts, body.type, body.questionCount);
+      if ('error' in (questions as any)) throw { statusCode: 400, message: (questions as any).error };
+    }
 
     const exercise = await prisma.mathExercise.create({
       data: {
@@ -460,7 +467,9 @@ export async function mathRoutes(app: FastifyInstance) {
     const errors: any[] = [];
 
     for (const type of types) {
-      const questions = buildMathQuestions(topic.concepts, type, body.questionCount);
+      // Thử AI trước, fallback sang rule-based
+      const aiQ = await generateMathQuestionsWithAI(topic.concepts as any, type, body.questionCount);
+      const questions = (aiQ && aiQ.length > 0) ? aiQ : buildMathQuestions(topic.concepts, type, body.questionCount);
       if ('error' in (questions as any)) { errors.push({ type, error: (questions as any).error }); continue; }
       try {
         const typeLabel: Record<string, string> = { MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền số', TRUE_FALSE: 'Đúng/Sai', PROOF_STEP: 'Chứng minh' };

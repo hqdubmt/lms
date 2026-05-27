@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
-import { extractText, structureVietWithAI } from '../../services/file-import';
+import { extractText, structureVietWithAI, generateVietQuestionsWithAI } from '../../services/file-import';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
@@ -412,8 +412,16 @@ export async function vietRoutes(app: FastifyInstance) {
     }).parse(req.body);
 
     const set = await prisma.vietSet.findUniqueOrThrow({ where: { id: body.setId }, include: { items: true } });
-    const questions = buildVietQuestions(set.items, body.type, body.questionCount);
-    if ('error' in (questions as any)) throw { statusCode: 400, message: (questions as any).error };
+
+    // Thử AI trước, fallback sang rule-based nếu thất bại
+    let questions: any[] | { error: string };
+    const aiQuestions = await generateVietQuestionsWithAI(set.items as any, body.type, body.questionCount);
+    if (aiQuestions && aiQuestions.length > 0) {
+      questions = aiQuestions;
+    } else {
+      questions = buildVietQuestions(set.items, body.type, body.questionCount);
+      if ('error' in (questions as any)) throw { statusCode: 400, message: (questions as any).error };
+    }
 
     const exercise = await prisma.vietExercise.create({
       data: {
@@ -447,7 +455,9 @@ export async function vietRoutes(app: FastifyInstance) {
     const errors: any[] = [];
 
     for (const type of types) {
-      const questions = buildVietQuestions(set.items, type, body.questionCount);
+      // Thử AI trước, fallback sang rule-based
+      const aiQ = await generateVietQuestionsWithAI(set.items as any, type, body.questionCount);
+      const questions = (aiQ && aiQ.length > 0) ? aiQ : buildVietQuestions(set.items, type, body.questionCount);
       if ('error' in (questions as any)) { errors.push({ type, error: (questions as any).error }); continue; }
       try {
         const ex = await prisma.vietExercise.create({

@@ -37,8 +37,8 @@ export function AiChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
-  const [ollamaModel, setOllamaModel] = useState<string>('qwen2.5:1.5b');
+  const [aiOk, setAiOk] = useState<boolean | null>(null);
+  const [aiLabel, setAiLabel] = useState<string>('');
   const [micListening, setMicListening] = useState(false);
   const [micAvailable, setMicAvailable] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -52,8 +52,12 @@ export function AiChat() {
   useEffect(() => {
     fetch('/api/ai/health')
       .then(r => r.json())
-      .then(d => { setOllamaOk(d.available); if (d.model) setOllamaModel(d.model); })
-      .catch(() => setOllamaOk(false));
+      .then(d => {
+        setAiOk(d.available);
+        const providerNames: Record<string, string> = { groq: 'Groq · llama-3.3-70b', gemini: 'Gemini · Flash 2.0', ollama: d.model || 'Ollama' };
+        setAiLabel(d.provider ? (providerNames[d.provider] ?? d.model ?? '') : '');
+      })
+      .catch(() => setAiOk(false));
     setMicAvailable(isSTTAvailable());
   }, []);
 
@@ -173,11 +177,11 @@ export function AiChat() {
           'h-14 w-14 rounded-2xl shadow-lg flex items-center justify-center',
           'bg-gradient-to-br', meta.color,
           'hover:scale-105 active:scale-95 transition-all duration-200',
-          ollamaOk === false && 'opacity-60',
+          aiOk === false && 'opacity-60',
         )}
       >
         <Bot className="h-6 w-6 text-white" />
-        {ollamaOk && (
+        {aiOk && (
           <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-400 border-2 border-white" />
         )}
       </button>
@@ -199,8 +203,8 @@ export function AiChat() {
         <Bot className="h-5 w-5 text-white shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-white">AI Trợ lý · {meta.label}</div>
-          {!minimized && ollamaOk !== null && (
-            <div className="text-xs text-white/70">{ollamaOk ? `${ollamaModel} · Sẵn sàng` : 'Ollama không khả dụng'}</div>
+          {!minimized && aiOk !== null && (
+            <div className="text-xs text-white/70">{aiOk ? `${aiLabel} · Sẵn sàng` : 'AI không khả dụng'}</div>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -264,7 +268,7 @@ export function AiChat() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={meta.hint}
-                disabled={streaming || ollamaOk === false}
+                disabled={streaming || aiOk === false}
                 rows={1}
                 className="flex-1 resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-50 max-h-24 overflow-y-auto"
                 style={{ lineHeight: '1.5' }}
@@ -285,7 +289,7 @@ export function AiChat() {
                     <X className="h-4 w-4 text-white" />
                   </button>
                 ) : (
-                  <button onClick={handleSend} disabled={!input.trim() || ollamaOk === false}
+                  <button onClick={handleSend} disabled={!input.trim() || aiOk === false}
                     className={cn('h-9 w-9 rounded-xl flex items-center justify-center transition-colors',
                       'bg-gradient-to-br', meta.color,
                       'disabled:opacity-40 hover:opacity-90')}>

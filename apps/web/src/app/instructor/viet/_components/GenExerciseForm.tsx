@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Sparkles, X } from 'lucide-react';
+import { Loader2, Sparkles, X, Bot, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import type { VietSet, VietExercise } from '@/types/viet';
@@ -43,10 +43,17 @@ export function GenExerciseForm({ sets, onCreated, onClose }: Props) {
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-orange-500" />
           <h3 className="font-semibold text-gray-900">Tạo bài tập tự động</h3>
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">
+            <Bot className="h-2.5 w-2.5" />AI · Groq/Gemini/Ollama
+          </span>
         </div>
         <button onClick={onClose} className="h-7 w-7 rounded-lg hover:bg-gray-100 flex items-center justify-center">
           <X className="h-4 w-4 text-gray-500" />
         </button>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5">
+        <Clock className="h-3 w-3 shrink-0" />
+        Groq/Gemini: ~5 giây · Ollama: ~2–4 phút
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
@@ -78,7 +85,7 @@ export function GenExerciseForm({ sets, onCreated, onClose }: Props) {
       <button onClick={generate} disabled={loading}
         className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white text-sm font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-60 transition-colors">
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        Tạo bài tập
+        {loading ? 'AI đang tạo câu hỏi...' : 'Tạo bài tập'}
       </button>
     </div>
   );

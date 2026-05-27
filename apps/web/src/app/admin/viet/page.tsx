@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   BookOpen, Target, Users, Loader2, Trash2,
-  ChevronRight, FileUp, Brain,
+  ChevronRight, FileUp, Brain, Bot, WifiOff,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,8 @@ export default function AdminVietPage() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
+  const [aiOnline, setAiOnline] = useState<boolean | null>(null);
+  const [aiLabel, setAiLabel] = useState('AI');
 
   const load = () => {
     api.get<ModuleData>('/viet/all')
@@ -38,7 +40,16 @@ export default function AdminVietPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get<{ available: boolean; provider: string; model: string }>('/ai/health')
+      .then((r) => {
+        setAiOnline(r.available);
+        const names: Record<string, string> = { groq: 'Groq · llama-3.3-70b', gemini: 'Gemini · Flash 2.0', ollama: `Ollama · ${r.model}` };
+        setAiLabel(names[r.provider] ?? r.model ?? 'AI');
+      })
+      .catch(() => setAiOnline(false));
+  }, []);
 
   const deleteSet = async (id: string) => {
     if (!confirm('Xóa bộ bài này? Tất cả mục và bài tập sẽ bị xóa.')) return;
@@ -94,6 +105,21 @@ export default function AdminVietPage() {
           </div>
         ))}
       </div>
+
+      {/* AI Status */}
+      {aiOnline !== null && (
+        <div className={cn(
+          'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border',
+          aiOnline
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-red-50 border-red-200 text-red-700',
+        )}>
+          {aiOnline ? <Bot className="h-4 w-4 shrink-0" /> : <WifiOff className="h-4 w-4 shrink-0" />}
+          {aiOnline
+            ? `${aiLabel} · Sẵn sàng tạo bài tập và phân tích tài liệu`
+            : 'Tất cả AI offline — Hệ thống dùng rule-based để tạo bài tập'}
+        </div>
+      )}
 
       {/* Import panel */}
       {showImport && (

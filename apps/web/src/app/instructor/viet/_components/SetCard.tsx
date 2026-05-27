@@ -32,10 +32,10 @@ export function SetCard({ set, busy, genBusy, quizBusy, onDelete, onGenerateAll,
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <button onClick={onGenerateAll} disabled={genBusy || (set._count?.items ?? 0) < 2}
-          title={(set._count?.items ?? 0) < 2 ? 'Cần ít nhất 2 mục' : 'Tạo tất cả bài tập'}
+          title={(set._count?.items ?? 0) < 2 ? 'Cần ít nhất 2 mục' : 'AI Qwen 7B tạo 5 loại bài tập (~2-4 phút)'}
           className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {genBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Tạo tất cả
+          {genBusy ? 'Đang tạo...' : 'Tạo tất cả'}
         </button>
         <button onClick={onGenerateQuiz} disabled={quizBusy || (set._count?.items ?? 0) < 4}
           title={(set._count?.items ?? 0) < 4 ? 'Cần ít nhất 4 mục' : 'Tạo Quiz Game'}

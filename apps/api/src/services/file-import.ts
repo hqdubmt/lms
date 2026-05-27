@@ -1,42 +1,30 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
+import { callAIForJSON, isAnyAIAvailable } from './ai-provider';
 
-// ─── Ollama helpers ───────────────────────────────────────────────────────────
-
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
-
-async function isOllamaAvailable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch {
-    return false;
+// Chunk text theo khuyến nghị caitien.md: 500-1000 ký tự mỗi chunk
+function chunkText(text: string, size = 800): string[] {
+  const chunks: string[] = [];
+  const paragraphs = text.split(/\n\n+/);
+  let current = '';
+  for (const para of paragraphs) {
+    if (current.length + para.length + 2 > size && current.length > 0) {
+      chunks.push(current.trim());
+      current = para;
+    } else {
+      current = current ? `${current}\n\n${para}` : para;
+    }
   }
-}
-
-async function callOllamaForJSON(systemPrompt: string, userPrompt: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-        options: { temperature: 0.1, num_predict: 4096 },
-      }),
-      signal: AbortSignal.timeout(180_000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { message?: { content: string } };
-    return data.message?.content ?? null;
-  } catch {
-    return null;
+  if (current.trim()) chunks.push(current.trim());
+  // Nếu không tách được theo paragraph, cắt thô
+  if (chunks.length <= 1 && text.length > size) {
+    chunks.length = 0;
+    for (let i = 0; i < text.length; i += size) {
+      const chunk = text.slice(i, i + size).trim();
+      if (chunk) chunks.push(chunk);
+    }
   }
+  return chunks;
 }
 
 // ─── Text extraction ──────────────────────────────────────────────────────────
@@ -125,7 +113,7 @@ export async function structureMathWithAI(
   opts: { grade?: number; subject?: string; generateExercises?: boolean } = {},
 ): Promise<MathCurriculumEntry[]> {
   if (env.ANTHROPIC_API_KEY) return structureMathClaude(text, opts);
-  if (await isOllamaAvailable()) return structureMathWithOllama(text, opts);
+  if (await isAnyAIAvailable()) return structureMathWithOllama(text, opts);
   return structureMathRuleBased(text, opts);
 }
 
@@ -189,18 +177,25 @@ async function structureMathWithOllama(
   text: string,
   opts: { grade?: number; subject?: string; generateExercises?: boolean },
 ): Promise<MathCurriculumEntry[]> {
-  const truncated = text.slice(0, 5000);
   const grade = opts.grade ?? 5;
   const subject = opts.subject ?? 'ARITHMETIC';
   const genEx = opts.generateExercises ?? true;
 
-  const systemPrompt = 'Bạn là AI phân tích giáo trình. Chỉ trả về JSON hợp lệ, không giải thích, không markdown.';
-  const userPrompt = `Phân tích tài liệu Toán lớp ${grade} sau và trích xuất chủ đề + khái niệm.
+  // Chunk theo caitien.md: 800 ký tự/chunk, lấy tối đa 4 chunk đầu
+  const chunks = chunkText(text, 800).slice(0, 4);
+  const truncated = chunks.join('\n\n---\n\n');
 
-Tài liệu:
+  const systemPrompt = 'Bạn là giáo viên toán. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const userPrompt = `Bạn là giáo viên toán lớp ${grade}.
+Phân tích nội dung sau. Tạo:
+1. Chủ đề
+2. Kiến thức chính
+3. Khái niệm và công thức
+
+Nội dung:
 ${truncated}
 
-Trả về JSON array (không có gì khác):
+Chỉ trả về JSON array (không có gì khác):
 [
   {
     "title": "Tên chủ đề",
@@ -212,18 +207,20 @@ Trả về JSON array (không có gì khác):
       {
         "name": "Tên khái niệm",
         "definition": "Định nghĩa đầy đủ",
-        "formula": "Công thức nếu có, nếu không để rỗng",
+        "formula": "Công thức nếu có, để rỗng nếu không có",
         "example": "Ví dụ cụ thể",
-        "solution": "Cách giải",
+        "solution": "Cách giải từng bước",
         "hints": ["Gợi ý 1", "Gợi ý 2"]
       }
     ]
   }
 ]
 
-Quy tắc: subject là ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS, level là beginner|intermediate|advanced, mỗi chủ đề 2-6 khái niệm.`;
+subject: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS
+level: beginner|intermediate|advanced
+Mỗi chủ đề 2-6 khái niệm.`;
 
-  const raw = await callOllamaForJSON(systemPrompt, userPrompt);
+  const raw = await callAIForJSON(systemPrompt, userPrompt);
   if (!raw) return structureMathRuleBased(text, opts);
 
   const match = raw.match(/\[[\s\S]*\]/);
@@ -316,7 +313,7 @@ export async function structureVietWithAI(
   opts: { grade?: number; category?: string; generateExercises?: boolean } = {},
 ): Promise<VietCurriculumEntry[]> {
   if (env.ANTHROPIC_API_KEY) return structureVietClaude(text, opts);
-  if (await isOllamaAvailable()) return structureVietWithOllama(text, opts);
+  if (await isAnyAIAvailable()) return structureVietWithOllama(text, opts);
   return structureVietRuleBased(text, opts);
 }
 
@@ -381,18 +378,25 @@ async function structureVietWithOllama(
   text: string,
   opts: { grade?: number; category?: string; generateExercises?: boolean },
 ): Promise<VietCurriculumEntry[]> {
-  const truncated = text.slice(0, 5000);
   const grade = opts.grade ?? 3;
   const category = opts.category ?? 'TU_VUNG';
   const genEx = opts.generateExercises ?? true;
 
-  const systemPrompt = 'Bạn là AI phân tích giáo trình Tiếng Việt. Chỉ trả về JSON hợp lệ, không giải thích, không markdown.';
-  const userPrompt = `Phân tích tài liệu Tiếng Việt lớp ${grade} sau, trích xuất từ vựng, thành ngữ, tục ngữ, ca dao, ngữ pháp.
+  // Chunk theo caitien.md: 800 ký tự/chunk, lấy tối đa 4 chunk đầu
+  const chunks = chunkText(text, 800).slice(0, 4);
+  const truncated = chunks.join('\n\n---\n\n');
 
-Tài liệu:
+  const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const userPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade}.
+Phân tích nội dung sau. Tạo:
+1. Bộ từ vựng / thành ngữ / ca dao / ngữ pháp
+2. Nghĩa đầy đủ của từng mục
+3. Câu ví dụ minh họa
+
+Nội dung:
 ${truncated}
 
-Trả về JSON array (không có gì khác):
+Chỉ trả về JSON array (không có gì khác):
 [
   {
     "title": "Tên bộ học",
@@ -402,19 +406,21 @@ Trả về JSON array (không có gì khác):
     "generateExercises": ${genEx},
     "items": [
       {
-        "word": "Từ hoặc cụm từ",
-        "meaning": "Nghĩa đầy đủ",
-        "example": "Câu ví dụ",
-        "note": "Ghi chú nếu có",
+        "word": "Từ hoặc cụm từ hoặc câu ca dao/thành ngữ",
+        "meaning": "Nghĩa đầy đủ, rõ ràng",
+        "example": "Câu ví dụ hoàn chỉnh",
+        "note": "Ghi chú về nguồn gốc hoặc cách dùng",
         "order": 0
       }
     ]
   }
 ]
 
-Quy tắc: category là CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO, level là co_ban|trung_cap|nang_cao, mỗi bộ 5-20 mục, nhóm cùng chủ đề vào một bộ.`;
+category: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
+level: co_ban|trung_cap|nang_cao
+Mỗi bộ 5-20 mục, nhóm cùng chủ đề vào một bộ. Giữ nguyên dấu thanh tiếng Việt.`;
 
-  const raw = await callOllamaForJSON(systemPrompt, userPrompt);
+  const raw = await callAIForJSON(systemPrompt, userPrompt);
   if (!raw) return structureVietRuleBased(text, opts);
 
   const match = raw.match(/\[[\s\S]*\]/);
@@ -476,6 +482,134 @@ function structureVietRuleBased(
   }];
 }
 
+// ─── AI Question Generation (Math) ───────────────────────────────────────────
+
+export async function generateMathQuestionsWithAI(
+  concepts: MathConceptDraft[],
+  type: string,
+  count: number,
+): Promise<any[] | null> {
+  if (!await isAnyAIAvailable()) return null;
+
+  const conceptList = concepts.slice(0, 10).map((c, i) =>
+    `${i + 1}. ${c.name}: ${c.definition}${c.formula ? ` [Công thức: ${c.formula}]` : ''}${c.example ? ` [Ví dụ: ${c.example}]` : ''}`
+  ).join('\n');
+
+  const typeMap: Record<string, string> = {
+    MULTIPLE_CHOICE: 'trắc nghiệm 4 lựa chọn (options gồm 4 đáp án, answer là đáp án đúng)',
+    FILL_BLANK: 'điền vào chỗ trống (content có ___, options để [], answer là từ/số cần điền)',
+    TRUE_FALSE: 'đúng/sai (options là ["Đúng","Sai"], answer là "Đúng" hoặc "Sai")',
+    PROOF_STEP: 'tự luận (options để [], answer là lời giải đầy đủ từng bước)',
+  };
+
+  const systemPrompt = 'Bạn là giáo viên toán. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const userPrompt = `Bạn là giáo viên toán.
+Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ các khái niệm sau:
+
+${conceptList}
+
+Chỉ trả về JSON array (không có gì khác):
+[
+  {
+    "content": "Nội dung câu hỏi rõ ràng",
+    "options": [],
+    "answer": "Đáp án đúng",
+    "solution": "Giải thích/lời giải chi tiết",
+    "hints": ["Gợi ý ngắn"],
+    "difficulty": 1,
+    "points": 1
+  }
+]
+
+Đáp án (answer) phải chính xác và có trong options nếu là trắc nghiệm.`;
+
+  const raw = await callAIForJSON(systemPrompt, userPrompt, 1024);
+  if (!raw) return null;
+
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) return null;
+
+  try {
+    const result = JSON.parse(match[0]) as any[];
+    if (!Array.isArray(result) || result.length === 0) return null;
+    return result.map((q, i) => ({
+      content: q.content ?? '',
+      options: Array.isArray(q.options) ? q.options : [],
+      answer: q.answer ?? '',
+      solution: q.solution ?? undefined,
+      hints: Array.isArray(q.hints) ? q.hints : [],
+      difficulty: typeof q.difficulty === 'number' ? Math.min(5, Math.max(1, q.difficulty)) : 1,
+      points: typeof q.points === 'number' ? q.points : 1,
+      order: i,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+// ─── AI Question Generation (Viet) ───────────────────────────────────────────
+
+export async function generateVietQuestionsWithAI(
+  items: VietItemDraft[],
+  type: string,
+  count: number,
+): Promise<any[] | null> {
+  if (!await isAnyAIAvailable()) return null;
+
+  const itemList = items.slice(0, 15).map((it, i) =>
+    `${i + 1}. "${it.word}" — ${it.meaning}${it.example ? ` (VD: ${it.example})` : ''}`
+  ).join('\n');
+
+  const typeMap: Record<string, string> = {
+    MULTIPLE_CHOICE: 'trắc nghiệm: hỏi nghĩa của từ, options gồm 4 nghĩa, answer là nghĩa đúng',
+    FILL_BLANK: 'điền từ vào câu: content là câu có ___, answer là từ cần điền',
+    SPELLING: 'chính tả: hỏi cách viết đúng của từ, options gồm 4 cách viết, answer là cách đúng',
+    MATCHING: 'ghép đôi: content là từ, answer là nghĩa tương ứng',
+    WORD_ORDER: 'sắp xếp câu: options là các từ xáo trộn, answer là câu đúng',
+  };
+
+  const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const userPrompt = `Bạn là giáo viên Tiếng Việt.
+Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ bộ từ vựng sau:
+
+${itemList}
+
+Chỉ trả về JSON array (không có gì khác):
+[
+  {
+    "content": "Nội dung câu hỏi",
+    "options": [],
+    "answer": "Đáp án đúng",
+    "explanation": "Giải thích ngắn",
+    "order": 0,
+    "points": 1
+  }
+]
+
+Giữ nguyên dấu thanh tiếng Việt. Đáp án phải chính xác.`;
+
+  const raw = await callAIForJSON(systemPrompt, userPrompt, 1024);
+  if (!raw) return null;
+
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) return null;
+
+  try {
+    const result = JSON.parse(match[0]) as any[];
+    if (!Array.isArray(result) || result.length === 0) return null;
+    return result.map((q, i) => ({
+      content: q.content ?? '',
+      options: Array.isArray(q.options) ? q.options : [],
+      answer: q.answer ?? '',
+      explanation: q.explanation ?? undefined,
+      order: typeof q.order === 'number' ? q.order : i,
+      points: typeof q.points === 'number' ? q.points : 1,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 // ─── Language curriculum structuring ─────────────────────────────────────────
 
 export interface LangVocabItemDraft {
@@ -500,7 +634,7 @@ export async function structureLangWithAI(
   opts: { language?: string; level?: string } = {},
 ): Promise<LangCurriculumDraft> {
   if (env.ANTHROPIC_API_KEY) return structureLangClaude(text, opts);
-  if (await isOllamaAvailable()) return structureLangWithOllama(text, opts);
+  if (await isAnyAIAvailable()) return structureLangWithOllama(text, opts);
   return structureLangRuleBased(text, opts);
 }
 
@@ -623,7 +757,7 @@ Return ONLY this JSON (nothing else):
 
 Rules: extract up to 30 vocabulary items, 3-5 dialogues, 3-5 voice chat turns. Keep original spelling.`;
 
-  const raw = await callOllamaForJSON(systemPrompt, userPrompt);
+  const raw = await callAIForJSON(systemPrompt, userPrompt);
   if (!raw) return structureLangRuleBased(text, opts);
 
   const match = raw.match(/\{[\s\S]*\}/);
@@ -700,7 +834,7 @@ export interface SectionDraft {
 
 export async function structureWithAI(text: string, courseTitle: string): Promise<SectionDraft[]> {
   if (env.ANTHROPIC_API_KEY) return structureWithClaude(text, courseTitle);
-  if (await isOllamaAvailable()) return structureWithOllama(text, courseTitle);
+  if (await isAnyAIAvailable()) return structureWithOllama(text, courseTitle);
   return structureRuleBased(text);
 }
 
@@ -729,7 +863,7 @@ Trả về JSON array (không có gì khác):
 
 Quy tắc: tạo 2-6 chương, mỗi chương 1-5 bài học, type luôn là TEXT.`;
 
-  const raw = await callOllamaForJSON(systemPrompt, userPrompt);
+  const raw = await callAIForJSON(systemPrompt, userPrompt);
   if (!raw) return structureRuleBased(text);
 
   const match = raw.match(/\[[\s\S]*\]/);

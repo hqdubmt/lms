@@ -32,10 +32,10 @@ export function TopicCard({ topic, busy, genBusy, quizBusy, onDelete, onGenerate
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <button onClick={onGenerateAll} disabled={genBusy || (topic._count?.concepts ?? 0) < 2}
-          title={(topic._count?.concepts ?? 0) < 2 ? 'Cần ít nhất 2 khái niệm' : 'Tạo tất cả bài tập'}
+          title={(topic._count?.concepts ?? 0) < 2 ? 'Cần ít nhất 2 khái niệm' : 'AI tạo 4 loại bài tập (Groq ~5s · Ollama ~2-4 phút)'}
           className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {genBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Tạo tất cả
+          {genBusy ? 'Đang tạo...' : 'Tạo tất cả'}
         </button>
         <button onClick={onGenerateQuiz} disabled={quizBusy || (topic._count?.concepts ?? 0) < 4}
           title={(topic._count?.concepts ?? 0) < 4 ? 'Cần ít nhất 4 khái niệm' : 'Tạo Quiz Game'}

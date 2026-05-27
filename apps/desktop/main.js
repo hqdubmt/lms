@@ -5,10 +5,22 @@ const Store = require('electron-store');
 // Register server URL + common local addresses as secure origins (for mic / MediaRecorder)
 const _earlyStore = new Store({ name: 'masterlms-config', defaults: { serverUrl: '' } });
 const _savedUrl = (_earlyStore.get('serverUrl') || '').toString().trim().replace(/\/$/, '');
+
+// Tự động thêm API URL (port 4000) từ server URL
+function deriveApiUrl(webUrl) {
+  if (!webUrl) return '';
+  try {
+    const u = new URL(webUrl);
+    u.port = '4000';
+    return u.origin;
+  } catch { return ''; }
+}
+const _savedApiUrl = deriveApiUrl(_savedUrl);
+
 const _secureOrigins = [
   'http://localhost', 'http://localhost:3000', 'http://localhost:4000',
-  'http://127.0.0.1', 'http://127.0.0.1:3000',
-  _savedUrl,
+  'http://127.0.0.1', 'http://127.0.0.1:3000', 'http://127.0.0.1:4000',
+  _savedUrl, _savedApiUrl,
 ].filter(Boolean).join(',');
 app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', _secureOrigins);
 
@@ -134,19 +146,54 @@ function createMainWindow(serverUrl) {
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
+async function buildTrayMenu() {
+  const webUrl = store.get('serverUrl') || '';
+  const apiUrl = deriveApiUrl(webUrl) || webUrl.replace(':3000', ':4000');
+  let aiLabel = 'AI: đang kiểm tra...';
+  if (apiUrl) {
+    try {
+      const { net } = require('electron');
+      const req = net.request(`${apiUrl}/ai/health`);
+      const health = await new Promise((resolve) => {
+        req.on('response', (res) => {
+          let data = '';
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
+        });
+        req.on('error', () => resolve({}));
+        req.setTimeout(3000, () => { req.abort(); resolve({}); });
+        req.end();
+      });
+      const names = { groq: 'Groq · llama-3.3-70b', gemini: 'Gemini · Flash 2.0', ollama: 'Ollama · ' + (health.model || '7b') };
+      aiLabel = health.available
+        ? `AI: ${names[health.provider] || health.model || 'Online'} ✓`
+        : 'AI: Offline';
+    } catch { aiLabel = 'AI: không kết nối được'; }
+  }
+
+  return Menu.buildFromTemplate([
+    { label: 'Mở MasterLMS', click: () => mainWindow?.show() ?? null },
+    { type: 'separator' },
+    { label: aiLabel, enabled: false },
+    { type: 'separator' },
+    { label: 'Cài đặt máy chủ...', click: () => openSetupDialog() },
+    { label: 'Làm mới trang', click: () => mainWindow?.webContents.reload() },
+    { type: 'separator' },
+    { label: 'Thoát', click: () => { app.isQuiting = true; app.quit(); } },
+  ]);
+}
+
 function createTray() {
   try {
     const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
     tray = new Tray(icon);
     tray.setToolTip('MasterLMS');
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Mở MasterLMS', click: () => mainWindow?.show() ?? null },
-      { type: 'separator' },
-      { label: 'Cài đặt máy chủ...', click: () => openSetupDialog() },
-      { type: 'separator' },
-      { label: 'Thoát', click: () => { app.isQuiting = true; app.quit(); } },
-    ]));
+    buildTrayMenu().then(menu => tray.setContextMenu(menu));
     tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
+    // Cập nhật AI status mỗi lần mở context menu
+    tray.on('right-click', () => {
+      buildTrayMenu().then(menu => { tray.setContextMenu(menu); tray.popUpContextMenu(menu); });
+    });
   } catch {}
 }
 
@@ -272,6 +319,27 @@ ipcMain.handle('set-server-url', (event, url) => {
   store.set('serverUrl', trimmed);
   store.set('firstRun', false);
   return trimmed;
+});
+ipcMain.handle('check-ai-health', async () => {
+  const webUrl = store.get('serverUrl') || '';
+  const apiUrl = deriveApiUrl(webUrl) || webUrl.replace(':3000', ':4000');
+  if (!apiUrl) return { available: false, provider: null };
+  try {
+    const { net } = require('electron');
+    const req = net.request(`${apiUrl}/ai/health`);
+    return await new Promise((resolve) => {
+      req.on('response', (res) => {
+        let data = '';
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch { resolve({ available: false }); }
+        });
+      });
+      req.on('error', () => resolve({ available: false }));
+      req.setTimeout(5000, () => { req.abort(); resolve({ available: false }); });
+      req.end();
+    });
+  } catch { return { available: false }; }
 });
 ipcMain.handle('show-setup', () => openSetupDialog());
 ipcMain.handle('open-external', (event, url) => shell.openExternal(url));
