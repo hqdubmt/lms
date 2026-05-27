@@ -23,7 +23,10 @@ export interface STTHandle {
 
 function hasMediaRecorder(): boolean {
   if (typeof window === 'undefined') return false;
-  return !!(navigator.mediaDevices?.getUserMedia && (window as any).MediaRecorder);
+  return !!(
+    (navigator as any).mediaDevices?.getUserMedia &&
+    (window as any).MediaRecorder
+  );
 }
 
 function hasWebSpeech(): boolean {
