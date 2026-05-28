@@ -2,8 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { callAIForJSON, isAnyAIAvailable } from './ai-provider';
 
-// Chunk text theo khuyến nghị caitien.md: 500-1000 ký tự mỗi chunk
-function chunkText(text: string, size = 800): string[] {
+function chunkText(text: string, size = 2000): string[] {
   const chunks: string[] = [];
   const paragraphs = text.split(/\n\n+/);
   let current = '';
@@ -181,60 +180,64 @@ async function structureMathWithOllama(
   const subject = opts.subject ?? 'ARITHMETIC';
   const genEx = opts.generateExercises ?? true;
 
-  const allChunks = chunkText(text, 800);
+  const allChunks = chunkText(text, 2000);
   const allEntries: MathCurriculumEntry[] = [];
 
-  const systemPrompt = 'Bạn là giáo viên toán. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const systemPrompt = `Bạn là giáo viên toán lớp ${grade} có kinh nghiệm. Nhiệm vụ: trích xuất kiến thức toán học từ tài liệu giáo trình.
+Quy tắc bắt buộc:
+- Chỉ trả về JSON array hợp lệ, bắt đầu bằng [ và kết thúc bằng ]
+- Không thêm markdown, không giải thích, không văn bản thừa
+- Giữ nguyên dấu thanh tiếng Việt và ký hiệu toán học
+- Mỗi concepts phải có definition đầy đủ (tối thiểu 30 ký tự)`;
 
-  for (let i = 0; i < allChunks.length; i += 4) {
-    const batch = allChunks.slice(i, i + 4);
-    const truncated = batch.join('\n\n---\n\n');
+  const buildPrompt = (chunk: string) => `Phân tích đoạn tài liệu toán lớp ${grade} sau và trích xuất TẤT CẢ khái niệm, định lý, công thức có trong đó.
 
-    const userPrompt = `Bạn là giáo viên toán lớp ${grade}.
-Phân tích nội dung sau. Tạo:
-1. Chủ đề
-2. Kiến thức chính
-3. Khái niệm và công thức
+Tài liệu:
+${chunk}
 
-Nội dung:
-${truncated}
-
-Chỉ trả về JSON array (không có gì khác):
+Trả về JSON array (bắt đầu [ kết thúc ], KHÔNG có gì khác):
 [
   {
-    "title": "Tên chủ đề",
+    "title": "Tên chủ đề toán ngắn gọn (VD: Phân số, Diện tích hình chữ nhật)",
     "subject": "${subject}",
     "grade": ${grade},
     "level": "beginner",
+    "description": "Mô tả 1 câu về chủ đề",
     "generateExercises": ${genEx},
     "concepts": [
       {
-        "name": "Tên khái niệm",
-        "definition": "Định nghĩa đầy đủ",
-        "formula": "Công thức nếu có, để rỗng nếu không có",
-        "example": "Ví dụ cụ thể",
-        "solution": "Cách giải từng bước",
-        "hints": ["Gợi ý 1", "Gợi ý 2"]
+        "name": "Tên khái niệm/định lý/quy tắc ngắn gọn",
+        "definition": "Định nghĩa đầy đủ, rõ ràng, dễ hiểu với học sinh",
+        "formula": "Công thức toán học (để '' nếu không có công thức)",
+        "example": "Ví dụ cụ thể với số: VD: 3/4 + 1/4 = 4/4 = 1",
+        "solution": "Các bước thực hiện cụ thể",
+        "hints": ["Gợi ý ngắn gọn 1", "Gợi ý ngắn gọn 2"]
       }
     ]
   }
 ]
 
-subject: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS
-level: beginner|intermediate|advanced
-Mỗi chủ đề 2-6 khái niệm.`;
+Lưu ý: subject phải là một trong: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS
+level phải là: beginner|intermediate|advanced
+Trích xuất 2-8 khái niệm mỗi chủ đề, không bỏ sót nội dung quan trọng.`;
 
-    try {
-      const raw = await callAIForJSON(systemPrompt, userPrompt);
-      if (!raw) continue;
-      const match = raw.match(/\[[\s\S]*\]/);
-      if (!match) continue;
-      const result = JSON.parse(match[0]) as MathCurriculumEntry[];
-      if (Array.isArray(result) && result.length > 0) {
-        allEntries.push(...result.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true })));
-      }
-    } catch {
-      continue;
+  // Xử lý song song, tối đa 3 batch cùng lúc
+  const CONCURRENCY = 3;
+  for (let i = 0; i < allChunks.length; i += CONCURRENCY) {
+    const batch = allChunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((chunk) => callAIForJSON(systemPrompt, buildPrompt(chunk), 4096))
+    );
+    for (const res of results) {
+      if (res.status !== 'fulfilled' || !res.value) continue;
+      try {
+        const match = res.value.match(/\[[\s\S]*\]/);
+        if (!match) continue;
+        const parsed = JSON.parse(match[0]) as MathCurriculumEntry[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          allEntries.push(...parsed.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true })));
+        }
+      } catch { /* skip malformed */ }
     }
   }
 
@@ -389,63 +392,68 @@ async function structureVietWithOllama(
   const category = opts.category ?? 'TU_VUNG';
   const genEx = opts.generateExercises ?? true;
 
-  const allChunks = chunkText(text, 800);
+  const allChunks = chunkText(text, 2000);
   const allEntries: VietCurriculumEntry[] = [];
 
-  const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const systemPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade} có kinh nghiệm. Nhiệm vụ: trích xuất từ vựng, thành ngữ, ca dao, ngữ pháp từ tài liệu giáo trình.
+Quy tắc bắt buộc:
+- Chỉ trả về JSON array hợp lệ, bắt đầu bằng [ và kết thúc bằng ]
+- Không thêm markdown, không giải thích, không văn bản thừa
+- Giữ nguyên dấu thanh tiếng Việt đầy đủ (à, á, ả, ã, ạ, ă, â...)
+- meaning phải giải thích đầy đủ ý nghĩa (tối thiểu 20 ký tự)`;
 
-  for (let i = 0; i < allChunks.length; i += 4) {
-    const batch = allChunks.slice(i, i + 4);
-    const truncated = batch.join('\n\n---\n\n');
+  const buildPrompt = (chunk: string) => `Phân tích đoạn tài liệu Tiếng Việt lớp ${grade} sau và trích xuất TẤT CẢ từ vựng, thành ngữ, tục ngữ, ca dao, cụm từ, quy tắc ngữ pháp có trong đó.
 
-    const userPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade}.
-Phân tích nội dung sau. Tạo:
-1. Bộ từ vựng / thành ngữ / ca dao / ngữ pháp
-2. Nghĩa đầy đủ của từng mục
-3. Câu ví dụ minh họa
+Tài liệu:
+${chunk}
 
-Nội dung:
-${truncated}
-
-Chỉ trả về JSON array (không có gì khác):
+Trả về JSON array (bắt đầu [ kết thúc ], KHÔNG có gì khác):
 [
   {
-    "title": "Tên bộ học",
+    "title": "Tên bộ học ngắn gọn (VD: Từ vựng chủ đề gia đình, Tục ngữ về lao động, Ngữ pháp câu ghép)",
     "category": "${category}",
     "grade": ${grade},
     "level": "co_ban",
     "generateExercises": ${genEx},
     "items": [
       {
-        "word": "Từ hoặc cụm từ hoặc câu ca dao/thành ngữ",
-        "meaning": "Nghĩa đầy đủ, rõ ràng",
-        "example": "Câu ví dụ hoàn chỉnh",
-        "note": "Ghi chú về nguồn gốc hoặc cách dùng",
+        "word": "Từ/cụm từ/câu thành ngữ/tục ngữ/ca dao NGUYÊN VĂN",
+        "meaning": "Giải thích nghĩa đầy đủ, rõ ràng cho học sinh lớp ${grade}",
+        "example": "Câu ví dụ hoàn chỉnh dùng từ này trong ngữ cảnh thực tế",
+        "note": "Ghi chú nguồn gốc, vùng miền, sắc thái, cách dùng (để trống nếu không có)",
         "order": 0
       }
     ]
   }
 ]
 
-category: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
-level: co_ban|trung_cap|nang_cao
-Mỗi bộ 5-20 mục, nhóm cùng chủ đề vào một bộ. Giữ nguyên dấu thanh tiếng Việt.`;
+Lưu ý:
+- category phải là một trong: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
+- level phải là: co_ban|trung_cap|nang_cao
+- Nhóm các mục cùng chủ đề vào một bộ (5-20 mục/bộ)
+- Không bỏ sót từ/thành ngữ/ca dao nào trong tài liệu`;
 
-    try {
-      const raw = await callAIForJSON(systemPrompt, userPrompt);
-      if (!raw) continue;
-      const match = raw.match(/\[[\s\S]*\]/);
-      if (!match) continue;
-      const result = JSON.parse(match[0]) as VietCurriculumEntry[];
-      if (Array.isArray(result) && result.length > 0) {
-        allEntries.push(...result.map((e) => ({
-          ...e,
-          generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
-          items: e.items.map((it, i) => ({ ...it, order: it.order ?? i })),
-        })));
-      }
-    } catch {
-      continue;
+  // Xử lý song song, tối đa 3 batch cùng lúc
+  const CONCURRENCY = 3;
+  for (let i = 0; i < allChunks.length; i += CONCURRENCY) {
+    const batch = allChunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((chunk) => callAIForJSON(systemPrompt, buildPrompt(chunk), 4096))
+    );
+    for (const res of results) {
+      if (res.status !== 'fulfilled' || !res.value) continue;
+      try {
+        const match = res.value.match(/\[[\s\S]*\]/);
+        if (!match) continue;
+        const parsed = JSON.parse(match[0]) as VietCurriculumEntry[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          allEntries.push(...parsed.map((e) => ({
+            ...e,
+            generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
+            items: e.items.map((it, idx) => ({ ...it, order: it.order ?? idx })),
+          })));
+        }
+      } catch { /* skip malformed */ }
     }
   }
 
@@ -537,7 +545,7 @@ Chỉ trả về JSON array (không có gì khác):
 
 Đáp án (answer) phải chính xác và có trong options nếu là trắc nghiệm.`;
 
-  const raw = await callAIForJSON(systemPrompt, userPrompt, 1024);
+  const raw = await callAIForJSON(systemPrompt, userPrompt, 2048);
   if (!raw) return null;
 
   const match = raw.match(/\[[\s\S]*\]/);
@@ -575,34 +583,43 @@ export async function generateVietQuestionsWithAI(
   ).join('\n');
 
   const typeMap: Record<string, string> = {
-    MULTIPLE_CHOICE: 'trắc nghiệm: hỏi nghĩa của từ, options gồm 4 nghĩa, answer là nghĩa đúng',
-    FILL_BLANK: 'điền từ vào câu: content là câu có ___, answer là từ cần điền',
-    SPELLING: 'chính tả: hỏi cách viết đúng của từ, options gồm 4 cách viết, answer là cách đúng',
-    MATCHING: 'ghép đôi: content là từ, answer là nghĩa tương ứng',
-    WORD_ORDER: 'sắp xếp câu: options là mảng các từ xáo trộn, answer là mảng các từ theo thứ tự đúng (ví dụ: ["Tôi","yêu","tiếng","Việt"])',
+    MULTIPLE_CHOICE: 'trắc nghiệm: hỏi nghĩa của từ/thành ngữ, options gồm đúng 4 nghĩa khác nhau, answer là nghĩa đúng (phải có trong options)',
+    FILL_BLANK: 'điền từ vào câu: content là câu hoàn chỉnh có ___ thay chỗ từ cần điền, answer là từ cần điền',
+    SPELLING: 'chính tả: content hỏi cách viết đúng của từ, options gồm đúng 4 cách viết (1 đúng 3 sai), answer là cách viết đúng',
+    MATCHING: 'ghép đôi: content là từ/cụm từ, answer là nghĩa tiếng Việt tương ứng',
+    WORD_ORDER: 'sắp xếp câu: content CHỈ là câu lệnh ngắn như "Sắp xếp thành câu hoàn chỉnh:" KHÔNG chứa câu trả lời; options là mảng các từ đã xáo trộn; answer là mảng các từ theo thứ tự ĐÚNG',
   };
 
-  const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
+  const wordOrderExtra = type === 'WORD_ORDER' ? `
+QUAN TRỌNG cho WORD_ORDER:
+- content phải là: "Sắp xếp các từ sau thành câu hoàn chỉnh:" (KHÔNG được viết câu trả lời vào content)
+- options: mảng các từ đã XÁO TRỘN, VD: ["yêu","Tôi","Việt","tiếng"]
+- answer: mảng các từ theo thứ tự ĐÚNG, VD: ["Tôi","yêu","tiếng","Việt"]
+- Tách câu thành từng từ riêng lẻ (không ghép nhiều từ vào một phần tử)` : '';
+
+  const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON array hợp lệ (bắt đầu [ kết thúc ]). Không markdown. Không giải thích.';
   const userPrompt = `Bạn là giáo viên Tiếng Việt.
-Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ bộ từ vựng sau:
+Tạo ${count} câu hỏi loại: ${typeMap[type] ?? type}
+Từ bộ từ vựng/thành ngữ sau:
 
 ${itemList}
+${wordOrderExtra}
 
-Chỉ trả về JSON array (không có gì khác):
+Trả về JSON array (bắt đầu [ kết thúc ], KHÔNG có gì khác):
 [
   {
-    "content": "Nội dung câu hỏi",
-    "options": [],
-    "answer": ${type === 'WORD_ORDER' ? '["từ1","từ2","từ3"]' : '"Đáp án đúng"'},
-    "explanation": "Giải thích ngắn",
+    "content": "Câu lệnh/câu hỏi cho học sinh (KHÔNG chứa đáp án)",
+    "options": ${type === 'WORD_ORDER' ? '["từ1","từ2","từ3","từ4"]' : '["lựa chọn 1","lựa chọn 2","lựa chọn 3","lựa chọn 4"]'},
+    "answer": ${type === 'WORD_ORDER' ? '["từ1","từ2","từ3","từ4"]' : '"Đáp án đúng (phải có trong options)"'},
+    "explanation": "Giải thích ngắn gọn tại sao đây là đáp án đúng",
     "order": 0,
     "points": ${type === 'WORD_ORDER' ? 2 : 1}
   }
 ]
 
-Giữ nguyên dấu thanh tiếng Việt. Đáp án phải chính xác.`;
+Giữ nguyên dấu thanh tiếng Việt đầy đủ. Đáp án phải chính xác và có thể kiểm chứng.`;
 
-  const raw = await callAIForJSON(systemPrompt, userPrompt, 1024);
+  const raw = await callAIForJSON(systemPrompt, userPrompt, 2048);
   if (!raw) return null;
 
   const match = raw.match(/\[[\s\S]*\]/);

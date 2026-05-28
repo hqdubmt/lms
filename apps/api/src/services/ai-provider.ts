@@ -37,7 +37,7 @@ function getGroqClient(): Groq | null {
 async function callGroqForJSON(
   systemPrompt: string,
   userPrompt: string,
-  maxTokens = 2048,
+  maxTokens = 4096,
 ): Promise<string | null> {
   const client = getGroqClient();
   if (!client) return null;
@@ -50,7 +50,7 @@ async function callGroqForJSON(
       ],
       max_tokens: maxTokens,
       temperature: 0.1,
-      response_format: { type: 'json_object' },
+      // No response_format: json_object — Groq rejects plain arrays with that mode
     });
     return res.choices[0]?.message?.content ?? null;
   } catch {
@@ -98,7 +98,7 @@ function getGeminiKey(): string | null {
 async function callGeminiForJSON(
   systemPrompt: string,
   userPrompt: string,
-  maxTokens = 2048,
+  maxTokens = 4096,
 ): Promise<string | null> {
   const key = getGeminiKey();
   if (!key) return null;
@@ -209,7 +209,7 @@ async function* geminiStream(messages: ChatMessage[]): AsyncGenerator<string> {
 async function callOllamaForJSON(
   systemPrompt: string,
   userPrompt: string,
-  maxTokens = 2048,
+  maxTokens = 4096,
 ): Promise<string | null> {
   try {
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
@@ -317,7 +317,7 @@ export async function checkAllProviders(): Promise<{
 export async function callAIForJSON(
   systemPrompt: string,
   userPrompt: string,
-  maxTokens = 2048,
+  maxTokens = 4096,
 ): Promise<string | null> {
   // 1. Groq: fastest free tier
   if (getGroqClient()) {
