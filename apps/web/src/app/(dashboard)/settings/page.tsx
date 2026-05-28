@@ -5,6 +5,7 @@ import {
   User, Lock, Bell, Camera, CheckCircle2, AlertCircle,
   Eye, EyeOff, Save, Loader2, Shield, Mail, AtSign,
   FileText, ChevronRight, Monitor, Smartphone, LogOut,
+  Download, Package,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api';
@@ -20,7 +21,7 @@ interface Profile {
   _count: { enrollments: number; coursesCreated: number };
 }
 
-type Tab = 'profile' | 'security' | 'notifications';
+type Tab = 'profile' | 'security' | 'notifications' | 'apps';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -583,12 +584,94 @@ function NotificationsTab() {
   );
 }
 
+// ─── Apps Tab ────────────────────────────────────────────────────────────────
+
+const APPS = [
+  {
+    id: 'android',
+    label: 'Android',
+    desc: 'Tương thích Android 7.0 trở lên · v1.1.0',
+    icon: Smartphone,
+    iconBg: 'bg-green-50',
+    iconColor: 'text-green-600',
+    btnColor: 'bg-green-600 hover:bg-green-700',
+    href: '/downloads/masterlms-v1.1.0.apk',
+    badge: 'APK · 3.6 MB',
+    note: 'Cho phép cài từ nguồn không rõ trong Cài đặt → Bảo mật trước khi cài đặt.',
+  },
+  {
+    id: 'desktop',
+    label: 'Desktop (Windows / macOS / Linux)',
+    desc: 'Ứng dụng máy tính · v1.1.0 · Electron',
+    icon: Monitor,
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    btnColor: 'bg-blue-600 hover:bg-blue-700',
+    href: 'https://github.com/hqdubmt/lms/releases',
+    badge: 'GitHub Releases',
+    note: 'Tải file .exe (Windows) hoặc .AppImage (Linux) từ trang GitHub Releases.',
+  },
+];
+
+function AppsTab() {
+  return (
+    <div className="space-y-5">
+      <Section title="Tải ứng dụng" desc="Cài đặt MasterLMS trên thiết bị của bạn để học mọi lúc mọi nơi">
+        <div className="space-y-4">
+          {APPS.map((app) => (
+            <div key={app.id} className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/60">
+              <div className={`h-12 w-12 rounded-2xl ${app.iconBg} flex items-center justify-center shrink-0`}>
+                <app.icon className={`h-6 w-6 ${app.iconColor}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-900">{app.label}</p>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-500">{app.badge}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{app.desc}</p>
+                {app.note && <p className="text-[11px] text-amber-600 mt-1.5 leading-relaxed">{app.note}</p>}
+              </div>
+              <a
+                href={app.href}
+                download={app.id === 'android' ? 'masterlms-v1.1.0.apk' : undefined}
+                target={app.id === 'android' ? undefined : '_blank'}
+                rel="noreferrer"
+                className={`flex items-center gap-2 px-4 py-2.5 ${app.btnColor} text-white text-sm font-semibold rounded-xl transition-colors shrink-0`}
+              >
+                <Download className="h-4 w-4" />
+                Tải về
+              </a>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Hướng dẫn cài đặt Android" desc="Các bước cài đặt file APK trên điện thoại Android">
+        <ol className="space-y-3 text-sm text-gray-700">
+          {[
+            'Nhấn nút "Tải về" ở trên để tải file masterlms-v1.1.0.apk',
+            'Mở Cài đặt → Bảo mật → Cho phép cài ứng dụng từ nguồn không rõ',
+            'Mở file APK vừa tải và nhấn Cài đặt',
+            'Sau khi cài xong, mở ứng dụng và nhập địa chỉ máy chủ của trường',
+          ].map((step, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <span className="leading-relaxed">{step}</span>
+            </li>
+          ))}
+        </ol>
+      </Section>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: 'profile', label: 'Hồ sơ cá nhân', icon: User },
   { key: 'security', label: 'Bảo mật', icon: Shield },
   { key: 'notifications', label: 'Thông báo', icon: Bell },
+  { key: 'apps', label: 'Tải ứng dụng', icon: Package },
 ];
 
 export default function SettingsPage() {
@@ -681,6 +764,7 @@ export default function SettingsPage() {
                 )}
                 {tab === 'security' && <SecurityTab />}
                 {tab === 'notifications' && <NotificationsTab />}
+                {tab === 'apps' && <AppsTab />}
               </>
             )}
           </main>
