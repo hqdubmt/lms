@@ -84,12 +84,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK components
+      - name: Setup Android SDK
         run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+          # GitHub ubuntu-latest có sẵn SDK tại /usr/local/lib/android/sdk
+          SDK=${ANDROID_HOME:-/usr/local/lib/android/sdk}
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          $SDK/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0" \
-            "platform-tools" 2>/dev/null || true
+            "platform-tools" <<< "y" 2>/dev/null || true
 
       - name: Install Capacitor dependencies
         working-directory: apps/mobile
@@ -102,9 +106,8 @@ jobs:
       - name: Build APK (debug)
         working-directory: apps/mobile/android
         env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tail -50
 
       - name: Rename APK
         run: |
