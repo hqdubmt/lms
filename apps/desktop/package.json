@@ -1,7 +1,7 @@
 {
   "name": "masterlms-desktop",
   "version": "1.1.0",
-  "description": "MasterLMS Desktop - Ứng dụng học tập thông minh với AI Groq/Gemini/Ollama",
+  "description": "MasterLMS Desktop - Ứng dụng học tập thông minh với AI Groq/Gemini/Ollama (phân tích tài liệu cải tiến)",
   "main": "main.js",
   "author": {
     "name": "MasterLMS",
