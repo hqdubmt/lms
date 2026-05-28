@@ -24,9 +24,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           npm install
-          npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npx electron-builder --win --publish=never
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -45,9 +43,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           npm install
-          npm run build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npx electron-builder --mac --publish=never
       - uses: actions/upload-artifact@v4
         with:
           name: mac
@@ -66,9 +62,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           npm install
-          npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npx electron-builder --linux --publish=never
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -96,10 +90,6 @@ jobs:
       - name: Install Capacitor dependencies
         working-directory: apps/mobile
         run: npm install
-
-      - name: Add Android platform
-        working-directory: apps/mobile
-        run: npx cap add android
 
       - name: Sync Capacitor
         working-directory: apps/mobile
