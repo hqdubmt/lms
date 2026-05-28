@@ -181,12 +181,16 @@ async function structureMathWithOllama(
   const subject = opts.subject ?? 'ARITHMETIC';
   const genEx = opts.generateExercises ?? true;
 
-  // Chunk theo caitien.md: 800 ký tự/chunk, lấy tối đa 4 chunk đầu
-  const chunks = chunkText(text, 800).slice(0, 4);
-  const truncated = chunks.join('\n\n---\n\n');
+  const allChunks = chunkText(text, 800);
+  const allEntries: MathCurriculumEntry[] = [];
 
   const systemPrompt = 'Bạn là giáo viên toán. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
-  const userPrompt = `Bạn là giáo viên toán lớp ${grade}.
+
+  for (let i = 0; i < allChunks.length; i += 4) {
+    const batch = allChunks.slice(i, i + 4);
+    const truncated = batch.join('\n\n---\n\n');
+
+    const userPrompt = `Bạn là giáo viên toán lớp ${grade}.
 Phân tích nội dung sau. Tạo:
 1. Chủ đề
 2. Kiến thức chính
@@ -220,19 +224,22 @@ subject: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THE
 level: beginner|intermediate|advanced
 Mỗi chủ đề 2-6 khái niệm.`;
 
-  const raw = await callAIForJSON(systemPrompt, userPrompt);
-  if (!raw) return structureMathRuleBased(text, opts);
-
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) return structureMathRuleBased(text, opts);
-
-  try {
-    const result = JSON.parse(match[0]) as MathCurriculumEntry[];
-    if (!Array.isArray(result) || result.length === 0) return structureMathRuleBased(text, opts);
-    return result.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true }));
-  } catch {
-    return structureMathRuleBased(text, opts);
+    try {
+      const raw = await callAIForJSON(systemPrompt, userPrompt);
+      if (!raw) continue;
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) continue;
+      const result = JSON.parse(match[0]) as MathCurriculumEntry[];
+      if (Array.isArray(result) && result.length > 0) {
+        allEntries.push(...result.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true })));
+      }
+    } catch {
+      continue;
+    }
   }
+
+  if (allEntries.length === 0) return structureMathRuleBased(text, opts);
+  return allEntries;
 }
 
 function structureMathRuleBased(
@@ -382,12 +389,16 @@ async function structureVietWithOllama(
   const category = opts.category ?? 'TU_VUNG';
   const genEx = opts.generateExercises ?? true;
 
-  // Chunk theo caitien.md: 800 ký tự/chunk, lấy tối đa 4 chunk đầu
-  const chunks = chunkText(text, 800).slice(0, 4);
-  const truncated = chunks.join('\n\n---\n\n');
+  const allChunks = chunkText(text, 800);
+  const allEntries: VietCurriculumEntry[] = [];
 
   const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
-  const userPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade}.
+
+  for (let i = 0; i < allChunks.length; i += 4) {
+    const batch = allChunks.slice(i, i + 4);
+    const truncated = batch.join('\n\n---\n\n');
+
+    const userPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade}.
 Phân tích nội dung sau. Tạo:
 1. Bộ từ vựng / thành ngữ / ca dao / ngữ pháp
 2. Nghĩa đầy đủ của từng mục
@@ -420,23 +431,26 @@ category: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
 level: co_ban|trung_cap|nang_cao
 Mỗi bộ 5-20 mục, nhóm cùng chủ đề vào một bộ. Giữ nguyên dấu thanh tiếng Việt.`;
 
-  const raw = await callAIForJSON(systemPrompt, userPrompt);
-  if (!raw) return structureVietRuleBased(text, opts);
-
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) return structureVietRuleBased(text, opts);
-
-  try {
-    const result = JSON.parse(match[0]) as VietCurriculumEntry[];
-    if (!Array.isArray(result) || result.length === 0) return structureVietRuleBased(text, opts);
-    return result.map((e) => ({
-      ...e,
-      generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
-      items: e.items.map((it, i) => ({ ...it, order: it.order ?? i })),
-    }));
-  } catch {
-    return structureVietRuleBased(text, opts);
+    try {
+      const raw = await callAIForJSON(systemPrompt, userPrompt);
+      if (!raw) continue;
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) continue;
+      const result = JSON.parse(match[0]) as VietCurriculumEntry[];
+      if (Array.isArray(result) && result.length > 0) {
+        allEntries.push(...result.map((e) => ({
+          ...e,
+          generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
+          items: e.items.map((it, i) => ({ ...it, order: it.order ?? i })),
+        })));
+      }
+    } catch {
+      continue;
+    }
   }
+
+  if (allEntries.length === 0) return structureVietRuleBased(text, opts);
+  return allEntries;
 }
 
 function structureVietRuleBased(
@@ -565,7 +579,7 @@ export async function generateVietQuestionsWithAI(
     FILL_BLANK: 'điền từ vào câu: content là câu có ___, answer là từ cần điền',
     SPELLING: 'chính tả: hỏi cách viết đúng của từ, options gồm 4 cách viết, answer là cách đúng',
     MATCHING: 'ghép đôi: content là từ, answer là nghĩa tương ứng',
-    WORD_ORDER: 'sắp xếp câu: options là các từ xáo trộn, answer là câu đúng',
+    WORD_ORDER: 'sắp xếp câu: options là mảng các từ xáo trộn, answer là mảng các từ theo thứ tự đúng (ví dụ: ["Tôi","yêu","tiếng","Việt"])',
   };
 
   const systemPrompt = 'Bạn là giáo viên Tiếng Việt. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
@@ -579,10 +593,10 @@ Chỉ trả về JSON array (không có gì khác):
   {
     "content": "Nội dung câu hỏi",
     "options": [],
-    "answer": "Đáp án đúng",
+    "answer": ${type === 'WORD_ORDER' ? '["từ1","từ2","từ3"]' : '"Đáp án đúng"'},
     "explanation": "Giải thích ngắn",
     "order": 0,
-    "points": 1
+    "points": ${type === 'WORD_ORDER' ? 2 : 1}
   }
 ]
 

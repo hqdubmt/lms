@@ -527,7 +527,19 @@ export async function vietRoutes(app: FastifyInstance) {
         const ea = q.answer as Record<string, string>;
         correct = JSON.stringify(ua) === JSON.stringify(ea);
       } else if (exercise.type === 'WORD_ORDER') {
-        correct = JSON.stringify(userAnswer) === JSON.stringify(q.answer);
+        // Handle answer stored as array, stringified JSON array, or space-delimited string
+        let parsedAnswer: any = q.answer;
+        if (typeof parsedAnswer === 'string' && parsedAnswer.startsWith('[')) {
+          try { parsedAnswer = JSON.parse(parsedAnswer); } catch { /* keep as string */ }
+        }
+        const expectedArr = Array.isArray(parsedAnswer)
+          ? (parsedAnswer as string[]).map((w: string) => String(w).trim().normalize('NFC')).filter(Boolean)
+          : String(q.answer).split(/\s+/).map((w) => w.normalize('NFC')).filter(Boolean);
+        const givenArr = Array.isArray(userAnswer)
+          ? (userAnswer as string[]).map((w: string) => String(w).trim().normalize('NFC')).filter(Boolean)
+          : String(userAnswer ?? '').split(/\s+/).map((w) => w.normalize('NFC')).filter(Boolean);
+        correct = givenArr.length === expectedArr.length &&
+          givenArr.every((w, i) => w === expectedArr[i]);
       } else if (exercise.type === 'READING') {
         const expected = String(q.answer).toLowerCase().trim();
         correct = String(userAnswer ?? '').toLowerCase().trim() === expected;

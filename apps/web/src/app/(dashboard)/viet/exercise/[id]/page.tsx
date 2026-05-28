@@ -42,12 +42,7 @@ function WordOrderInput({ question, value, onChange }: {
 }) {
   const pool: string[] = question.options || [];
   const placed = value;
-  const remaining = pool.filter((_, i) => !placed.includes(pool[i]) || (() => {
-    const idx = placed.indexOf(pool[i]);
-    return idx !== -1 && placed.splice(idx, 1) && false;
-  })());
 
-  // Track remaining words properly using indices
   const usedIndices = new Set<number>();
   placed.forEach((w) => {
     const idx = pool.findIndex((p, i) => p === w && !usedIndices.has(i));
@@ -66,25 +61,31 @@ function WordOrderInput({ question, value, onChange }: {
   };
 
   return (
-    <div className="space-y-3">
-      {/* Answer area */}
-      <div className="min-h-[52px] bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-3 flex flex-wrap gap-2">
-        {placed.length === 0 && <p className="text-xs text-muted-foreground self-center">Nhấn các từ bên dưới để sắp xếp...</p>}
-        {placed.map((w, i) => (
-          <button key={i} onClick={() => removeWord(i)}
-            className="px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors">
-            {w}
-          </button>
-        ))}
+    <div className="space-y-2">
+      {/* Word pool — click to add */}
+      <p className="text-xs font-medium text-gray-500">Nhấn vào từ để thêm vào câu:</p>
+      <div className="flex flex-wrap gap-2 bg-gray-50 rounded-xl p-3 min-h-[44px]">
+        {availablePool.length === 0 && placed.length > 0
+          ? <p className="text-xs text-muted-foreground self-center">Đã dùng hết từ — nhấn vào từ bên dưới để xoá</p>
+          : availablePool.map((w, i) => (
+            <button key={i} onClick={() => addWord(w)}
+              className="px-3 py-1.5 bg-white border border-gray-200 text-sm font-medium rounded-lg hover:border-red-400 hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm">
+              {w}
+            </button>
+          ))}
       </div>
-      {/* Word pool */}
-      <div className="flex flex-wrap gap-2">
-        {availablePool.map((w, i) => (
-          <button key={i} onClick={() => addWord(w)}
-            className="px-3 py-1.5 bg-white border border-gray-200 text-sm font-medium rounded-lg hover:border-red-400 hover:text-red-600 transition-colors">
-            {w}
-          </button>
-        ))}
+
+      {/* Answer area — arranged sentence */}
+      <p className="text-xs font-medium text-gray-500 mt-1">Câu bạn đang sắp xếp <span className="text-gray-400 font-normal">(nhấn từ để xoá)</span>:</p>
+      <div className="min-h-[48px] bg-white rounded-xl border-2 border-red-200 p-3 flex flex-wrap gap-2">
+        {placed.length === 0
+          ? <p className="text-xs text-muted-foreground self-center italic">Chưa có từ nào — nhấn các từ phía trên</p>
+          : placed.map((w, i) => (
+            <button key={i} onClick={() => removeWord(i)}
+              className="px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors">
+              {w} ×
+            </button>
+          ))}
       </div>
     </div>
   );
