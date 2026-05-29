@@ -1,5 +1,5 @@
 name: Build & Push Docker (multi-arch)
-# v1.2.0
+# v1.3.0
 
 on:
   push:
@@ -7,6 +7,8 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/web/**'
+      - 'docker/**'
+      - 'Dockerfile'
       - '.github/workflows/docker.yml'
 
 jobs:
@@ -59,6 +61,27 @@ jobs:
             hqdu/lms-web:latest
             hqdu/lms-web:${{ steps.sha.outputs.short }}
           build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SOCKET_URL=${{ secrets.NEXT_PUBLIC_SOCKET_URL }}
+            NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_APP_NAME=${{ secrets.NEXT_PUBLIC_APP_NAME || 'MasterLMS' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── COMBINED (all-in-one image) ───────────────────────────────────────
+      - name: Build & push webhoctapquanganh (combined)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            hqdu/webhoctapquanganh:latest
+            hqdu/webhoctapquanganh:${{ steps.sha.outputs.short }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SOCKET_URL=${{ secrets.NEXT_PUBLIC_SOCKET_URL }}
             NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
             NEXT_PUBLIC_APP_NAME=${{ secrets.NEXT_PUBLIC_APP_NAME || 'MasterLMS' }}
           cache-from: type=gha
