@@ -49,11 +49,13 @@ model User {
   mathAttempts        MathAttempt[]        @relation("MathAttemptUser")
   conceptProgresses   ConceptProgress[]    @relation("ConceptProgressUser")
   mathStats           MathUserStats?       @relation("MathUserStatsUser")
+  mathProfile         StudentMathProfile?  @relation("StudentMathProfileUser")
   mathDocuments       MathDocument[]       @relation("MathDocumentCreator")
   vietDocuments       VietDocument[]       @relation("VietDocumentCreator")
   vietSetsCreated     VietSet[]            @relation("VietSetCreator")
   vietItemProgresses  VietItemProgress[]   @relation("VietItemProgressUser")
   vietExercisesCreated VietExercise[]      @relation("VietExerciseCreator")
+  vietProfile         StudentVietProfile?  @relation("StudentVietProfileUser")
   vietAttempts        VietAttempt[]        @relation("VietAttemptUser")
   vietStats           VietUserStats?       @relation("VietUserStatsUser")
   mediaUploads        Media[]              @relation("MediaUploader")
@@ -650,6 +652,9 @@ enum MathSubject {
   STATISTICS
   NUMBER_THEORY
   COMBINATORICS
+  MEASUREMENT
+  WORD_PROBLEM
+  LOGIC
 }
 
 enum MathExerciseType {
@@ -686,6 +691,8 @@ model MathTopic {
   title       String
   description String?
   subject     MathSubject    @default(ARITHMETIC)
+  lessonType  String?
+  textbook    String?
   grade       Int            @default(1)
   level       String         @default("beginner")
   coverUrl    String?
@@ -815,6 +822,41 @@ model MathUserStats {
   @@index([xp])
 }
 
+// Student Profile Engine — personalized learning per toan.md
+model StudentMathProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  weakTopics   String[]
+  strongTopics String[]
+  avgScore     Float    @default(0)
+  totalAttempts Int     @default(0)
+  lastTopicType String?
+  user         User     @relation("StudentMathProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Analytics Engine — tracks pipeline quality per toan.md
+model MathImportLog {
+  id                 String   @id @default(uuid())
+  documentId         String?
+  totalLessons       Int      @default(0)
+  validLessons       Int      @default(0)
+  hallucinationCount Int      @default(0)
+  duplicateCount     Int      @default(0)
+  repairCount        Int      @default(0)
+  retryTotal         Int      @default(0)
+  avgQualityScore    Float    @default(0)
+  textbook           String?
+  grade              Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
 // ─── TIẾNG VIỆT MODULE ────────────────────────────────────────────────────────
 
 enum VietCategory {
@@ -863,7 +905,9 @@ model VietSet {
   title       String
   description String?
   category    VietCategory  @default(TU_VUNG)
-  grade       Int           @default(1)      // Lớp 1-12
+  lessonType  String?
+  textbook    String?
+  grade       Int           @default(1)
   level       String        @default("co_ban")
   coverUrl    String?
   videoUrl    String?
@@ -988,6 +1032,41 @@ model VietUserStats {
   user          User      @relation("VietUserStatsUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([xp])
+}
+
+// Student Profile Engine — per tiengviet.md
+model StudentVietProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  weakTopics    String[]
+  strongTopics  String[]
+  avgScore      Float    @default(0)
+  totalAttempts Int      @default(0)
+  lastTopicType String?
+  user          User     @relation("StudentVietProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Analytics Engine — per tiengviet.md
+model VietImportLog {
+  id                 String   @id @default(uuid())
+  documentId         String?
+  totalLessons       Int      @default(0)
+  validLessons       Int      @default(0)
+  hallucinationCount Int      @default(0)
+  duplicateCount     Int      @default(0)
+  repairCount        Int      @default(0)
+  retryTotal         Int      @default(0)
+  avgQualityScore    Float    @default(0)
+  textbook           String?
+  grade              Int?
+  createdBy          String
+  createdAt          DateTime @default(now())
+
+  @@index([createdBy])
+  @@index([createdAt])
 }
 
 // ─── MODULE LINKS ─────────────────────────────────────────────────────────────

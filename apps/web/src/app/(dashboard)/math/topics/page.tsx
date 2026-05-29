@@ -4,13 +4,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { BookOpen, PlayCircle, ChevronLeft, Search, SlidersHorizontal } from 'lucide-react';
-import { SUBJECT_LABEL, SUBJECT_COLOR, SUBJECT_OPTIONS } from '@/constants/math';
+import { SUBJECT_LABEL, SUBJECT_COLOR, SUBJECT_OPTIONS, LESSON_TYPE_OPTIONS, LESSON_TYPE_LABEL, LESSON_TYPE_COLOR, TEXTBOOK_OPTIONS } from '@/constants/math';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface MathTopic {
-  id: string; title: string; subject: string; grade: number; level: string;
-  description?: string;
+  id: string; title: string; subject: string; lessonType?: string; textbook?: string;
+  grade: number; level: string; description?: string;
   _count: { concepts: number; exercises: number };
   creator: { name: string };
 }
@@ -24,6 +24,8 @@ function TopicsContent() {
 
   const subject = searchParams.get('subject') || '';
   const grade = searchParams.get('grade') || '';
+  const lessonType = searchParams.get('lessonType') || '';
+  const textbook = searchParams.get('textbook') || '';
 
   const setFilter = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -39,7 +41,7 @@ function TopicsContent() {
     api.get<MathTopic[]>(`/math/topics?${params.toString()}`)
       .then(setTopics)
       .finally(() => setLoading(false));
-  }, [subject, grade]);
+  }, [subject, grade, lessonType, textbook]);
 
   const filtered = search
     ? topics.filter(t => t.title.toLowerCase().includes(search.toLowerCase()))
@@ -83,17 +85,43 @@ function TopicsContent() {
 
         {/* Grade filter */}
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilter('grade', '')}
+          <button onClick={() => setFilter('grade', '')}
             className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
               !grade ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             )}>Tất cả lớp</button>
-          {Array.from({ length: 12 }, (_, i) => i + 1).map(g => (
-            <button key={g}
-              onClick={() => setFilter('grade', String(g) === grade ? '' : String(g))}
+          {Array.from({ length: 9 }, (_, i) => i + 1).map(g => (
+            <button key={g} onClick={() => setFilter('grade', String(g) === grade ? '' : String(g))}
               className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
                 String(g) === grade ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               )}>Lớp {g}</button>
+          ))}
+        </div>
+
+        {/* Lesson type filter */}
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setFilter('lessonType', '')}
+            className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
+              !lessonType ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}>Tất cả loại</button>
+          {LESSON_TYPE_OPTIONS.map(l => (
+            <button key={l.value} onClick={() => setFilter('lessonType', l.value === lessonType ? '' : l.value)}
+              className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
+                lessonType === l.value ? 'bg-blue-600 text-white' : cn('hover:opacity-80', LESSON_TYPE_COLOR[l.value] || 'bg-gray-100')
+              )}>{l.label}</button>
+          ))}
+        </div>
+
+        {/* Textbook filter */}
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setFilter('textbook', '')}
+            className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
+              !textbook ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}>Tất cả sách</button>
+          {TEXTBOOK_OPTIONS.map(tb => (
+            <button key={tb.value} onClick={() => setFilter('textbook', tb.value === textbook ? '' : tb.value)}
+              className={cn('px-3 py-1.5 rounded-xl text-sm font-medium transition-colors',
+                textbook === tb.value ? 'bg-blue-600 text-white' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'
+              )}>{tb.label}</button>
           ))}
         </div>
       </div>
@@ -127,12 +155,22 @@ function TopicsContent() {
             <button key={topic.id}
               onClick={() => router.push(`/math/topic/${topic.id}`)}
               className="bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all hover:-translate-y-0.5 group text-left">
-              <div className="flex items-start justify-between mb-3">
-                <span className={cn('text-xs font-semibold px-2 py-1 rounded-lg', SUBJECT_COLOR[topic.subject] || 'bg-gray-100 text-gray-600')}>
-                  {SUBJECT_LABEL[topic.subject] || topic.subject}
-                </span>
-                <span className="text-xs text-muted-foreground">Lớp {topic.grade}</span>
+              <div className="flex items-start justify-between mb-2 gap-1 flex-wrap">
+                <div className="flex flex-wrap gap-1">
+                  <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-lg', SUBJECT_COLOR[topic.subject] || 'bg-gray-100 text-gray-600')}>
+                    {SUBJECT_LABEL[topic.subject] || topic.subject}
+                  </span>
+                  {topic.lessonType && (
+                    <span className={cn('text-xs font-medium px-2 py-0.5 rounded-lg', LESSON_TYPE_COLOR[topic.lessonType] || 'bg-gray-100 text-gray-500')}>
+                      {LESSON_TYPE_LABEL[topic.lessonType] ?? topic.lessonType}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">Lớp {topic.grade}</span>
               </div>
+              {topic.textbook && (
+                <p className="text-xs text-gray-400 mb-1">{topic.textbook}</p>
+              )}
               <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 mb-2">
                 {topic.title}
               </h3>

@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import {
   Plus, Loader2, X, Sparkles,
-  Search, Brain, FileUp, Bot, WifiOff,
+  Search, Brain, FileUp, Bot, WifiOff, BarChart2,
 } from 'lucide-react';
+import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
@@ -144,6 +145,10 @@ export default function InstructorVietPage() {
               className="flex items-center gap-1.5 bg-green-800/40 hover:bg-green-800/60 border border-green-400/40 text-green-100 hover:text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors">
               <FileUp className="h-4 w-4" />Nhập file
             </button>
+            <Link href="/instructor/viet/analytics"
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors">
+              <BarChart2 className="h-4 w-4" />Analytics
+            </Link>
           </div>
         </div>
       </div>

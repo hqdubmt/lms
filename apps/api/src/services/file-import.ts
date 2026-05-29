@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { callAIForJSON, isAnyAIAvailable } from './ai-provider';
+import { processMathDocument, type ProcessOpts } from './math-pipeline';
+import { processVietDocument, type VietProcessOpts } from './viet-pipeline';
 
 function chunkText(text: string, size = 2000): string[] {
   const chunks: string[] = [];
@@ -99,150 +101,27 @@ export async function extractText(buffer: Buffer, mimetype: string, filename: st
 
 export interface MathConceptDraft {
   name: string; definition: string; formula?: string;
-  example?: string; solution?: string; hints: string[];
+  example?: string; solution?: string; steps?: string[]; hints: string[];
 }
 export interface MathCurriculumEntry {
-  title: string; subject: string; grade: number; level: string;
+  title: string; subject: string; lessonType?: string; textbook?: string;
+  grade: number; level: string;
   description?: string; generateExercises: boolean;
   concepts: MathConceptDraft[];
 }
 
+export const DIFFICULTY_MAP: Record<string, number> = {
+  easy: 1, medium: 2, hard: 3, olympic: 5,
+};
+
+// ─── Main entry point — delegates to toan.md ULTIMATE PIPELINE ───────────────
 export async function structureMathWithAI(
   text: string,
-  opts: { grade?: number; subject?: string; generateExercises?: boolean } = {},
+  opts: ProcessOpts = {},
 ): Promise<MathCurriculumEntry[]> {
-  if (env.ANTHROPIC_API_KEY) return structureMathClaude(text, opts);
-  if (await isAnyAIAvailable()) return structureMathWithOllama(text, opts);
+  const { entries } = await processMathDocument(text, opts);
+  if (entries.length > 0) return entries;
   return structureMathRuleBased(text, opts);
-}
-
-async function structureMathClaude(
-  text: string,
-  opts: { grade?: number; subject?: string; generateExercises?: boolean },
-): Promise<MathCurriculumEntry[]> {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const truncated = text.slice(0, 30000);
-  const gradeHint = opts.grade ? ` (lớp ${opts.grade})` : '';
-  const subjectHint = opts.subject ? ` môn ${opts.subject}` : '';
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 6000,
-    messages: [{
-      role: 'user',
-      content: `Phân tích tài liệu giáo trình Toán${subjectHint}${gradeHint} sau. Trích xuất TẤT CẢ chủ đề và khái niệm toán học.
-
-Tài liệu:
-${truncated}
-
-Trả về CHỈ JSON (không giải thích):
-[
-  {
-    "title": "Tên chủ đề toán (VD: Phân số, Hình học phẳng, Phương trình bậc 1)",
-    "subject": "ARITHMETIC",
-    "grade": ${opts.grade ?? 5},
-    "level": "beginner",
-    "description": "Mô tả ngắn 1 câu",
-    "generateExercises": ${opts.generateExercises ?? true},
-    "concepts": [
-      {
-        "name": "Tên khái niệm/định lý (ngắn gọn)",
-        "definition": "Định nghĩa đầy đủ, rõ ràng",
-        "formula": "Công thức (để trống '' nếu không có)",
-        "example": "Ví dụ minh họa cụ thể",
-        "solution": "Các bước thực hiện/chứng minh",
-        "hints": ["Gợi ý 1", "Gợi ý 2"]
-      }
-    ]
-  }
-]
-
-Quy tắc:
-- subject: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS
-- level: beginner|intermediate|advanced
-- Mỗi chủ đề có 3-10 khái niệm, trích xuất càng đầy đủ càng tốt
-- Giữ nguyên ký hiệu toán học, không dịch thuật ngữ kỹ thuật`,
-    }],
-  });
-
-  const raw = (response.content[0] as any).text as string;
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error('AI không trả về JSON hợp lệ');
-  const result = JSON.parse(match[0]) as MathCurriculumEntry[];
-  return result.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true }));
-}
-
-async function structureMathWithOllama(
-  text: string,
-  opts: { grade?: number; subject?: string; generateExercises?: boolean },
-): Promise<MathCurriculumEntry[]> {
-  const grade = opts.grade ?? 5;
-  const subject = opts.subject ?? 'ARITHMETIC';
-  const genEx = opts.generateExercises ?? true;
-
-  const allChunks = chunkText(text, 2000);
-  const allEntries: MathCurriculumEntry[] = [];
-
-  const systemPrompt = `Bạn là giáo viên toán lớp ${grade} có kinh nghiệm. Nhiệm vụ: trích xuất kiến thức toán học từ tài liệu giáo trình.
-Quy tắc bắt buộc:
-- Chỉ trả về JSON array hợp lệ, bắt đầu bằng [ và kết thúc bằng ]
-- Không thêm markdown, không giải thích, không văn bản thừa
-- Giữ nguyên dấu thanh tiếng Việt và ký hiệu toán học
-- Mỗi concepts phải có definition đầy đủ (tối thiểu 30 ký tự)`;
-
-  const buildPrompt = (chunk: string) => `Phân tích đoạn tài liệu toán lớp ${grade} sau và trích xuất TẤT CẢ khái niệm, định lý, công thức có trong đó.
-
-Tài liệu:
-${chunk}
-
-Trả về JSON array (bắt đầu [ kết thúc ], KHÔNG có gì khác):
-[
-  {
-    "title": "Tên chủ đề toán ngắn gọn (VD: Phân số, Diện tích hình chữ nhật)",
-    "subject": "${subject}",
-    "grade": ${grade},
-    "level": "beginner",
-    "description": "Mô tả 1 câu về chủ đề",
-    "generateExercises": ${genEx},
-    "concepts": [
-      {
-        "name": "Tên khái niệm/định lý/quy tắc ngắn gọn",
-        "definition": "Định nghĩa đầy đủ, rõ ràng, dễ hiểu với học sinh",
-        "formula": "Công thức toán học (để '' nếu không có công thức)",
-        "example": "Ví dụ cụ thể với số: VD: 3/4 + 1/4 = 4/4 = 1",
-        "solution": "Các bước thực hiện cụ thể",
-        "hints": ["Gợi ý ngắn gọn 1", "Gợi ý ngắn gọn 2"]
-      }
-    ]
-  }
-]
-
-Lưu ý: subject phải là một trong: ARITHMETIC|ALGEBRA|GEOMETRY|TRIGONOMETRY|CALCULUS|STATISTICS|NUMBER_THEORY|COMBINATORICS
-level phải là: beginner|intermediate|advanced
-Trích xuất 2-8 khái niệm mỗi chủ đề, không bỏ sót nội dung quan trọng.`;
-
-  // Xử lý song song, tối đa 3 batch cùng lúc
-  const CONCURRENCY = 3;
-  for (let i = 0; i < allChunks.length; i += CONCURRENCY) {
-    const batch = allChunks.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((chunk) => callAIForJSON(systemPrompt, buildPrompt(chunk), 4096))
-    );
-    for (const res of results) {
-      if (res.status !== 'fulfilled' || !res.value) continue;
-      try {
-        const match = res.value.match(/\[[\s\S]*\]/);
-        if (!match) continue;
-        const parsed = JSON.parse(match[0]) as MathCurriculumEntry[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          allEntries.push(...parsed.map((e) => ({ ...e, generateExercises: opts.generateExercises ?? e.generateExercises ?? true })));
-        }
-      } catch { /* skip malformed */ }
-    }
-  }
-
-  if (allEntries.length === 0) return structureMathRuleBased(text, opts);
-  return allEntries;
 }
 
 function structureMathRuleBased(
@@ -318,147 +197,14 @@ export interface VietCurriculumEntry {
   generateExercises: boolean; items: VietItemDraft[];
 }
 
+// ─── Main entry — delegates to tiengviet.md ULTIMATE PIPELINE ────────────────
 export async function structureVietWithAI(
   text: string,
-  opts: { grade?: number; category?: string; generateExercises?: boolean } = {},
+  opts: VietProcessOpts = {},
 ): Promise<VietCurriculumEntry[]> {
-  if (env.ANTHROPIC_API_KEY) return structureVietClaude(text, opts);
-  if (await isAnyAIAvailable()) return structureVietWithOllama(text, opts);
+  const { entries } = await processVietDocument(text, opts);
+  if (entries.length > 0) return entries;
   return structureVietRuleBased(text, opts);
-}
-
-async function structureVietClaude(
-  text: string,
-  opts: { grade?: number; category?: string; generateExercises?: boolean },
-): Promise<VietCurriculumEntry[]> {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const truncated = text.slice(0, 30000);
-  const gradeHint = opts.grade ? ` lớp ${opts.grade}` : '';
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 6000,
-    messages: [{
-      role: 'user',
-      content: `Phân tích tài liệu giáo trình Tiếng Việt${gradeHint} sau. Trích xuất từ vựng, thành ngữ, tục ngữ, ca dao, ngữ pháp và nội dung học tập.
-
-Tài liệu:
-${truncated}
-
-Trả về CHỈ JSON (không giải thích):
-[
-  {
-    "title": "Tên bộ (VD: Từ vựng chủ đề gia đình, Thành ngữ về lao động, Ngữ pháp câu đơn)",
-    "category": "TU_VUNG",
-    "grade": ${opts.grade ?? 3},
-    "level": "co_ban",
-    "generateExercises": ${opts.generateExercises ?? true},
-    "items": [
-      {
-        "word": "từ/cụm từ/câu ca dao/thành ngữ",
-        "meaning": "Nghĩa đầy đủ, giải thích rõ ràng",
-        "example": "Câu ví dụ hoàn chỉnh có ý nghĩa",
-        "note": "Ghi chú về nguồn gốc, vùng miền, sắc thái, dị bản..."
-      }
-    ]
-  }
-]
-
-Quy tắc:
-- category: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
-- level: co_ban|trung_cap|nang_cao
-- Nhóm các từ/thành ngữ cùng chủ đề vào một bộ (5-25 mục/bộ)
-- Giữ nguyên chính tả tiếng Việt, dấu thanh đầy đủ
-- Trích xuất TẤT CẢ nội dung, không bỏ sót`,
-    }],
-  });
-
-  const raw = (response.content[0] as any).text as string;
-  const match = raw.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error('AI không trả về JSON hợp lệ');
-  const result = JSON.parse(match[0]) as VietCurriculumEntry[];
-  return result.map((e) => ({
-    ...e,
-    generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
-    items: e.items.map((it, i) => ({ ...it, order: i })),
-  }));
-}
-
-async function structureVietWithOllama(
-  text: string,
-  opts: { grade?: number; category?: string; generateExercises?: boolean },
-): Promise<VietCurriculumEntry[]> {
-  const grade = opts.grade ?? 3;
-  const category = opts.category ?? 'TU_VUNG';
-  const genEx = opts.generateExercises ?? true;
-
-  const allChunks = chunkText(text, 2000);
-  const allEntries: VietCurriculumEntry[] = [];
-
-  const systemPrompt = `Bạn là giáo viên Tiếng Việt lớp ${grade} có kinh nghiệm. Nhiệm vụ: trích xuất từ vựng, thành ngữ, ca dao, ngữ pháp từ tài liệu giáo trình.
-Quy tắc bắt buộc:
-- Chỉ trả về JSON array hợp lệ, bắt đầu bằng [ và kết thúc bằng ]
-- Không thêm markdown, không giải thích, không văn bản thừa
-- Giữ nguyên dấu thanh tiếng Việt đầy đủ (à, á, ả, ã, ạ, ă, â...)
-- meaning phải giải thích đầy đủ ý nghĩa (tối thiểu 20 ký tự)`;
-
-  const buildPrompt = (chunk: string) => `Phân tích đoạn tài liệu Tiếng Việt lớp ${grade} sau và trích xuất TẤT CẢ từ vựng, thành ngữ, tục ngữ, ca dao, cụm từ, quy tắc ngữ pháp có trong đó.
-
-Tài liệu:
-${chunk}
-
-Trả về JSON array (bắt đầu [ kết thúc ], KHÔNG có gì khác):
-[
-  {
-    "title": "Tên bộ học ngắn gọn (VD: Từ vựng chủ đề gia đình, Tục ngữ về lao động, Ngữ pháp câu ghép)",
-    "category": "${category}",
-    "grade": ${grade},
-    "level": "co_ban",
-    "generateExercises": ${genEx},
-    "items": [
-      {
-        "word": "Từ/cụm từ/câu thành ngữ/tục ngữ/ca dao NGUYÊN VĂN",
-        "meaning": "Giải thích nghĩa đầy đủ, rõ ràng cho học sinh lớp ${grade}",
-        "example": "Câu ví dụ hoàn chỉnh dùng từ này trong ngữ cảnh thực tế",
-        "note": "Ghi chú nguồn gốc, vùng miền, sắc thái, cách dùng (để trống nếu không có)",
-        "order": 0
-      }
-    ]
-  }
-]
-
-Lưu ý:
-- category phải là một trong: CHINH_TA|TU_VUNG|NGU_PHAP|THANH_NGU|TUC_NGU|VAN_HOC|TAP_DOC|CA_DAO
-- level phải là: co_ban|trung_cap|nang_cao
-- Nhóm các mục cùng chủ đề vào một bộ (5-20 mục/bộ)
-- Không bỏ sót từ/thành ngữ/ca dao nào trong tài liệu`;
-
-  // Xử lý song song, tối đa 3 batch cùng lúc
-  const CONCURRENCY = 3;
-  for (let i = 0; i < allChunks.length; i += CONCURRENCY) {
-    const batch = allChunks.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((chunk) => callAIForJSON(systemPrompt, buildPrompt(chunk), 4096))
-    );
-    for (const res of results) {
-      if (res.status !== 'fulfilled' || !res.value) continue;
-      try {
-        const match = res.value.match(/\[[\s\S]*\]/);
-        if (!match) continue;
-        const parsed = JSON.parse(match[0]) as VietCurriculumEntry[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          allEntries.push(...parsed.map((e) => ({
-            ...e,
-            generateExercises: opts.generateExercises ?? e.generateExercises ?? true,
-            items: e.items.map((it, idx) => ({ ...it, order: it.order ?? idx })),
-          })));
-        }
-      } catch { /* skip malformed */ }
-    }
-  }
-
-  if (allEntries.length === 0) return structureVietRuleBased(text, opts);
-  return allEntries;
 }
 
 function structureVietRuleBased(
@@ -524,26 +270,27 @@ export async function generateMathQuestionsWithAI(
     PROOF_STEP: 'tự luận (options để [], answer là lời giải đầy đủ từng bước)',
   };
 
-  const systemPrompt = 'Bạn là giáo viên toán. Chỉ trả về JSON hợp lệ. Không markdown. Không giải thích.';
-  const userPrompt = `Bạn là giáo viên toán.
-Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ các khái niệm sau:
+  const systemPrompt = 'Bạn là hệ thống AI giáo dục Toán tiểu học và THCS Việt Nam. Chỉ output JSON hợp lệ. Không markdown. Không giải thích. Không bịa đặt đáp án sai.';
+  const userPrompt = `Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ các khái niệm Toán sau.
 
+KHÁI NIỆM:
 ${conceptList}
 
-Chỉ trả về JSON array (không có gì khác):
+Output CHỈ JSON array:
 [
   {
     "content": "Nội dung câu hỏi rõ ràng",
     "options": [],
     "answer": "Đáp án đúng",
-    "solution": "Giải thích/lời giải chi tiết",
+    "solution": "Lời giải chi tiết từng bước",
     "hints": ["Gợi ý ngắn"],
-    "difficulty": 1,
+    "difficulty": "easy",
     "points": 1
   }
 ]
 
-Đáp án (answer) phải chính xác và có trong options nếu là trắc nghiệm.`;
+difficulty: easy|medium|hard|olympic
+Đảm bảo: answer chính xác, có trong options nếu trắc nghiệm, lời giải đầy đủ bước.`;
 
   const raw = await callAIForJSON(systemPrompt, userPrompt, 2048);
   if (!raw) return null;
@@ -560,7 +307,9 @@ Chỉ trả về JSON array (không có gì khác):
       answer: q.answer ?? '',
       solution: q.solution ?? undefined,
       hints: Array.isArray(q.hints) ? q.hints : [],
-      difficulty: typeof q.difficulty === 'number' ? Math.min(5, Math.max(1, q.difficulty)) : 1,
+      difficulty: typeof q.difficulty === 'string'
+        ? (DIFFICULTY_MAP[q.difficulty.toLowerCase()] ?? 1)
+        : typeof q.difficulty === 'number' ? Math.min(5, Math.max(1, q.difficulty)) : 1,
       points: typeof q.points === 'number' ? q.points : 1,
       order: i,
     }));

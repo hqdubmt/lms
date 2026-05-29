@@ -2,7 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
-import { extractText, structureMathWithAI, generateMathQuestionsWithAI } from '../../services/file-import';
+import { extractText, generateMathQuestionsWithAI } from '../../services/file-import';
+import {
+  detectCurriculum, mathClean, unicodeNormalize,
+  processMathDocument, generateQuestionVariations,
+  computeProfileUpdate, scoreLesson, lessonToEntry,
+  type ProcessOpts,
+} from '../../services/math-pipeline';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
@@ -106,7 +112,7 @@ function buildMathQuestions(concepts: Concept[], type: string, count: number): a
   });
 }
 
-const SUBJECT_ENUM = ['ARITHMETIC', 'ALGEBRA', 'GEOMETRY', 'TRIGONOMETRY', 'CALCULUS', 'STATISTICS', 'NUMBER_THEORY', 'COMBINATORICS'] as const;
+const SUBJECT_ENUM = ['ARITHMETIC', 'ALGEBRA', 'GEOMETRY', 'TRIGONOMETRY', 'CALCULUS', 'STATISTICS', 'NUMBER_THEORY', 'COMBINATORICS', 'MEASUREMENT', 'WORD_PROBLEM', 'LOGIC'] as const;
 const EXERCISE_TYPE_ENUM = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'CALCULATION', 'PROOF_STEP'] as const;
 const TYPE_IMPORT_LABEL: Record<string, string> = {
   MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền số',
@@ -163,7 +169,9 @@ export async function mathRoutes(app: FastifyInstance) {
       title: z.string().min(2).max(200),
       description: z.string().optional(),
       subject: z.enum(SUBJECT_ENUM).default('ARITHMETIC'),
-      grade: z.number().min(1).max(12).default(1),
+      lessonType: z.string().optional(),
+      textbook: z.string().optional(),
+      grade: z.number().min(1).max(9).default(1),
       level: z.string().default('beginner'),
       coverUrl: z.string().optional(),
       isPublic: z.boolean().default(true),
@@ -182,7 +190,9 @@ export async function mathRoutes(app: FastifyInstance) {
       title: z.string().min(2).max(200).optional(),
       description: z.string().nullable().optional(),
       subject: z.enum(SUBJECT_ENUM).optional(),
-      grade: z.number().min(1).max(12).optional(),
+      lessonType: z.string().nullable().optional(),
+      textbook: z.string().nullable().optional(),
+      grade: z.number().min(1).max(9).optional(),
       level: z.string().optional(),
       coverUrl: z.string().nullable().optional(),
       isPublic: z.boolean().optional(),
@@ -631,7 +641,9 @@ export async function mathRoutes(app: FastifyInstance) {
       title: z.string().min(2),
       description: z.string().optional(),
       subject: z.enum(SUBJECT_ENUM).default('ARITHMETIC'),
-      grade: z.number().min(1).max(12).default(1),
+      lessonType: z.string().optional(),
+      textbook: z.string().optional(),
+      grade: z.number().min(1).max(9).default(1),
       level: z.string().default('beginner'),
       isPublic: z.boolean().default(true),
       courseId: z.string().optional(),
@@ -642,6 +654,7 @@ export async function mathRoutes(app: FastifyInstance) {
         formula: z.string().optional(),
         example: z.string().optional(),
         solution: z.string().optional(),
+        steps: z.array(z.string()).optional(),
         hints: z.array(z.string()).default([]),
       })).default([]),
     });
@@ -695,7 +708,10 @@ export async function mathRoutes(app: FastifyInstance) {
     try { text = await extractText(buffer, data.mimetype, data.filename); }
     catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
     if (!text?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
-    return reply.send({ text: text.trim(), filename: data.filename });
+    // Auto-detect curriculum on preview so UI can pre-fill grade/textbook
+    const normalized = unicodeNormalize(mathClean(text));
+    const curriculum = detectCurriculum(normalized);
+    return reply.send({ text: normalized.trim(), filename: data.filename, curriculum });
   });
 
   // ─── Smart Import (PDF / DOCX / XLSX / PPTX → AI structured) ─────────────
@@ -705,11 +721,6 @@ export async function mathRoutes(app: FastifyInstance) {
     if (!data) throw { statusCode: 400, message: 'Không có file' };
 
     const q = req.query as { grade?: string; subject?: string; generateExercises?: string };
-    const opts = {
-      grade: q.grade ? parseInt(q.grade) : undefined,
-      subject: q.subject,
-      generateExercises: q.generateExercises !== 'false',
-    };
 
     const buffer = await data.toBuffer();
     let rawText: string;
@@ -721,46 +732,57 @@ export async function mathRoutes(app: FastifyInstance) {
 
     if (!rawText?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
 
-    let curriculum: ReturnType<typeof structureMathWithAI> extends Promise<infer T> ? T : never;
+    // Curriculum Detector + full pipeline
+    const normalizedText = unicodeNormalize(mathClean(rawText));
+    const detectedCurriculum = detectCurriculum(normalizedText);
+    const pipelineOpts: ProcessOpts = {
+      grade: q.grade ? parseInt(q.grade) : (detectedCurriculum.grade ?? undefined),
+      subject: q.subject || detectedCurriculum.subject || undefined,
+      generateExercises: q.generateExercises !== 'false',
+      userId: sub,
+    };
+
+    let pipelineResult: Awaited<ReturnType<typeof processMathDocument>>;
     try {
-      curriculum = await structureMathWithAI(rawText, opts);
+      pipelineResult = await processMathDocument(rawText, pipelineOpts);
     } catch (e: any) {
-      throw { statusCode: 500, message: `AI phân tích thất bại: ${e.message}` };
+      throw { statusCode: 500, message: `Pipeline thất bại: ${e.message}` };
     }
 
     const results: any[] = [];
     const errors: any[] = [];
 
-    for (const entry of curriculum) {
+    for (const entry of pipelineResult.entries) {
       try {
-        const { concepts, generateExercises, ...topicData } = entry;
+        const { concepts, generateExercises, lessonType, textbook, ...topicData } = entry;
         const validConcepts = (concepts ?? []).filter((c) => c.name && c.definition);
         const topic = await prisma.mathTopic.create({
           data: {
             title: topicData.title,
             subject: (topicData.subject as any) ?? 'ARITHMETIC',
-            grade: topicData.grade ?? opts.grade ?? 5,
+            lessonType: lessonType ?? null,
+            textbook: textbook ?? null,
+            grade: topicData.grade ?? pipelineOpts.grade ?? 5,
             level: topicData.level ?? 'beginner',
             description: topicData.description,
-            isPublic: true,
-            createdBy: sub,
-            concepts: { create: validConcepts.map((c, i) => ({ ...c, order: i, hints: c.hints ?? [] })) },
+            isPublic: true, createdBy: sub,
+            concepts: { create: validConcepts.map((c, i) => {
+              const { steps, ...rest } = c as any;
+              return { ...rest, order: i, hints: c.hints ?? [] };
+            }) },
           },
           include: { concepts: true, _count: { select: { concepts: true } } },
         });
-
         let exercisesGenerated = 0;
         if (generateExercises && topic.concepts.length >= 2) {
-          const genTypes = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const;
-          for (const type of genTypes) {
+          for (const type of ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const) {
             const questions = buildMathQuestions(topic.concepts, type, 10);
             if (!('error' in (questions as any))) {
               await prisma.mathExercise.create({
                 data: {
                   title: `${topic.title} — ${TYPE_IMPORT_LABEL[type]}`,
                   type: type as any, subject: topic.subject, grade: topic.grade,
-                  level: topic.level, isPublic: true,
-                  topicId: topic.id, createdBy: sub,
+                  level: topic.level, isPublic: true, topicId: topic.id, createdBy: sub,
                   questions: { create: questions as any },
                 },
               });
@@ -774,7 +796,27 @@ export async function mathRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.status(201).send({ imported: results.length, errors, results });
+    // Analytics Engine — persist import log
+    await (prisma as any).mathImportLog.create({
+      data: {
+        totalLessons: pipelineResult.analytics.totalLessons,
+        validLessons: pipelineResult.analytics.validLessons,
+        hallucinationCount: pipelineResult.analytics.hallucinationCount,
+        duplicateCount: pipelineResult.analytics.duplicateCount,
+        repairCount: pipelineResult.analytics.repairCount,
+        retryTotal: pipelineResult.analytics.retryTotal,
+        avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        textbook: pipelineResult.curriculum.textbook,
+        grade: pipelineResult.curriculum.grade,
+        createdBy: sub,
+      },
+    });
+
+    return reply.status(201).send({
+      imported: results.length, errors, results,
+      curriculum: pipelineResult.curriculum,
+      analytics: pipelineResult.analytics,
+    });
   });
 
   // ─── DOCUMENT LIBRARY (upload, view, on-demand AI) ───────────────────────
@@ -876,55 +918,58 @@ export async function mathRoutes(app: FastifyInstance) {
     if (!doc.extractedText?.trim()) throw { statusCode: 400, message: 'Tài liệu không có nội dung văn bản để phân tích' };
 
     const q = req.query as { grade?: string; subject?: string; generateExercises?: string };
-    const opts = {
-      grade: q.grade ? parseInt(q.grade) : undefined,
-      subject: q.subject || doc.subject || undefined,
+    const normalizedText = unicodeNormalize(mathClean(doc.extractedText));
+    const detected = detectCurriculum(normalizedText);
+    const pipelineOpts: ProcessOpts = {
+      grade: q.grade ? parseInt(q.grade) : (detected.grade ?? undefined),
+      subject: q.subject || doc.subject || detected.subject || undefined,
       generateExercises: q.generateExercises !== 'false',
+      userId: sub,
     };
 
     await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'analyzing', updatedAt: new Date() } });
 
-    let curriculum: any[];
+    let pipelineResult: Awaited<ReturnType<typeof processMathDocument>>;
     try {
-      curriculum = await structureMathWithAI(doc.extractedText, opts);
+      pipelineResult = await processMathDocument(doc.extractedText, pipelineOpts);
     } catch (e: any) {
       await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'error', errorMsg: e.message, updatedAt: new Date() } });
-      throw { statusCode: 500, message: `AI phân tích thất bại: ${e.message}` };
+      throw { statusCode: 500, message: `Pipeline thất bại: ${e.message}` };
     }
 
     const results: any[] = [];
     const errors: any[] = [];
 
-    for (const entry of curriculum) {
+    for (const entry of pipelineResult.entries) {
       try {
-        const { concepts, generateExercises, ...topicData } = entry;
+        const { concepts, generateExercises, lessonType, textbook, ...topicData } = entry;
         const validConcepts = (concepts ?? []).filter((c: any) => c.name && c.definition);
         const topic = await prisma.mathTopic.create({
           data: {
             title: topicData.title,
             subject: (topicData.subject as any) ?? 'ARITHMETIC',
-            grade: topicData.grade ?? opts.grade ?? 5,
+            lessonType: lessonType ?? null, textbook: textbook ?? null,
+            grade: topicData.grade ?? pipelineOpts.grade ?? 5,
             level: topicData.level ?? 'beginner',
             description: topicData.description,
-            isPublic: true,
-            createdBy: sub,
-            concepts: { create: validConcepts.map((c: any, i: number) => ({ ...c, order: i, hints: c.hints ?? [] })) },
+            isPublic: true, createdBy: sub,
+            concepts: { create: validConcepts.map((c: any, i: number) => {
+              const { steps, ...rest } = c;
+              return { ...rest, order: i, hints: c.hints ?? [] };
+            }) },
           },
           include: { concepts: true, _count: { select: { concepts: true } } },
         });
-
         let exercisesGenerated = 0;
         if (generateExercises && topic.concepts.length >= 2) {
-          const genTypes = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const;
-          for (const type of genTypes) {
+          for (const type of ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const) {
             const questions = buildMathQuestions(topic.concepts, type, 10);
             if (!('error' in (questions as any))) {
               await prisma.mathExercise.create({
                 data: {
                   title: `${topic.title} — ${TYPE_IMPORT_LABEL[type]}`,
                   type: type as any, subject: topic.subject, grade: topic.grade,
-                  level: topic.level, isPublic: true,
-                  topicId: topic.id, createdBy: sub,
+                  level: topic.level, isPublic: true, topicId: topic.id, createdBy: sub,
                   questions: { create: questions as any },
                 },
               });
@@ -938,8 +983,29 @@ export async function mathRoutes(app: FastifyInstance) {
       }
     }
 
+    // Analytics Engine
+    await (prisma as any).mathImportLog.create({
+      data: {
+        documentId: id,
+        totalLessons: pipelineResult.analytics.totalLessons,
+        validLessons: pipelineResult.analytics.validLessons,
+        hallucinationCount: pipelineResult.analytics.hallucinationCount,
+        duplicateCount: pipelineResult.analytics.duplicateCount,
+        repairCount: pipelineResult.analytics.repairCount,
+        retryTotal: pipelineResult.analytics.retryTotal,
+        avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        textbook: pipelineResult.curriculum.textbook,
+        grade: pipelineResult.curriculum.grade,
+        createdBy: sub,
+      },
+    });
+
     await (prisma as any).mathDocument.update({ where: { id }, data: { status: 'analyzed', updatedAt: new Date() } });
-    return reply.status(201).send({ imported: results.length, errors, results });
+    return reply.status(201).send({
+      imported: results.length, errors, results,
+      curriculum: pipelineResult.curriculum,
+      analytics: pipelineResult.analytics,
+    });
   });
 
   // Delete document
@@ -952,5 +1018,90 @@ export async function mathRoutes(app: FastifyInstance) {
     try { await deleteObject(doc.bucket, doc.storedKey); } catch { /* minio may not have it */ }
     await (prisma as any).mathDocument.delete({ where: { id } });
     return reply.send({ ok: true });
+  });
+
+  // ─── ANALYTICS ENGINE ────────────────────────────────────────────────────
+
+  app.get('/analytics', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const logs = await (prisma as any).mathImportLog.findMany({
+      where: role === 'ADMIN' ? {} : { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    const total = logs.length;
+    if (total === 0) return reply.send({ total: 0, logs: [] });
+
+    const avgQuality = logs.reduce((s: number, l: any) => s + l.avgQualityScore, 0) / total;
+    const hallucinationRate = logs.reduce((s: number, l: any) => s + l.hallucinationCount, 0) /
+      Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+    const duplicateRate = logs.reduce((s: number, l: any) => s + l.duplicateCount, 0) /
+      Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+
+    return reply.send({
+      total,
+      avgQualityScore: Math.round(avgQuality * 10) / 10,
+      hallucinationRate: Math.round(hallucinationRate * 1000) / 10,
+      duplicateRate: Math.round(duplicateRate * 1000) / 10,
+      logs,
+    });
+  });
+
+  // ─── STUDENT PROFILE ENGINE ──────────────────────────────────────────────
+
+  app.get('/student-profile', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const profile = await (prisma as any).studentMathProfile.findUnique({ where: { userId: sub } });
+    return reply.send(profile ?? { userId: sub, weakTopics: [], strongTopics: [], avgScore: 0, totalAttempts: 0 });
+  });
+
+  // ─── SYNTHETIC DATA ENGINE ───────────────────────────────────────────────
+
+  app.post('/topics/:id/generate-variations', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id: topicId } = req.params as { id: string };
+    const { count } = z.object({ count: z.number().min(1).max(10).default(3) }).parse(req.body);
+
+    const topic = await prisma.mathTopic.findUniqueOrThrow({
+      where: { id: topicId },
+      include: { concepts: { take: 5 } },
+    });
+
+    // Build a ToanLesson-like object from DB topic for variation generation
+    const lessonForVariation = {
+      subject: 'Toán', grade: topic.grade,
+      lesson_type: topic.lessonType ?? 'arithmetic',
+      topic: topic.title,
+      textbook: topic.textbook,
+      knowledge: topic.concepts.map((c) => ({
+        name: c.name, definition: c.definition,
+        formula: c.formula ?? '', example: c.example ?? '',
+        steps: [], hints: c.hints ?? [],
+      })),
+      questions: [],
+    } as any;
+
+    const variations = await generateQuestionVariations(lessonForVariation, count);
+    return reply.send({ topicId, count: variations.length, questions: variations });
+  });
+
+  // ─── Update Student Profile on attempt ───────────────────────────────────
+  // (Hooks into existing attempt scoring)
+  app.post('/profile/update', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { lessonType, score } = z.object({
+      lessonType: z.string(),
+      score: z.number().min(0).max(100),
+    }).parse(req.body);
+
+    const current = await (prisma as any).studentMathProfile.findUnique({ where: { userId: sub } }) ??
+      { weakTopics: [], strongTopics: [], avgScore: 0, totalAttempts: 0 };
+
+    const update = computeProfileUpdate(current, lessonType, score);
+    const profile = await (prisma as any).studentMathProfile.upsert({
+      where: { userId: sub },
+      create: { userId: sub, ...update },
+      update,
+    });
+    return reply.send(profile);
   });
 }

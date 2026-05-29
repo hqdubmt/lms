@@ -14,6 +14,8 @@ export interface MathTopic {
   title: string;
   description?: string;
   subject: string;
+  lessonType?: string;
+  textbook?: string;
   grade: number;
   level: string;
   isPublic: boolean;
@@ -41,6 +43,8 @@ export interface MathExercise {
   description?: string;
   type: string;
   subject: string;
+  lessonType?: string;
+  textbook?: string;
   grade: number;
   level?: string;
   timeLimit?: number;
@@ -48,4 +52,27 @@ export interface MathExercise {
   questions: MathQuestion[];
   _count?: { questions: number; attempts: number };
   creator: { name: string };
+}
+
+export interface MathImportAnalytics {
+  totalLessons: number;
+  validLessons: number;
+  hallucinationCount: number;
+  duplicateCount: number;
+  repairCount: number;
+  retryTotal: number;
+  avgQualityScore: number;
+  avgParserScore: number;
+  droppedByQualityGate: number;
+  textbook: string | null;
+  grade: number | null;
+}
+
+export interface StudentMathProfile {
+  userId: string;
+  weakTopics: string[];
+  strongTopics: string[];
+  avgScore: number;
+  totalAttempts: number;
+  lastTopicType?: string;
 }

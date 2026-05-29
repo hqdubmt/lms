@@ -13,6 +13,8 @@ export interface VietSet {
   title: string;
   description?: string;
   category: string;
+  lessonType?: string;
+  textbook?: string;
   grade: number;
   level: string;
   isPublic: boolean;
@@ -37,6 +39,7 @@ export interface VietExercise {
   description?: string;
   type: string;
   category: string;
+  lessonType?: string;
   grade: number;
   level?: string;
   passage?: string;
@@ -45,4 +48,27 @@ export interface VietExercise {
   questions: VietQuestion[];
   _count?: { questions: number; attempts: number };
   creator: { name: string };
+}
+
+export interface VietImportAnalytics {
+  totalLessons: number;
+  validLessons: number;
+  hallucinationCount: number;
+  duplicateCount: number;
+  repairCount: number;
+  retryTotal: number;
+  avgQualityScore: number;
+  avgParserScore: number;
+  droppedByQualityGate: number;
+  textbook: string | null;
+  grade: number | null;
+}
+
+export interface StudentVietProfile {
+  userId: string;
+  weakTopics: string[];
+  strongTopics: string[];
+  avgScore: number;
+  totalAttempts: number;
+  lastTopicType?: string;
 }

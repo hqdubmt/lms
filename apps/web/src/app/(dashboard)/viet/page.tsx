@@ -156,6 +156,7 @@ export default function VietPage() {
           { href: '/viet/sets', icon: BookMarked, label: 'Bộ bài học', desc: `${sets.length} bộ`, color: 'bg-rose-600' },
           { href: '/viet/exercises', icon: Target, label: 'Bài tập', desc: `${exercises.length} bài`, color: 'bg-orange-600' },
           { href: '/viet/leaderboard', icon: Trophy, label: 'Bảng xếp hạng', desc: 'Top học viên', color: 'bg-amber-600' },
+          { href: '/viet/profile', icon: TrendingUp, label: 'Hồ sơ học tập', desc: 'Điểm mạnh / yếu', color: 'bg-emerald-600' },
         ].map((a) => (
           <Link key={a.href} href={a.href}
             className="relative bg-white rounded-2xl border border-gray-100 p-4 flex flex-col gap-2 hover:shadow-md transition-all hover:-translate-y-0.5 group">

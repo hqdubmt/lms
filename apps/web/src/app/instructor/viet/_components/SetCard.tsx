@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Loader2, Sparkles, Edit3, Trash2, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VietSet } from '@/types/viet';
-import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/constants/viet';
+import { CATEGORY_COLOR, CATEGORY_LABEL, LESSON_TYPE_COLOR, LESSON_TYPE_LABEL } from '@/constants/viet';
 
 interface Props {
   set: VietSet;
@@ -22,9 +22,17 @@ export function SetCard({ set, busy, genBusy, quizBusy, onDelete, onGenerateAll,
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-lg', CATEGORY_COLOR[set.category] || 'bg-gray-100 text-gray-600')}>
-            {CATEGORY_LABEL[set.category]}
+            {CATEGORY_LABEL[set.category] ?? set.category}
           </span>
+          {set.lessonType && (
+            <span className={cn('text-xs font-medium px-2 py-0.5 rounded-lg', LESSON_TYPE_COLOR[set.lessonType] || 'bg-gray-100 text-gray-500')}>
+              {LESSON_TYPE_LABEL[set.lessonType] ?? set.lessonType}
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">Lớp {set.grade}</span>
+          {set.textbook && (
+            <span className="text-xs text-gray-500 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded-md">{set.textbook}</span>
+          )}
           {!set.isPublic && <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-md">Riêng tư</span>}
         </div>
         <p className="font-semibold text-gray-900 text-sm truncate">{set.title}</p>

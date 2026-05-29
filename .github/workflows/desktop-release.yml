@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g. 1.1.0)'
+        description: 'Version (e.g. 1.2.0)'
         required: true
-        default: '1.1.0'
+        default: '1.2.0'
 
 jobs:
   # ─── DESKTOP: WINDOWS ───────────────────────────────────────────
@@ -194,13 +194,14 @@ jobs:
           tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
           name: MasterLMS ${{ github.ref_name || format('v{0}', inputs.version) }}
           body: |
-            ## Tính năng mới
+            ## Tính năng mới (v1.2.0)
 
-            - **AI đa nhà cung cấp**: Groq (llama-3.3-70b) → Gemini Flash 2.0 → Ollama — tự động fallback
-            - **AI phân tích tài liệu**: chunk 2000 ký tự, xử lý song song, max tokens 4096
-            - **Tray menu**: Hiển thị trạng thái AI real-time khi click chuột phải
-            - **Mobile Android**: Bản APK chính thức v1.1.0
-            - **Bài tập Tiếng Việt**: Sửa lỗi chấm điểm sắp xếp câu, giao diện rõ ràng hơn
+            - **Hồ sơ học tập**: Phân tích điểm mạnh / điểm yếu từng học sinh cho Toán và Tiếng Việt
+            - **Analytics giảng viên**: Báo cáo tổng quan lớp học cho môn Toán và Tiếng Việt
+            - **Pipeline AI Toán**: Xử lý tiểu học & THCS — parser, validator, sinh bài tập chất lượng cao
+            - **Pipeline AI Tiếng Việt**: Đọc hiểu, chính tả, tập làm văn — chống hallucination, chống duplicate
+            - **Loại bài học Toán mở rộng**: Thêm nhiều dạng bài mới (số học, hình học, đại số…)
+            - **Cải thiện import**: Tối ưu phân tích file tài liệu cho cả Toán và Tiếng Việt
 
             ## 📥 Tải MasterLMS
 

@@ -173,6 +173,7 @@ export default function MathPage() {
           { href: '/math/topics', icon: BookOpen, label: 'Chủ đề', desc: `${topics.length} chủ đề`, color: 'bg-indigo-600' },
           { href: '/math/exercises', icon: Target, label: 'Bài tập', desc: `${exercises.length} bài tập`, color: 'bg-violet-600' },
           { href: '/math/leaderboard', icon: Trophy, label: 'Bảng xếp hạng', desc: 'Top học viên', color: 'bg-amber-600' },
+          { href: '/math/profile', icon: TrendingUp, label: 'Hồ sơ học tập', desc: 'Điểm mạnh / yếu', color: 'bg-emerald-600' },
         ].map((a) => (
           <Link key={a.href} href={a.href}
             className="relative bg-white rounded-2xl border border-gray-100 p-4 flex flex-col gap-2 hover:shadow-md transition-all hover:-translate-y-0.5 group">

@@ -212,19 +212,22 @@ async function callOllamaForJSON(
   maxTokens = 4096,
 ): Promise<string | null> {
   try {
+    // Use light model for JSON generation — much faster (1.5b vs 7b)
+    const jsonModel = OLLAMA_LIGHT;
+    const cappedTokens = Math.min(maxTokens, 2048); // cap at 2048 for speed
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: OLLAMA_MODEL,
+        model: jsonModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         stream: false,
-        options: { temperature: 0.1, num_predict: maxTokens },
+        options: { temperature: 0.1, num_predict: cappedTokens, num_ctx: 4096 },
       }),
-      signal: AbortSignal.timeout(240_000),
+      signal: AbortSignal.timeout(120_000), // 2min max per call
     });
     if (!res.ok) return null;
     const data = await res.json() as { message?: { content: string } };
