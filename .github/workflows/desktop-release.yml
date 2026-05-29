@@ -107,12 +107,20 @@ jobs:
         working-directory: apps/mobile/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | tail -50
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee /tmp/gradle.log
+          tail -80 /tmp/gradle.log
 
       - name: Rename APK
         run: |
+          APK_SRC=apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if [ ! -f "$APK_SRC" ]; then
+            echo "APK not found at $APK_SRC — build may have failed"
+            exit 1
+          fi
           mkdir -p output
-          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+          cp "$APK_SRC" \
              output/MasterLMS-${{ github.ref_name || inputs.version }}-android.apk
 
       - uses: actions/upload-artifact@v4
