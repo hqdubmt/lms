@@ -58,6 +58,7 @@ COPY --from=api-builder /mono/apps/api/prisma  ./api/prisma
 # ── Web build (Next.js standalone is self-contained) ──
 COPY --from=web-builder /mono/apps/web/.next/standalone/   ./web/
 COPY --from=web-builder /mono/apps/web/.next/static        ./web/.next/static
+COPY --from=web-builder /mono/apps/web/public              ./web/public
 
 # ── Config files ──
 COPY docker/nginx.conf       /etc/nginx/nginx.conf

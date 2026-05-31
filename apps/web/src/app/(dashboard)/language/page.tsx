@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight,
-  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen,
+  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen, TrendingUp,
 } from 'lucide-react';
 import { EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL, LANG_NAMES } from '@/constants/language';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -231,19 +231,33 @@ export default function LanguagePage() {
         )}
       </section>
 
-      {/* Leaderboard link */}
-      <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
-        <CardContent className="p-4 flex items-center gap-4">
-          <Trophy className="h-8 w-8 text-primary shrink-0" />
-          <div className="flex-1">
-            <div className="font-semibold">Bảng xếp hạng</div>
-            <div className="text-sm text-muted-foreground">Xem thứ hạng XP của bạn so với học viên khác</div>
-          </div>
-          <Link href="/language/leaderboard">
-            <Button variant="outline" size="sm">Xem <ChevronRight className="h-4 w-4 ml-1" /></Button>
-          </Link>
-        </CardContent>
-      </Card>
+      {/* Analytics + Leaderboard */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Link href="/language/analytics">
+          <Card className="bg-gradient-to-r from-violet-50 to-indigo-50 border-violet-200 hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="p-4 flex items-center gap-4">
+              <TrendingUp className="h-8 w-8 text-violet-600 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold">Phân tích học tập</div>
+                <div className="text-sm text-muted-foreground">Điểm kỹ năng & tiến độ chi tiết</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-violet-500 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/language/leaderboard">
+          <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20 hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="p-4 flex items-center gap-4">
+              <Trophy className="h-8 w-8 text-primary shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold">Bảng xếp hạng</div>
+                <div className="text-sm text-muted-foreground">Thứ hạng XP so với học viên khác</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
     </div>
   );
 }

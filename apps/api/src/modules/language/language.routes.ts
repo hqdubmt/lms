@@ -5,6 +5,10 @@ import { requireAuth, requireInstructor } from '../../middleware/auth';
 import * as XLSX from 'xlsx';
 import { extractText, structureLangWithAI } from '../../services/file-import';
 import { serveTTS } from '../../services/tts';
+import { callAIForJSON, isAnyAIAvailable } from '../../services/ai-provider';
+import { env } from '../../config/env';
+import { LANG_GOLD_DATASET, validateDataset, toFullParserText } from '../../data/lang-gold-dataset';
+import { getOrSet, cacheDelPattern } from '../../services/cache';
 
 // ─── SM-2 Spaced Repetition Algorithm ─────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -33,7 +37,7 @@ function sm2(quality: number, repetitions: number, interval: number, easeFactor:
 async function addXP(userId: string, xp: number) {
   const stats = await prisma.langUserStats.upsert({
     where: { userId },
-    create: { userId, xp, lastStudied: new Date() },
+    create: { userId, xp: 0, lastStudied: new Date() },
     update: {},
   });
 
@@ -41,13 +45,11 @@ async function addXP(userId: string, xp: number) {
   const lastDay = stats.lastStudied ? new Date(stats.lastStudied).toDateString() : null;
   const yesterday = new Date(Date.now() - 86400000).toDateString();
 
-  let streakDelta = 0;
+  let newStreak = stats.streak;
   if (lastDay !== today) {
-    if (lastDay === yesterday) streakDelta = 1;
-    else if (lastDay !== today) streakDelta = -(stats.streak); // reset
+    newStreak = lastDay === yesterday ? stats.streak + 1 : 1;
   }
 
-  const newStreak = Math.max(0, stats.streak + streakDelta) + (lastDay !== today ? 1 : 0);
   const newXp = stats.xp + xp;
   const newLevel = Math.floor(newXp / 500) + 1;
 
@@ -56,10 +58,30 @@ async function addXP(userId: string, xp: number) {
     data: {
       xp: newXp,
       level: newLevel,
-      streak: lastDay === today ? stats.streak : newStreak,
+      streak: newStreak,
       longestStreak: Math.max(stats.longestStreak, newStreak),
       lastStudied: new Date(),
     },
+  });
+}
+
+const LANG_DISPLAY_NAMES: Record<string, string> = {
+  en: 'English', ja: 'Japanese', ko: 'Korean', fr: 'French',
+  zh: 'Chinese', de: 'German', es: 'Spanish', vi: 'Vietnamese',
+  it: 'Italian', pt: 'Portuguese', ru: 'Russian', ar: 'Arabic',
+};
+function getLangName(lang: string): string {
+  return LANG_DISPLAY_NAMES[lang] ?? lang.toUpperCase();
+}
+
+async function updateSkillScore(userId: string, skill: string, newScore: number) {
+  const existing = await prisma.langSkillScore.findUnique({ where: { userId_skill: { userId, skill } } });
+  // Moving average: weight old score 70%, new score 30%
+  const blended = existing ? Math.round(existing.score * 0.7 + newScore * 0.3) : newScore;
+  await prisma.langSkillScore.upsert({
+    where: { userId_skill: { userId, skill } },
+    create: { userId, skill, score: blended, sessions: 1 },
+    update: { score: blended, sessions: { increment: 1 } },
   });
 }
 
@@ -177,15 +199,115 @@ export async function languageRoutes(app: FastifyInstance) {
     const reviewCount = await prisma.vocabItemProgress.count({
       where: { userId: sub, nextReview: { lte: new Date() }, isLearned: false },
     });
-    return { ...(stats || { xp: 0, level: 1, streak: 0, wordsLearned: 0, exercisesDone: 0 }), reviewsDue: reviewCount };
+    return { ...(stats || { xp: 0, level: 1, streak: 0, longestStreak: 0, wordsLearned: 0, exercisesDone: 0 }), reviewsDue: reviewCount };
   });
 
   app.get('/leaderboard', { preHandler: requireAuth }, async () => {
-    return prisma.langUserStats.findMany({
-      take: 20,
-      orderBy: { xp: 'desc' },
-      include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+    return getOrSet('lang:leaderboard', 300, () =>
+      prisma.langUserStats.findMany({
+        take: 20,
+        orderBy: { xp: 'desc' },
+        include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+      })
+    );
+  });
+
+  // ─── ANALYTICS ───────────────────────────────────────────────────────────────
+
+  app.get('/analytics', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const now = new Date();
+    return getOrSet(`lang:analytics:${sub}`, 30, async () => {
+
+    const [stats, skillScores, wordStats, exerciseStats] = await Promise.all([
+      prisma.langUserStats.findUnique({ where: { userId: sub } }),
+
+      prisma.langSkillScore.findMany({ where: { userId: sub } }),
+
+      prisma.vocabItemProgress.aggregate({
+        where: { userId: sub },
+        _count: { id: true },
+      }).then(async (total) => {
+        const [learned, mastered, due, avgSpeak, avgListen] = await Promise.all([
+          prisma.vocabItemProgress.count({ where: { userId: sub, repetitions: { gte: 1 } } }),
+          prisma.vocabItemProgress.count({ where: { userId: sub, isLearned: true } }),
+          prisma.vocabItemProgress.count({ where: { userId: sub, nextReview: { lte: now }, isLearned: false } }),
+          prisma.vocabItemProgress.aggregate({
+            where: { userId: sub, speakScore: { not: null } },
+            _avg: { speakScore: true },
+          }),
+          prisma.vocabItemProgress.aggregate({
+            where: { userId: sub, listenScore: { not: null } },
+            _avg: { listenScore: true },
+          }),
+        ]);
+        return {
+          total: total._count.id,
+          seen: learned,
+          mastered,
+          due,
+          avgSpeakScore: Math.round(avgSpeak._avg.speakScore ?? 0),
+          avgListenScore: Math.round(avgListen._avg.listenScore ?? 0),
+        };
+      }),
+
+      prisma.exerciseAttempt.aggregate({
+        where: { userId: sub },
+        _count: { id: true },
+        _avg: { score: true },
+      }),
+    ]);
+
+    // Build skill map
+    const skillMap: Record<string, number> = {
+      vocabulary: 0, grammar: 0, listening: 0, speaking: 0, reading: 0, writing: 0,
+    };
+    const trackedSkills = new Set(skillScores.map(s => s.skill));
+    skillScores.forEach(s => { if (s.skill in skillMap) skillMap[s.skill] = Math.round(s.score); });
+
+    // Infer scores from computed data only when no tracked record exists yet
+    if (wordStats.total > 0 && !trackedSkills.has('vocabulary')) {
+      skillMap.vocabulary = Math.round((wordStats.mastered / wordStats.total) * 100);
+    }
+    if (wordStats.avgSpeakScore > 0 && !trackedSkills.has('speaking')) skillMap.speaking = wordStats.avgSpeakScore;
+    if (wordStats.avgListenScore > 0 && !trackedSkills.has('listening')) skillMap.listening = wordStats.avgListenScore;
+    if (exerciseStats._avg.score != null && !trackedSkills.has('reading')) {
+      skillMap.reading = Math.round(exerciseStats._avg.score);
+    }
+
+    // Topic/level breakdown — select only needed fields to avoid full-row materialisation
+    const topicBreakdown = await prisma.vocabItemProgress.findMany({
+      where: { userId: sub },
+      select: {
+        isLearned: true,
+        item: { select: { topic: true, itemLevel: true, set: { select: { level: true } } } },
+      },
+      take: 200,
     });
+    const topicMap: Record<string, { seen: number; mastered: number }> = {};
+    const levelMap: Record<string, { seen: number; mastered: number }> = {};
+    for (const p of topicBreakdown) {
+      const topic = p.item.topic || p.item.set.level || 'Other';
+      const level = p.item.itemLevel || p.item.set.level || 'A1';
+      if (!topicMap[topic]) topicMap[topic] = { seen: 0, mastered: 0 };
+      if (!levelMap[level]) levelMap[level] = { seen: 0, mastered: 0 };
+      topicMap[topic].seen++;
+      levelMap[level].seen++;
+      if (p.isLearned) { topicMap[topic].mastered++; levelMap[level].mastered++; }
+    }
+
+    return {
+      stats: stats ?? { xp: 0, level: 1, streak: 0, longestStreak: 0, wordsLearned: 0, exercisesDone: 0 },
+      wordStats,
+      skillScores: skillMap,
+      exerciseStats: {
+        total: exerciseStats._count.id,
+        avgScore: Math.round(exerciseStats._avg.score ?? 0),
+      },
+      topicBreakdown: Object.entries(topicMap).map(([topic, v]) => ({ topic, ...v })).slice(0, 10),
+      levelBreakdown: Object.entries(levelMap).map(([level, v]) => ({ level, ...v })).sort((a, b) => a.level.localeCompare(b.level)),
+    };
+    }); // end getOrSet
   });
 
   // ─── VOCAB SETS ───────────────────────────────────────────────────────────
@@ -200,12 +322,66 @@ export async function languageRoutes(app: FastifyInstance) {
     if (q.search) where.title = { contains: q.search, mode: 'insensitive' };
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
 
+    // Skip cache for search and per-user queries
+    if (q.search || q.mine === 'true') {
+      return prisma.vocabSet.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          creator: { select: { id: true, name: true, avatarUrl: true } },
+          _count: { select: { items: true, children: true } },
+          progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
+        },
+      });
+    }
+    // Cache per-user so progress data is always fresh and consistent
+    const setsCacheKey = `lang:vocab-sets:${sub}:${q.language ?? ''}:${q.level ?? ''}:${q.courseId ?? ''}`;
+    return getOrSet(setsCacheKey, 60, async () => {
+      const sets = await prisma.vocabSet.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          creator: { select: { id: true, name: true, avatarUrl: true } },
+          _count: { select: { items: true, children: true } },
+        },
+      });
+      const progresses = await prisma.vocabProgress.findMany({
+        where: { userId: sub, setId: { in: sets.map((s) => s.id) } },
+        select: { setId: true, wordsLearned: true, lastStudied: true },
+      });
+      const progressMap = Object.fromEntries(progresses.map((p) => [p.setId, p]));
+      return sets.map((s) => ({
+        ...s,
+        progresses: progressMap[s.id] ? [progressMap[s.id]] : [],
+      }));
+    });
+  });
+
+  // List vocab sets as tree — MUST be registered before /:id to avoid being shadowed
+  app.get('/vocab-sets/tree', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const q = req.query as { language?: string; mine?: string; courseId?: string };
+    const where: any = { isPublic: true, parentId: null };
+    if (q.language) where.language = q.language;
+    if (q.courseId) where.courseId = q.courseId;
+    if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
+
     const sets = await prisma.vocabSet.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
         creator: { select: { id: true, name: true, avatarUrl: true } },
         _count: { select: { items: true, children: true } },
+        children: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            _count: { select: { items: true } },
+            exercises: {
+              select: { id: true, title: true, type: true, isPublic: true },
+            },
+            progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
+          },
+        },
         progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
       },
     });
@@ -240,37 +416,6 @@ export async function languageRoutes(app: FastifyInstance) {
     return { ...set, progressMap };
   });
 
-  // List vocab sets as tree (parent sets with children)
-  app.get('/vocab-sets/tree', { preHandler: requireAuth }, async (req) => {
-    const { sub } = req.user as { sub: string };
-    const q = req.query as { language?: string; mine?: string; courseId?: string };
-    const where: any = { isPublic: true, parentId: null };
-    if (q.language) where.language = q.language;
-    if (q.courseId) where.courseId = q.courseId;
-    if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
-
-    const sets = await prisma.vocabSet.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        creator: { select: { id: true, name: true, avatarUrl: true } },
-        _count: { select: { items: true, children: true } },
-        children: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            _count: { select: { items: true } },
-            exercises: {
-              select: { id: true, title: true, type: true, isPublic: true },
-            },
-            progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
-          },
-        },
-        progresses: { where: { userId: sub }, select: { wordsLearned: true, lastStudied: true } },
-      },
-    });
-    return sets;
-  });
-
   // Create vocab set (instructor/admin)
   app.post('/vocab-sets', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
@@ -286,6 +431,7 @@ export async function languageRoutes(app: FastifyInstance) {
       parentId: z.string().optional().nullable(),
     }).parse(req.body);
     const set = await prisma.vocabSet.create({ data: { ...body, createdBy: sub } });
+    await cacheDelPattern('lang:vocab-sets:*');
     return reply.status(201).send(set);
   });
 
@@ -324,7 +470,9 @@ export async function languageRoutes(app: FastifyInstance) {
       courseId: z.string().nullable().optional(),
       parentId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.vocabSet.update({ where: { id }, data: body });
+    const updated = await prisma.vocabSet.update({ where: { id }, data: body });
+    await cacheDelPattern('lang:vocab-sets:*');
+    return updated;
   });
 
   app.delete('/vocab-sets/:id', { preHandler: requireInstructor }, async (req) => {
@@ -333,6 +481,7 @@ export async function languageRoutes(app: FastifyInstance) {
     const set = await prisma.vocabSet.findUniqueOrThrow({ where: { id } });
     if (set.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vocabSet.delete({ where: { id } });
+    await cacheDelPattern('lang:vocab-sets:*');
     return { message: 'Đã xóa bộ từ vựng' };
   });
 
@@ -348,6 +497,8 @@ export async function languageRoutes(app: FastifyInstance) {
       imageUrl: z.string().optional(),
       example: z.string().optional(),
       exampleTrans: z.string().optional(),
+      synonyms: z.array(z.string()).default([]),
+      hints: z.array(z.string()).default([]),
       notes: z.string().optional(),
       order: z.number().default(0),
     }).parse(req.body);
@@ -364,6 +515,8 @@ export async function languageRoutes(app: FastifyInstance) {
         pronunciation: z.string().optional(),
         example: z.string().optional(),
         exampleTrans: z.string().optional(),
+        synonyms: z.array(z.string()).default([]),
+        hints: z.array(z.string()).default([]),
       })).min(1).max(500),
     }).parse(req.body);
 
@@ -526,6 +679,8 @@ export async function languageRoutes(app: FastifyInstance) {
       imageUrl: z.string().optional(),
       example: z.string().optional(),
       exampleTrans: z.string().optional(),
+      synonyms: z.array(z.string()).optional(),
+      hints: z.array(z.string()).optional(),
       notes: z.string().optional(),
       order: z.number().optional(),
     }).parse(req.body);
@@ -568,25 +723,42 @@ export async function languageRoutes(app: FastifyInstance) {
   app.post('/vocab-items/:itemId/review', { preHandler: requireAuth }, async (req) => {
     const { itemId } = req.params as { itemId: string };
     const { sub } = req.user as { sub: string };
-    const { quality } = z.object({ quality: z.number().min(0).max(5) }).parse(req.body);
+    const { quality, mode, speakScore, listenScore } = z.object({
+      quality: z.number().min(0).max(5),
+      mode: z.enum(['srs', 'speak', 'listen', 'write', 'quiz']).optional(),
+      speakScore: z.number().min(0).max(100).optional(),
+      listenScore: z.number().min(0).max(100).optional(),
+    }).parse(req.body);
 
     const existing = await prisma.vocabItemProgress.findUnique({ where: { userId_itemId: { userId: sub, itemId } } });
     const prev = existing || { repetitions: 0, interval: 1, easeFactor: 2.5 };
     const next = sm2(quality, prev.repetitions, prev.interval, prev.easeFactor);
 
+    const updateData: any = { ...next, lastReview: new Date() };
+    if (speakScore !== undefined) updateData.speakScore = speakScore;
+    if (listenScore !== undefined) updateData.listenScore = listenScore;
+
     const progress = await prisma.vocabItemProgress.upsert({
       where: { userId_itemId: { userId: sub, itemId } },
-      create: { userId: sub, itemId, ...next },
-      update: { ...next, lastReview: new Date() },
+      create: { userId: sub, itemId, ...next, speakScore, listenScore },
+      update: updateData,
     });
 
-    if (!existing && quality >= 3) {
+    if (next.isLearned && !existing?.isLearned) {
       await prisma.langUserStats.upsert({
         where: { userId: sub },
         create: { userId: sub, wordsLearned: 1, lastStudied: new Date() },
         update: { wordsLearned: { increment: 1 } },
       });
     }
+
+    // Update skill scores based on mode
+    const vocabScore = Math.round((quality / 5) * 100);
+    if (mode === 'srs' || !mode) await updateSkillScore(sub, 'vocabulary', vocabScore);
+    if (mode === 'speak' && speakScore !== undefined) await updateSkillScore(sub, 'speaking', speakScore);
+    if (mode === 'listen' && listenScore !== undefined) await updateSkillScore(sub, 'listening', listenScore);
+    if (mode === 'write') await updateSkillScore(sub, 'writing', vocabScore);
+    if (mode === 'quiz') await updateSkillScore(sub, 'vocabulary', vocabScore);
 
     if (quality >= 3) await addXP(sub, 5);
     return progress;
@@ -644,14 +816,20 @@ export async function languageRoutes(app: FastifyInstance) {
     if (q.courseId) where.courseId = q.courseId;
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
 
-    return prisma.langExercise.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        creator: { select: { id: true, name: true } },
-        _count: { select: { questions: true, attempts: true } },
-      },
-    });
+    const isMine = q.mine === 'true';
+    const cacheKey = isMine
+      ? `lang:exercises:mine:${sub}`
+      : `lang:exercises:pub:${q.language ?? ''}:${q.type ?? ''}:${q.level ?? ''}:${q.courseId ?? ''}`;
+    return getOrSet(cacheKey, 60, () =>
+      prisma.langExercise.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          creator: { select: { id: true, name: true } },
+          _count: { select: { questions: true, attempts: true } },
+        },
+      })
+    );
   });
 
   app.get('/exercises/:id', { preHandler: requireAuth }, async (req) => {
@@ -769,7 +947,9 @@ export async function languageRoutes(app: FastifyInstance) {
       level: z.string().optional(),
       courseId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.langExercise.update({ where: { id }, data: body });
+    const updated = await prisma.langExercise.update({ where: { id }, data: body });
+    await cacheDelPattern('lang:exercises:*');
+    return updated;
   });
 
   // ─── COURSE LANGUAGE CONTENT ──────────────────────────────────────────────
@@ -815,6 +995,7 @@ export async function languageRoutes(app: FastifyInstance) {
     const ex = await prisma.langExercise.findUniqueOrThrow({ where: { id } });
     if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.langExercise.delete({ where: { id } });
+    await cacheDelPattern('lang:exercises:*');
     return { message: 'Đã xóa bài tập' };
   });
 
@@ -884,11 +1065,25 @@ export async function languageRoutes(app: FastifyInstance) {
         const expected = String(q.answer).toLowerCase().trim();
         correct = String(userAnswer || '').toLowerCase().trim() === expected;
       } else if (exercise.type === 'WORD_ORDER') {
-        correct = JSON.stringify(userAnswer) === JSON.stringify(q.answer);
+        // Parse stored answer — may be array or JSON-stringified array
+        let parsedAnswer: any = q.answer;
+        if (typeof parsedAnswer === 'string' && parsedAnswer.startsWith('[')) {
+          try { parsedAnswer = JSON.parse(parsedAnswer); } catch { /* keep as string */ }
+        }
+        const expectedArr = Array.isArray(parsedAnswer)
+          ? (parsedAnswer as string[]).map((w: string) => String(w).trim().normalize('NFC')).filter(Boolean)
+          : String(q.answer).split(/\s+/).map((w) => w.normalize('NFC')).filter(Boolean);
+        const givenArr = Array.isArray(userAnswer)
+          ? (userAnswer as string[]).map((w: string) => String(w).trim().normalize('NFC')).filter(Boolean)
+          : String(userAnswer ?? '').split(/\s+/).map((w) => w.normalize('NFC')).filter(Boolean);
+        correct = givenArr.length === expectedArr.length && givenArr.every((w, i) => w === expectedArr[i]);
       } else if (exercise.type === 'MATCHING') {
-        const ua = userAnswer as Record<string, string>;
+        const ua = (userAnswer ?? {}) as Record<string, string>;
         const ea = q.answer as Record<string, string>;
-        correct = JSON.stringify(ua) === JSON.stringify(ea);
+        if (ea && typeof ea === 'object' && !Array.isArray(ea)) {
+          const eaKeys = Object.keys(ea);
+          correct = eaKeys.length === Object.keys(ua).length && eaKeys.every((k) => ua[k] === ea[k]);
+        }
       }
 
       if (correct) earnedPoints += q.points;
@@ -904,7 +1099,7 @@ export async function languageRoutes(app: FastifyInstance) {
 
     await prisma.langUserStats.upsert({
       where: { userId: sub },
-      create: { userId: sub, exercisesDone: 1, xp: xpEarned, lastStudied: new Date() },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
       update: { exercisesDone: { increment: 1 } },
     });
     await addXP(sub, xpEarned);
@@ -921,6 +1116,239 @@ export async function languageRoutes(app: FastifyInstance) {
       orderBy: { completedAt: 'desc' },
       take: 10,
     });
+  });
+
+  // ─── Text Parser: "word - meaning" lines → JSON vocab items ─────────────────
+
+  app.post('/parse-text', { preHandler: requireInstructor }, async (req, reply) => {
+    const { text, language } = z.object({
+      text: z.string().min(1).max(50000),
+      language: z.string().default('en'),
+    }).parse(req.body);
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const items: Array<{ word: string; translation: string; pronunciation?: string; example?: string; exampleTrans?: string; synonyms: string[]; hints: string[] }> = [];
+    const failed: string[] = [];
+
+    for (const line of lines) {
+      // Hỗ trợ nhiều định dạng: "word - meaning", "word: meaning", "word = meaning", "word\tmeaning"
+      const match = line.match(/^(.+?)(?:\s*[-:=\t]\s*)(.+)$/);
+      if (!match) { if (line.length > 0) failed.push(line); continue; }
+      const word = match[1].trim().replace(/^["'`]|["'`]$/g, '');
+      const rest = match[2].trim();
+      // Tách pronunciation nếu có dạng "meaning /phiêm âm/"
+      const pronMatch = rest.match(/^(.*?)\s*\/([^/]+)\/\s*$/);
+      if (pronMatch) {
+        items.push({ word, translation: pronMatch[1].trim(), pronunciation: pronMatch[2].trim(), synonyms: [], hints: [] });
+      } else {
+        items.push({ word, translation: rest, synonyms: [], hints: [] });
+      }
+    }
+
+    return reply.send({ items, failed, total: items.length });
+  });
+
+  // ─── Quality Validator ────────────────────────────────────────────────────────
+
+  app.get('/vocab-sets/:id/quality', { preHandler: requireInstructor }, async (req) => {
+    const { id: setId } = req.params as { id: string };
+
+    const set = await prisma.vocabSet.findUniqueOrThrow({
+      where: { id: setId },
+      include: { items: { orderBy: { order: 'asc' } } },
+    });
+
+    const WEIGHTS = { word: 25, translation: 25, pronunciation: 20, example: 20, exampleTrans: 5, synonyms: 3, hints: 2 };
+
+    const itemReports = set.items.map(item => {
+      const missing: string[] = [];
+      let score = 0;
+
+      if (item.word) score += WEIGHTS.word; else missing.push('word');
+      if (item.translation) score += WEIGHTS.translation; else missing.push('translation');
+      if (item.pronunciation) score += WEIGHTS.pronunciation; else missing.push('pronunciation');
+      if (item.example) score += WEIGHTS.example; else missing.push('example');
+      if (item.exampleTrans) score += WEIGHTS.exampleTrans; else missing.push('exampleTrans');
+      if ((item.synonyms as string[]).length > 0) score += WEIGHTS.synonyms; else missing.push('synonyms');
+      if ((item.hints as string[]).length > 0) score += WEIGHTS.hints; else missing.push('hints');
+
+      return { id: item.id, word: item.word, score, missing };
+    });
+
+    const totalItems = itemReports.length;
+    const avgScore = totalItems > 0 ? Math.round(itemReports.reduce((s, i) => s + i.score, 0) / totalItems) : 0;
+    const perfect = itemReports.filter(i => i.score === 100).length;
+    const incomplete = itemReports.filter(i => i.score < 70).length;
+
+    const fieldStats: Record<string, number> = {};
+    for (const field of Object.keys(WEIGHTS)) {
+      fieldStats[field] = itemReports.filter(i => !i.missing.includes(field)).length;
+    }
+
+    return { setId, title: set.title, totalItems, avgScore, perfect, incomplete, fieldStats, items: itemReports };
+  });
+
+  // ─── AI Enrich: từ 1 từ, AI sinh pronunciation, example, synonyms, hints ─────
+
+  app.post('/vocab-items/:itemId/ai-enrich', { preHandler: requireInstructor }, async (req, reply) => {
+    const { itemId } = req.params as { itemId: string };
+
+    const item = await prisma.vocabItem.findUniqueOrThrow({
+      where: { id: itemId },
+      include: { set: { select: { language: true, level: true } } },
+    });
+
+    const lang = item.set.language || 'en';
+    const langName = getLangName(lang);
+
+    const prompt = `You are a ${langName} language teacher creating learning materials for Vietnamese students.
+
+Word: "${item.word}"
+Vietnamese meaning: "${item.translation}"
+Level: ${item.set.level || 'A1'}
+
+Generate rich vocabulary data. Return ONLY valid JSON:
+{
+  "pronunciation": "IPA phonetic transcription (e.g. /ˈæp.əl/)",
+  "example": "A natural example sentence using this word in ${langName}",
+  "exampleTrans": "Vietnamese translation of the example sentence",
+  "synonyms": ["synonym1", "synonym2"],
+  "hints": ["Hint 1 in Vietnamese to remember this word", "Hint 2 in Vietnamese (mnemonic, visual, story)"]
+}
+
+Rules:
+- pronunciation: use IPA format
+- example: natural, level-appropriate sentence (not too complex)
+- synonyms: 1-3 words with similar meaning in ${langName}
+- hints: 2 creative memory tricks in Vietnamese to help remember the word`;
+
+    let enriched: { pronunciation?: string; example?: string; exampleTrans?: string; synonyms?: string[]; hints?: string[] } = {};
+
+    try {
+      if (env.ANTHROPIC_API_KEY) {
+        const Anthropic = (await import('@anthropic-ai/sdk')).default;
+        const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+        const response = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const text = response.content[0].type === 'text' ? response.content[0].text : '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) enriched = JSON.parse(jsonMatch[0]);
+      } else if (await isAnyAIAvailable()) {
+        const raw = await callAIForJSON('You are a language learning assistant. Return only valid JSON.', prompt, 1024);
+        if (raw) { const m = raw.match(/\{[\s\S]*\}/); if (m) enriched = JSON.parse(m[0]); }
+      } else {
+        return reply.status(503).send({ error: 'Không có AI nào khả dụng. Cần cấu hình ANTHROPIC_API_KEY hoặc Ollama.' });
+      }
+    } catch (e: any) {
+      return reply.status(500).send({ error: `AI thất bại: ${e.message}` });
+    }
+
+    // Chỉ cập nhật các field còn trống để không ghi đè dữ liệu đã có
+    const updateData: Record<string, any> = {};
+    if (enriched.pronunciation && !item.pronunciation) updateData.pronunciation = enriched.pronunciation;
+    if (enriched.example && !item.example) updateData.example = enriched.example;
+    if (enriched.exampleTrans && !item.exampleTrans) updateData.exampleTrans = enriched.exampleTrans;
+    if (Array.isArray(enriched.synonyms) && enriched.synonyms.length > 0 && (item.synonyms as string[]).length === 0) {
+      updateData.synonyms = enriched.synonyms;
+    }
+    if (Array.isArray(enriched.hints) && enriched.hints.length > 0 && (item.hints as string[]).length === 0) {
+      updateData.hints = enriched.hints;
+    }
+
+    const updated = Object.keys(updateData).length > 0
+      ? await prisma.vocabItem.update({ where: { id: itemId }, data: updateData })
+      : item;
+
+    return reply.send({ item: updated, enriched, fieldsUpdated: Object.keys(updateData) });
+  });
+
+  // ─── AI Enrich Batch: enrich nhiều từ trong 1 set ────────────────────────────
+
+  app.post('/vocab-sets/:id/ai-enrich-batch', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id: setId } = req.params as { id: string };
+    const { onlyMissing } = z.object({ onlyMissing: z.boolean().default(true) }).parse(req.body);
+
+    const set = await prisma.vocabSet.findUniqueOrThrow({
+      where: { id: setId },
+      include: { items: { orderBy: { order: 'asc' } } },
+    });
+
+    const lang = set.language || 'en';
+    const langName = getLangName(lang);
+
+    const toEnrich = onlyMissing
+      ? set.items.filter(it => !it.pronunciation || !it.example || (it.synonyms as string[]).length === 0 || (it.hints as string[]).length === 0)
+      : set.items;
+
+    if (toEnrich.length === 0) return reply.send({ enriched: 0, message: 'Tất cả từ đã đầy đủ dữ liệu.' });
+
+    const batchLimit = Math.min(toEnrich.length, 20);
+    const batch = toEnrich.slice(0, batchLimit);
+
+    const wordList = batch.map(it => `"${it.word}" (${it.translation})`).join(', ');
+    const prompt = `You are a ${langName} language teacher. Generate vocabulary data for ${batchLimit} words for Vietnamese learners at ${set.level || 'A1'} level.
+
+Words: ${wordList}
+
+Return ONLY valid JSON array, one object per word in the same order:
+[
+  {
+    "word": "exact word from input",
+    "pronunciation": "IPA phonetic",
+    "example": "example sentence in ${langName}",
+    "exampleTrans": "Vietnamese translation of example",
+    "synonyms": ["synonym1", "synonym2"],
+    "hints": ["Vietnamese memory hint 1", "Vietnamese memory hint 2"]
+  }
+]`;
+
+    let results: Array<{ word: string; pronunciation?: string; example?: string; exampleTrans?: string; synonyms?: string[]; hints?: string[] }> = [];
+
+    try {
+      if (env.ANTHROPIC_API_KEY) {
+        const Anthropic = (await import('@anthropic-ai/sdk')).default;
+        const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+        const response = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const text = response.content[0].type === 'text' ? response.content[0].text : '';
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) results = JSON.parse(jsonMatch[0]);
+      } else if (await isAnyAIAvailable()) {
+        const raw = await callAIForJSON('You are a language learning assistant. Return only valid JSON array.', prompt, 4000);
+        if (raw) { const m = raw.match(/\[[\s\S]*\]/); if (m) results = JSON.parse(m[0]); }
+      } else {
+        return reply.status(503).send({ error: 'Không có AI nào khả dụng.' });
+      }
+    } catch (e: any) {
+      return reply.status(500).send({ error: `AI thất bại: ${e.message}` });
+    }
+
+    // Match by position (AI returns results in same order as prompt input)
+    const updatePromises: Promise<void>[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const res = results[i];
+      const original = batch[i];
+      if (!original) continue;
+      const updateData: Record<string, any> = {};
+      if (res.pronunciation && !original.pronunciation) updateData.pronunciation = res.pronunciation;
+      if (res.example && !original.example) updateData.example = res.example;
+      if (res.exampleTrans && !original.exampleTrans) updateData.exampleTrans = res.exampleTrans;
+      if (Array.isArray(res.synonyms) && res.synonyms.length > 0 && (original.synonyms as string[]).length === 0) updateData.synonyms = res.synonyms;
+      if (Array.isArray(res.hints) && res.hints.length > 0 && (original.hints as string[]).length === 0) updateData.hints = res.hints;
+      if (Object.keys(updateData).length > 0) {
+        updatePromises.push(prisma.vocabItem.update({ where: { id: original.id }, data: updateData }).then(() => {}));
+      }
+    }
+    await Promise.all(updatePromises);
+    const enrichedCount = updatePromises.length;
+
+    return reply.send({ enriched: enrichedCount, total: batchLimit, skipped: toEnrich.length - batchLimit });
   });
 
   // ─── Smart Import: any file → AI extracts vocab + dialogue + voice chat ──────
@@ -1002,6 +1430,213 @@ export async function languageRoutes(app: FastifyInstance) {
       dialogueScript: curriculum.dialogues,
       voiceChatScript: curriculum.voiceChat,
     });
+  });
+
+  // ─── Gold Dataset: xem danh sách sets mẫu có thể seed ────────────────────────
+
+  app.get('/sample-data', { preHandler: requireInstructor }, async () => {
+    const report = validateDataset();
+    return {
+      sets: LANG_GOLD_DATASET.map(s => ({
+        level: s.level,
+        title: s.title,
+        description: s.description,
+        topic: s.topic,
+        wordCount: s.words.length,
+      })),
+      validation: report,
+    };
+  });
+
+  // ─── Gold Dataset: validate parser với toàn bộ data ──────────────────────────
+
+  app.get('/sample-data/validate', { preHandler: requireInstructor }, async () => {
+    const allWords = LANG_GOLD_DATASET.flatMap(s =>
+      s.words.map(w => ({ ...w, level: s.level, setTitle: s.title })),
+    );
+
+    // Chạy parser text qua từng set
+    const parserResults: Array<{
+      level: string; setTitle: string; text: string;
+      parsed: { items: { word: string; translation: string }[]; failed: string[] };
+    }> = [];
+
+    for (const set of LANG_GOLD_DATASET) {
+      const text = toFullParserText(set.words);
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const items: { word: string; translation: string; pronunciation?: string }[] = [];
+      const failed: string[] = [];
+
+      for (const line of lines) {
+        const match = line.match(/^(.+?)(?:\s*[-:=\t]\s*)(.+)$/);
+        if (!match) { if (line.length > 0) failed.push(line); continue; }
+        const word = match[1].trim().replace(/^["'`]|["'`]$/g, '');
+        const rest = match[2].trim();
+        const pronMatch = rest.match(/^(.*?)\s*\/([^/]+)\/\s*$/);
+        if (pronMatch) {
+          items.push({ word, translation: pronMatch[1].trim(), pronunciation: pronMatch[2].trim() });
+        } else {
+          items.push({ word, translation: rest });
+        }
+      }
+      parserResults.push({ level: set.level, setTitle: set.title, text: text.slice(0, 200) + '...', parsed: { items, failed } });
+    }
+
+    const totalWords = allWords.length;
+    const totalParsed = parserResults.reduce((s, r) => s + r.parsed.items.length, 0);
+    const totalFailed = parserResults.reduce((s, r) => s + r.parsed.failed.length, 0);
+    const parseRate = Math.round((totalParsed / totalWords) * 100);
+
+    return {
+      summary: { totalWords, totalParsed, totalFailed, parseRate },
+      sets: parserResults.map(r => ({
+        level: r.level,
+        setTitle: r.setTitle,
+        wordCount: r.parsed.items.length,
+        failedCount: r.parsed.failed.length,
+        parseRate: Math.round((r.parsed.items.length / (r.parsed.items.length + r.parsed.failed.length || 1)) * 100),
+        failedSamples: r.parsed.failed.slice(0, 3),
+      })),
+    };
+  });
+
+  // ─── Gold Dataset: seed vocab sets mẫu vào database ─────────────────────────
+
+  app.post('/sample-data/seed', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { levels, withExercises } = z.object({
+      levels: z.array(z.enum(['A1', 'A2', 'B1', 'B2'])).default(['A1', 'A2', 'B1', 'B2']),
+      withExercises: z.boolean().default(true),
+    }).parse(req.body);
+
+    const setsToSeed = LANG_GOLD_DATASET.filter(s => levels.includes(s.level as any));
+    const results: Array<{
+      setId: string; title: string; level: string; wordCount: number;
+      exercises: { id: string; type: string; questionCount: number }[];
+    }> = [];
+
+    // Tạo folder cha cho mỗi level
+    const folderMap: Record<string, string> = {};
+    for (const level of levels) {
+      const folder = await prisma.vocabSet.create({
+        data: {
+          title: `[Mẫu] Tiếng Anh ${level}`,
+          description: `Bộ từ vựng mẫu trình độ ${level} — ${level === 'A1' ? 'Từ cơ bản lớp 1-2' : level === 'A2' ? 'Từ sơ cấp lớp 3-4' : level === 'B1' ? 'Từ trung cấp lớp 5-6' : 'Từ nâng cao B2'}`,
+          language: 'en',
+          targetLang: 'vi',
+          level,
+          isPublic: true,
+          createdBy: sub,
+        },
+      });
+      folderMap[level] = folder.id;
+    }
+
+    // Seed từng set
+    for (const gset of setsToSeed) {
+      const parentId = folderMap[gset.level];
+      const vocabSet = await prisma.vocabSet.create({
+        data: {
+          title: gset.title,
+          description: gset.description,
+          language: 'en',
+          targetLang: 'vi',
+          level: gset.level,
+          isPublic: true,
+          createdBy: sub,
+          parentId,
+        },
+      });
+
+      // Bulk insert từ vựng
+      await prisma.vocabItem.createMany({
+        data: gset.words.map((w, i) => ({
+          setId: vocabSet.id,
+          word: w.word,
+          translation: w.translation,
+          pronunciation: w.pronunciation || undefined,
+          example: w.example || undefined,
+          exampleTrans: w.exampleTrans || undefined,
+          synonyms: w.synonyms || [],
+          hints: w.hints || [],
+          order: i,
+        })),
+      });
+
+      const exercises: { id: string; type: string; questionCount: number }[] = [];
+
+      if (withExercises && gset.words.length >= 4) {
+        const pool = gset.words.map((w, i) => ({
+          id: `tmp-${i}`, word: w.word, translation: w.translation,
+          pronunciation: w.pronunciation, example: w.example, exampleTrans: w.exampleTrans, notes: null,
+        }));
+
+        const TYPE_LABELS: Record<string, string> = {
+          MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền từ',
+          MATCHING: 'Ghép cặp', WORD_ORDER: 'Sắp xếp câu',
+        };
+
+        for (const type of ['MULTIPLE_CHOICE', 'FILL_BLANK', 'MATCHING', 'WORD_ORDER'] as const) {
+          const questionsOrErr = buildQuestions(pool, type, 20);
+          if ('error' in questionsOrErr) continue;
+          const ex = await prisma.langExercise.create({
+            data: {
+              title: `[Mẫu] ${gset.title.replace('[Mẫu] ', '')} — ${TYPE_LABELS[type]}`,
+              description: `Bài tập ${TYPE_LABELS[type]} tự động từ bộ từ vựng mẫu ${gset.level}`,
+              type,
+              language: 'en',
+              level: gset.level,
+              isPublic: true,
+              createdBy: sub,
+              vocabSetId: vocabSet.id,
+              questions: { create: questionsOrErr as any },
+            },
+            select: { id: true, type: true, _count: { select: { questions: true } } },
+          });
+          exercises.push({ id: ex.id, type: ex.type, questionCount: ex._count.questions });
+        }
+      }
+
+      results.push({
+        setId: vocabSet.id,
+        title: vocabSet.title,
+        level: gset.level,
+        wordCount: gset.words.length,
+        exercises,
+      });
+    }
+
+    const totalWords = results.reduce((s, r) => s + r.wordCount, 0);
+    const totalExercises = results.reduce((s, r) => s + r.exercises.length, 0);
+
+    return reply.status(201).send({
+      seeded: results.length,
+      totalWords,
+      totalExercises,
+      folders: Object.entries(folderMap).map(([level, id]) => ({ level, id })),
+      sets: results,
+    });
+  });
+
+  // ─── Gold Dataset: xóa tất cả data mẫu (cleanup) ─────────────────────────────
+
+  app.delete('/sample-data/cleanup', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const sampleSets = await prisma.vocabSet.findMany({
+      where: {
+        createdBy: sub,
+        title: { startsWith: '[Mẫu]' },
+      },
+      select: { id: true, title: true },
+    });
+
+    if (sampleSets.length === 0) return reply.send({ deleted: 0, message: 'Không có dữ liệu mẫu nào.' });
+
+    await prisma.vocabSet.deleteMany({
+      where: { id: { in: sampleSets.map(s => s.id) } },
+    });
+
+    return reply.send({ deleted: sampleSets.length, sets: sampleSets.map(s => s.title) });
   });
 
 }

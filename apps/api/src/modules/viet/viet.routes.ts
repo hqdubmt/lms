@@ -6,12 +6,20 @@ import { extractText, generateVietQuestionsWithAI } from '../../services/file-im
 import {
   processVietDocument, detectVietCurriculum, vietClean, vietUnicodeNormalize,
   generateVietVariations, computeVietProfileUpdate,
+  splitVietLessons, isVietContentRich, vietParserScore,
+  scoreKnowledgeItems,
   type VietProcessOpts,
 } from '../../services/viet-pipeline';
+import { VIET_GOLD_DATASET } from '../../data/viet-gold-dataset';
+import {
+  classifyItemErrors, buildBatchSummary,
+  type ErrorType,
+} from '../../services/error-classifier';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
 import { serveTTS } from '../../services/tts';
+import { getOrSet, cacheDelPattern } from '../../services/cache';
 
 // ─── SM-2 Spaced Repetition ───────────────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -34,7 +42,7 @@ function sm2(quality: number, repetitions: number, interval: number, easeFactor:
 async function addXP(userId: string, xp: number) {
   const stats = await prisma.vietUserStats.upsert({
     where: { userId },
-    create: { userId, xp, lastStudied: new Date() },
+    create: { userId, xp: 0, lastStudied: new Date() },
     update: {},
   });
   const today = new Date().toDateString();
@@ -133,10 +141,12 @@ export async function vietRoutes(app: FastifyInstance) {
   });
 
   app.get('/leaderboard', { preHandler: requireAuth }, async () => {
-    return prisma.vietUserStats.findMany({
-      orderBy: { xp: 'desc' }, take: 20,
-      include: { user: { select: { id: true, name: true, avatarUrl: true } } },
-    });
+    return getOrSet('viet:leaderboard', 300, () =>
+      prisma.vietUserStats.findMany({
+        orderBy: { xp: 'desc' }, take: 20,
+        include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+      })
+    );
   });
 
   // ─── VIET SETS ────────────────────────────────────────────────────────────
@@ -150,10 +160,23 @@ export async function vietRoutes(app: FastifyInstance) {
     if (q.courseId) where.courseId = q.courseId;
     if (q.search) where.title = { contains: q.search, mode: 'insensitive' };
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
-    return prisma.vietSet.findMany({
-      where, orderBy: { createdAt: 'desc' },
-      include: { creator: { select: { id: true, name: true } }, _count: { select: { items: true } } },
-    });
+    const isMine = q.mine === 'true';
+    // Skip cache for search queries (too many variants)
+    if (q.search) {
+      return prisma.vietSet.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { creator: { select: { id: true, name: true } }, _count: { select: { items: true } } },
+      });
+    }
+    const cacheKey = isMine
+      ? `viet:sets:mine:${sub}`
+      : `viet:sets:pub:${q.category ?? ''}:${q.grade ?? ''}:${q.courseId ?? ''}`;
+    return getOrSet(cacheKey, 60, () =>
+      prisma.vietSet.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { creator: { select: { id: true, name: true } }, _count: { select: { items: true } } },
+      })
+    );
   });
 
   app.get('/sets/:id', { preHandler: requireAuth }, async (req) => {
@@ -181,6 +204,7 @@ export async function vietRoutes(app: FastifyInstance) {
       courseId: z.string().optional().nullable(),
     }).parse(req.body);
     const set = await prisma.vietSet.create({ data: { ...body, createdBy: sub } });
+    await cacheDelPattern('viet:sets:*');
     return reply.status(201).send(set);
   });
 
@@ -199,7 +223,9 @@ export async function vietRoutes(app: FastifyInstance) {
       isPublic: z.boolean().optional(),
       courseId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.vietSet.update({ where: { id }, data: body });
+    const updated = await prisma.vietSet.update({ where: { id }, data: body });
+    await cacheDelPattern('viet:sets:*');
+    return updated;
   });
 
   app.delete('/sets/:id', { preHandler: requireInstructor }, async (req) => {
@@ -208,6 +234,7 @@ export async function vietRoutes(app: FastifyInstance) {
     const set = await prisma.vietSet.findUniqueOrThrow({ where: { id } });
     if (set.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vietSet.delete({ where: { id } });
+    await cacheDelPattern('viet:sets:*');
     return { message: 'Đã xóa bộ bài' };
   });
 
@@ -355,10 +382,16 @@ export async function vietRoutes(app: FastifyInstance) {
     if (q.courseId) where.courseId = q.courseId;
     if (q.setId) where.setId = q.setId;
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
-    return prisma.vietExercise.findMany({
-      where, orderBy: { createdAt: 'desc' },
-      include: { creator: { select: { id: true, name: true } }, _count: { select: { questions: true, attempts: true } } },
-    });
+    const isMine = q.mine === 'true';
+    const cacheKey = isMine
+      ? `viet:exercises:mine:${sub}`
+      : `viet:exercises:pub:${q.category ?? ''}:${q.type ?? ''}:${q.grade ?? ''}:${q.courseId ?? ''}:${q.setId ?? ''}`;
+    return getOrSet(cacheKey, 60, () =>
+      prisma.vietExercise.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { creator: { select: { id: true, name: true } }, _count: { select: { questions: true, attempts: true } } },
+      })
+    );
   });
 
   app.get('/exercises/:id', { preHandler: requireAuth }, async (req) => {
@@ -398,6 +431,7 @@ export async function vietRoutes(app: FastifyInstance) {
       data: { ...exerciseData, createdBy: sub, questions: { create: questions as any } },
       include: { questions: { orderBy: { order: 'asc' } } },
     });
+    await cacheDelPattern('viet:exercises:*');
     return reply.status(201).send(exercise);
   });
 
@@ -491,7 +525,9 @@ export async function vietRoutes(app: FastifyInstance) {
       level: z.string().optional(),
       courseId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.vietExercise.update({ where: { id }, data: body });
+    const updated = await prisma.vietExercise.update({ where: { id }, data: body });
+    await cacheDelPattern('viet:exercises:*');
+    return updated;
   });
 
   app.delete('/exercises/:id', { preHandler: requireInstructor }, async (req) => {
@@ -500,6 +536,7 @@ export async function vietRoutes(app: FastifyInstance) {
     const ex = await prisma.vietExercise.findUniqueOrThrow({ where: { id } });
     if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.vietExercise.delete({ where: { id } });
+    await cacheDelPattern('viet:exercises:*');
     return { message: 'Đã xóa bài tập' };
   });
 
@@ -528,9 +565,12 @@ export async function vietRoutes(app: FastifyInstance) {
         const given = String(userAnswer ?? '').toLowerCase().trim().replace(/[.,!?;:'"]/g, '');
         correct = given === expected;
       } else if (exercise.type === 'MATCHING') {
-        const ua = userAnswer as Record<string, string>;
+        const ua = (userAnswer ?? {}) as Record<string, string>;
         const ea = q.answer as Record<string, string>;
-        correct = JSON.stringify(ua) === JSON.stringify(ea);
+        if (ea && typeof ea === 'object' && !Array.isArray(ea)) {
+          const eaKeys = Object.keys(ea);
+          correct = eaKeys.length === Object.keys(ua).length && eaKeys.every((k) => ua[k] === ea[k]);
+        }
       } else if (exercise.type === 'WORD_ORDER') {
         // Handle answer stored as array, stringified JSON array, or space-delimited string
         let parsedAnswer: any = q.answer;
@@ -560,7 +600,7 @@ export async function vietRoutes(app: FastifyInstance) {
     const attempt = await prisma.vietAttempt.create({ data: { userId: sub, exerciseId, answers, score, timeTaken, xpEarned } });
     await prisma.vietUserStats.upsert({
       where: { userId: sub },
-      create: { userId: sub, exercisesDone: 1, xp: xpEarned, lastStudied: new Date() },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
       update: { exercisesDone: { increment: 1 } },
     });
     await addXP(sub, xpEarned);
@@ -800,6 +840,8 @@ export async function vietRoutes(app: FastifyInstance) {
         repairCount: pipelineResult.analytics.repairCount,
         retryTotal: pipelineResult.analytics.retryTotal,
         avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        droppedByQualityGate: pipelineResult.analytics.droppedByQualityGate,
+        avgParserScore: pipelineResult.analytics.avgParserScore,
         textbook: pipelineResult.curriculum.textbook,
         grade: pipelineResult.curriculum.grade,
         createdBy: sub,
@@ -975,6 +1017,8 @@ export async function vietRoutes(app: FastifyInstance) {
         repairCount: pipelineResult.analytics.repairCount,
         retryTotal: pipelineResult.analytics.retryTotal,
         avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        droppedByQualityGate: pipelineResult.analytics.droppedByQualityGate,
+        avgParserScore: pipelineResult.analytics.avgParserScore,
         textbook: pipelineResult.curriculum.textbook,
         grade: pipelineResult.curriculum.grade,
         createdBy: sub,
@@ -1006,13 +1050,34 @@ export async function vietRoutes(app: FastifyInstance) {
     });
     const total = logs.length;
     if (total === 0) return reply.send({ total: 0, logs: [] });
+
+    const totalChunks = Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+    const totalValid = logs.reduce((s: number, l: any) => s + l.validLessons, 0);
+    const totalRepair = logs.reduce((s: number, l: any) => s + l.repairCount, 0);
+    const totalDropped = logs.reduce((s: number, l: any) => s + (l.droppedByQualityGate ?? 0), 0);
+    const totalHalluc = logs.reduce((s: number, l: any) => s + l.hallucinationCount, 0);
+    const totalDup = logs.reduce((s: number, l: any) => s + l.duplicateCount, 0);
     const avgQuality = logs.reduce((s: number, l: any) => s + l.avgQualityScore, 0) / total;
-    const totalLessons = Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+    const avgParser = logs.reduce((s: number, l: any) => s + (l.avgParserScore ?? 0), 0) / total;
+
+    // tieptiengviet.md — 4 key rates
+    const parserSuccessRate = Math.round(((totalChunks - totalRepair) / totalChunks) * 1000) / 10;
+    const jsonValidRate = Math.round(((totalChunks - totalDropped) / totalChunks) * 1000) / 10;
+    const qualityGatePassRate = Math.round((totalValid / totalChunks) * 1000) / 10;
+    const hallucinationRate = Math.round((totalHalluc / totalChunks) * 1000) / 10;
+    const duplicateRate = Math.round((totalDup / totalChunks) * 1000) / 10;
+
     return reply.send({
       total,
+      // 4 rates — tieptiengviet.md
+      parserSuccessRate,
+      jsonValidRate,
+      qualityGatePassRate,
+      hallucinationRate,
+      // existing
       avgQualityScore: Math.round(avgQuality * 10) / 10,
-      hallucinationRate: Math.round(logs.reduce((s: number, l: any) => s + l.hallucinationCount, 0) / totalLessons * 1000) / 10,
-      duplicateRate: Math.round(logs.reduce((s: number, l: any) => s + l.duplicateCount, 0) / totalLessons * 1000) / 10,
+      avgParserScore: Math.round(avgParser * 1000) / 10,
+      duplicateRate,
       logs,
     });
   });
@@ -1048,10 +1113,503 @@ export async function vietRoutes(app: FastifyInstance) {
     const lessonForVariation = {
       subject: 'Tiếng Việt', grade: set.grade,
       lesson_type: (set as any).lessonType ?? 'vocabulary', topic: set.title, textbook: (set as any).textbook,
-      knowledge: set.items.map((it) => ({ name: it.word, definition: it.meaning, example: it.example ?? '', steps: [], hints: [] })),
+      knowledge: set.items.map((it) => ({ name: it.word, definition: it.meaning, example: it.example ?? '', hints: [] })),
       questions: [],
     } as any;
     const variations = await generateVietVariations(lessonForVariation, count);
     return reply.send({ setId, count: variations.length, questions: variations });
+  });
+
+  // ─── TEST PARSER (tieptiengviet.md Bước 5) ───────────────────────────────
+
+  app.post('/test-parser', { preHandler: requireInstructor }, async (req, reply) => {
+    const body = z.object({
+      text: z.string().min(1),
+      grade: z.number().min(1).max(9).optional(),
+    }).parse(req.body);
+
+    const cleaned = vietUnicodeNormalize(vietClean(body.text));
+    const curriculum = detectVietCurriculum(cleaned);
+    if (body.grade) curriculum.grade = body.grade;
+
+    const chunks = splitVietLessons(cleaned);
+    const richChunks = chunks.filter((c) => isVietContentRich(c.text));
+
+    const avgParserScore = richChunks.length > 0
+      ? Math.round(richChunks.reduce((s, c) => s + c.parserScore, 0) / richChunks.length * 100) / 100
+      : 0;
+
+    const chunkDetails = chunks.map((c) => ({
+      title: c.title,
+      textLength: c.text.length,
+      parserScore: c.parserScore,
+      vocabTokens: c.vocabTokens,
+      lessonSignals: c.lessonSignals,
+      isRich: isVietContentRich(c.text),
+    }));
+
+    const checks: Record<string, boolean> = {
+      '✓ Tách đúng bài học': richChunks.length > 0,
+      '✓ Có từ vựng': chunks.some((c) => c.vocabTokens.length > 0),
+      '✓ Parser score ≥ 0.5': avgParserScore >= 0.5,
+    };
+
+    return reply.send({
+      curriculum,
+      totalChunks: chunks.length,
+      richChunks: richChunks.length,
+      avgParserScore,
+      chunks: chunkDetails,
+      checks,
+    });
+  });
+
+  // ─── BENCHMARKS CRUD ─────────────────────────────────────────────────────
+
+  // GET /viet/benchmarks — list
+  app.get('/benchmarks', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const benchmarks = await (prisma as any).vietBenchmark.findMany({
+      where: role === 'ADMIN' ? {} : { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return reply.send(benchmarks);
+  });
+
+  // POST /viet/benchmarks — create manually
+  app.post('/benchmarks', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      name: z.string().min(2).max(200),
+      totalFiles: z.number().default(0),
+      parseOk: z.number().default(0),
+      jsonValid: z.number().default(0),
+      qualityPass: z.number().default(0),
+      avgQuality: z.number().default(0),
+      avgParser: z.number().default(0),
+      notes: z.string().optional(),
+    }).parse(req.body);
+    const benchmark = await (prisma as any).vietBenchmark.create({
+      data: { ...body, createdBy: sub },
+    });
+    return reply.status(201).send(benchmark);
+  });
+
+  // GET /viet/benchmarks/:id
+  app.get('/benchmarks/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const benchmark = await (prisma as any).vietBenchmark.findUnique({ where: { id } });
+    if (!benchmark) throw { statusCode: 404, message: 'Không tìm thấy benchmark' };
+    if (role !== 'ADMIN' && benchmark.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    return reply.send(benchmark);
+  });
+
+  // DELETE /viet/benchmarks/:id
+  app.delete('/benchmarks/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const benchmark = await (prisma as any).vietBenchmark.findUnique({ where: { id } });
+    if (!benchmark) throw { statusCode: 404, message: 'Không tìm thấy benchmark' };
+    if (role !== 'ADMIN' && benchmark.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    await (prisma as any).vietBenchmark.delete({ where: { id } });
+    return reply.send({ ok: true });
+  });
+
+  // ─── QUALITY CHECK (tieptiengviet1.md Bước 3) ────────────────────────────
+  //
+  // Chấm điểm từng knowledge item theo rubric đơn giản:
+  //   JSON hợp lệ           +10
+  //   definition >= 30 ký tự +40
+  //   example có dữ liệu    +30
+  //   hints >= 2 mục        +20
+  //   Tổng: 100 điểm/item
+
+  // ─── COMBINED STATS (testtoatiengviet.md Bước 2) ─────────────────────────
+  //
+  // Tổng hợp 3 chỉ số chính cho CẢ 2 MÔN (Toán + Tiếng Việt):
+  //   Parser Success %
+  //   JSON Valid %
+  //   Quality Score %
+
+  app.get('/combined-stats', { preHandler: requireInstructor }, async (req, reply) => {
+    const { role, sub } = req.user as { role: string; sub: string };
+    const q = req.query as { limit?: string };
+    const limit = Math.min(parseInt(q.limit ?? '50'), 200);
+
+    const [mathLogs, vietLogs] = await Promise.all([
+      (prisma as any).mathBenchmark.findMany({
+        where: role === 'ADMIN' ? {} : { createdBy: sub },
+        orderBy: { createdAt: 'desc' }, take: limit,
+        select: {
+          id: true, name: true, totalFiles: true, parseOk: true,
+          jsonValid: true, qualityPass: true, avgQuality: true,
+          avgParser: true, notes: true, createdAt: true,
+        },
+      }),
+      (prisma as any).vietBenchmark.findMany({
+        where: role === 'ADMIN' ? {} : { createdBy: sub },
+        orderBy: { createdAt: 'desc' }, take: limit,
+        select: {
+          id: true, name: true, totalFiles: true, parseOk: true,
+          jsonValid: true, qualityPass: true, avgQuality: true,
+          avgParser: true, notes: true, createdAt: true,
+        },
+      }),
+    ]);
+
+    const summarize = (logs: any[]) => {
+      const total = logs.reduce((s: number, l: any) => s + (l.totalFiles ?? 0), 0);
+      if (total === 0) return { total: 0, parserSuccessPct: 0, jsonValidPct: 0, qualityPassPct: 0, avgQuality: 0, runs: 0 };
+      const parseOk = logs.reduce((s: number, l: any) => s + (l.parseOk ?? 0), 0);
+      const jsonValid = logs.reduce((s: number, l: any) => s + (l.jsonValid ?? 0), 0);
+      const qualityPass = logs.reduce((s: number, l: any) => s + (l.qualityPass ?? 0), 0);
+      const avgQ = logs.reduce((s: number, l: any) => s + (l.avgQuality ?? 0), 0) / logs.length;
+      return {
+        total,
+        parserSuccessPct: Math.round(parseOk / total * 100),
+        jsonValidPct: Math.round(jsonValid / total * 100),
+        qualityPassPct: Math.round(qualityPass / total * 100),
+        avgQuality: Math.round(avgQ),
+        runs: logs.length,
+      };
+    };
+
+    const mathStats = summarize(mathLogs);
+    const vietStats = summarize(vietLogs);
+    const grandTotal = mathStats.total + vietStats.total;
+
+    // Combined weighted averages
+    const combined = grandTotal === 0 ? null : {
+      total: grandTotal,
+      parserSuccessPct: grandTotal > 0
+        ? Math.round((mathStats.parserSuccessPct * mathStats.total + vietStats.parserSuccessPct * vietStats.total) / grandTotal)
+        : 0,
+      jsonValidPct: grandTotal > 0
+        ? Math.round((mathStats.jsonValidPct * mathStats.total + vietStats.jsonValidPct * vietStats.total) / grandTotal)
+        : 0,
+      qualityPassPct: grandTotal > 0
+        ? Math.round((mathStats.qualityPassPct * mathStats.total + vietStats.qualityPassPct * vietStats.total) / grandTotal)
+        : 0,
+    };
+
+    return reply.send({
+      // testtoatiengviet.md Bước 2: 3 chỉ số chính
+      summary: {
+        label: 'Tổng hợp Toán + Tiếng Việt',
+        totalFilesProcessed: grandTotal,
+        'Parser Success %': combined?.parserSuccessPct ?? 0,
+        'JSON Valid %': combined?.jsonValidPct ?? 0,
+        'Quality Score %': combined?.qualityPassPct ?? 0,
+      },
+      math: { ...mathStats, recentRuns: mathLogs.slice(0, 5) },
+      viet: { ...vietStats, recentRuns: vietLogs.slice(0, 5) },
+      // testtoatiengviet.md Bước 5: gợi ý khi nào nên làm tính năng mới
+      readiness: {
+        stable: (combined?.parserSuccessPct ?? 0) >= 85 &&
+                (combined?.jsonValidPct ?? 0) >= 85 &&
+                (combined?.qualityPassPct ?? 0) >= 80,
+        message: (combined?.parserSuccessPct ?? 0) >= 85 &&
+                 (combined?.jsonValidPct ?? 0) >= 85 &&
+                 (combined?.qualityPassPct ?? 0) >= 80
+          ? '✓ Hệ thống ổn định — có thể bắt đầu RAG / Student Profile'
+          : '⚠ Hệ thống chưa ổn định — cần test thêm file thật và sửa lỗi trước khi làm tính năng mới',
+        targets: { parserSuccess: '≥85%', jsonValid: '≥85%', qualityScore: '≥80%' },
+      },
+    });
+  });
+
+  app.post('/quality-check', { preHandler: requireInstructor }, async (req, reply) => {
+    const body = z.object({
+      items: z.array(z.object({
+        name: z.string().optional(),
+        definition: z.string().optional(),
+        example: z.string().optional(),
+        hints: z.array(z.string()).optional(),
+      })).min(1).max(50),
+    }).parse(req.body);
+
+    const result = scoreKnowledgeItems(body.items);
+    const passCount = result.items.filter((i) => i.score >= 80).length;
+    const failCount = result.items.length - passCount;
+
+    return reply.send({
+      avgScore: result.avgScore,
+      totalItems: result.items.length,
+      passCount,
+      failCount,
+      items: result.items,
+      rubric: {
+        'JSON hợp lệ': '+10',
+        'definition >= 30 ký tự': '+40',
+        'example có dữ liệu': '+30',
+        'hints >= 2 mục': '+20',
+        'Tổng tối đa': '100 điểm',
+      },
+    });
+  });
+
+  // POST /viet/quality-check/gold — chấm điểm toàn bộ gold dataset
+  app.post('/quality-check/gold', { preHandler: requireInstructor }, async (_req, reply) => {
+    const allResults = VIET_GOLD_DATASET.map((entry) => {
+      const result = scoreKnowledgeItems(entry.expectedKnowledge);
+      return {
+        label: entry.label,
+        grade: entry.grade,
+        itemCount: entry.expectedKnowledge.length,
+        avgScore: result.avgScore,
+        items: result.items,
+      };
+    });
+
+    const overallAvg = allResults.length > 0
+      ? Math.round(allResults.reduce((s, r) => s + r.avgScore, 0) / allResults.length)
+      : 0;
+
+    const allPass = allResults.every((r) => r.avgScore >= 80);
+
+    return reply.send({
+      totalLessons: allResults.length,
+      overallAvgScore: overallAvg,
+      allPass,
+      lessons: allResults,
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /viet/benchmarks/run-batch (tieptiengviet.md Bước 5)
+  //
+  // Chạy pipeline trên nhiều bài cùng lúc, ghi lại 4 chỉ số:
+  //   - Parse thành công (parserScore ≥ 0.3 và isVietContentRich)
+  //   - JSON hợp lệ (qua validator, chỉ khi runAI=true)
+  //   - Quality > 70 (chỉ khi runAI=true)
+  //   - AI Generate tốt (AI trả kết quả, chỉ khi runAI=true)
+  //
+  // Dùng useSeed=true để test với VIET_GOLD_DATASET (20 bài mặc định).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/benchmarks/run-batch', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+
+    const body = z.object({
+      name: z.string().min(2).max(200).default(`Benchmark Viet ${new Date().toLocaleDateString('vi-VN')}`),
+      useSeed: z.boolean().default(false),
+      runAI: z.boolean().default(false),
+      notes: z.string().optional(),
+      items: z.array(z.object({
+        label: z.string().min(1),
+        text: z.string().min(10),
+        grade: z.number().min(1).max(9).default(3),
+      })).optional(),
+    }).parse(req.body);
+
+    const items = body.useSeed
+      ? VIET_GOLD_DATASET
+      : (body.items ?? []);
+
+    if (items.length === 0) {
+      throw { statusCode: 400, message: 'Cần ít nhất 1 item hoặc dùng useSeed=true để dùng gold dataset' };
+    }
+
+    const report: Array<{
+      label: string;
+      grade: number;
+      parseOk: boolean;
+      parserScore: number;
+      chunkCount: number;
+      jsonValid?: boolean;
+      qualityScore?: number;
+      qualityPass?: boolean;
+      aiOk?: boolean;
+      knowledgeQualityScore?: number;
+      knowledgeItemCount?: number;
+      // testtoatiengviet.md Bước 3: error classification
+      errors: ErrorType[];
+      errorLabels: string[];
+      error?: string;
+    }> = [];
+
+    for (const item of items) {
+      try {
+        const cleaned = vietUnicodeNormalize(vietClean(item.text));
+        const curriculum = detectVietCurriculum(cleaned);
+        if (item.grade) curriculum.grade = item.grade;
+
+        const chunks = splitVietLessons(cleaned);
+        const richChunks = chunks.filter((c) => isVietContentRich(c.text));
+        const avgParser = richChunks.length > 0
+          ? richChunks.reduce((s, c) => s + c.parserScore, 0) / richChunks.length
+          : 0;
+        const parseOk = richChunks.length > 0 && avgParser >= 0.3;
+
+        // Knowledge quality — gold dataset only
+        let knowledgeQualityScore: number | undefined;
+        let knowledgeItemCount: number | undefined;
+        const goldItem = item as any;
+        if (body.useSeed && Array.isArray(goldItem.expectedKnowledge) && goldItem.expectedKnowledge.length > 0) {
+          const kResult = scoreKnowledgeItems(goldItem.expectedKnowledge);
+          knowledgeQualityScore = kResult.avgScore;
+          knowledgeItemCount = goldItem.expectedKnowledge.length;
+        }
+
+        // Error classification — parser stage
+        const errReport = classifyItemErrors({
+          text: item.text,
+          richChunkCount: richChunks.length,
+          totalChunkCount: chunks.length,
+        });
+
+        if (!body.runAI) {
+          report.push({
+            label: item.label,
+            grade: item.grade,
+            parseOk,
+            parserScore: Math.round(avgParser * 100) / 100,
+            chunkCount: richChunks.length,
+            knowledgeQualityScore,
+            knowledgeItemCount,
+            errors: errReport.errors,
+            errorLabels: errReport.errorLabels,
+          });
+          continue;
+        }
+
+        // Full AI pipeline
+        const result = await processVietDocument(item.text, {
+          grade: item.grade,
+          generateExercises: false,
+          userId: sub,
+        });
+
+        const validEntries = result.entries;
+        const jsonValid = validEntries.length > 0;
+        const avgQuality = result.analytics.avgQualityScore;
+        const qualityPass = avgQuality >= 70;
+
+        // Error classification — AI stage
+        const errReportAI = classifyItemErrors({
+          text: item.text,
+          richChunkCount: richChunks.length,
+          totalChunkCount: chunks.length,
+          jsonRepairFailed: result.analytics.repairCount > 0 && !jsonValid,
+          qualityScore: avgQuality,
+          qualityGate: 40,
+          hallucinationCount: result.analytics.hallucinationCount,
+        });
+
+        report.push({
+          label: item.label,
+          grade: item.grade,
+          parseOk,
+          parserScore: Math.round(avgParser * 100) / 100,
+          chunkCount: richChunks.length,
+          jsonValid,
+          qualityScore: avgQuality,
+          qualityPass,
+          aiOk: jsonValid,
+          knowledgeQualityScore,
+          knowledgeItemCount,
+          errors: errReportAI.errors,
+          errorLabels: errReportAI.errorLabels,
+        });
+      } catch (e: any) {
+        const errReport = classifyItemErrors({
+          text: item.text,
+          richChunkCount: 0,
+          totalChunkCount: 0,
+        });
+        report.push({
+          label: item.label,
+          grade: item.grade,
+          parseOk: false,
+          parserScore: 0,
+          chunkCount: 0,
+          errors: errReport.errors,
+          errorLabels: errReport.errorLabels,
+          error: e.message,
+        });
+      }
+    }
+
+    const total = report.length;
+    const parseOkCount = report.filter((r) => r.parseOk).length;
+    const jsonValidCount = report.filter((r) => r.jsonValid === true).length;
+    const qualityPassCount = report.filter((r) => r.qualityPass === true).length;
+    const aiOkCount = report.filter((r) => r.aiOk === true).length;
+    const avgParser = total > 0
+      ? Math.round(report.reduce((s, r) => s + r.parserScore, 0) / total * 100) / 100
+      : 0;
+    const avgQuality = body.runAI && total > 0
+      ? Math.round(report.filter((r) => r.qualityScore != null).reduce((s, r) => s + (r.qualityScore ?? 0), 0) / Math.max(1, report.filter((r) => r.qualityScore != null).length))
+      : 0;
+
+    // Knowledge quality summary
+    const kqItems = report.filter((r) => r.knowledgeQualityScore != null);
+    const avgKnowledgeQuality = kqItems.length > 0
+      ? Math.round(kqItems.reduce((s, r) => s + (r.knowledgeQualityScore ?? 0), 0) / kqItems.length)
+      : null;
+    const kqPassCount = kqItems.filter((r) => (r.knowledgeQualityScore ?? 0) >= 80).length;
+
+    // testtoatiengviet.md Bước 3: Error table
+    const batchSummary = buildBatchSummary({
+      total,
+      parserSuccessCount: parseOkCount,
+      jsonValidCount: body.runAI ? jsonValidCount : parseOkCount,
+      qualityPassCount,
+      errorReports: report.map((r) => ({ errors: r.errors })),
+    });
+
+    // Ghi kết quả vào VietBenchmark
+    const benchmark = await (prisma as any).vietBenchmark.create({
+      data: {
+        name: body.name,
+        totalFiles: total,
+        parseOk: parseOkCount,
+        jsonValid: body.runAI ? jsonValidCount : parseOkCount,
+        qualityPass: qualityPassCount,
+        avgQuality: body.useSeed && avgKnowledgeQuality != null ? avgKnowledgeQuality : avgQuality,
+        avgParser,
+        notes: [
+          body.notes,
+          `useSeed=${body.useSeed}`,
+          `runAI=${body.runAI}`,
+          `items=${total}`,
+          avgKnowledgeQuality != null ? `knowledgeAvgScore=${avgKnowledgeQuality}` : null,
+          batchSummary.topError ? `topError=${batchSummary.topError}` : null,
+        ].filter(Boolean).join(' | '),
+        createdBy: sub,
+      },
+    });
+
+    // Metrics hiển thị
+    const metrics: Record<string, string> = {
+      'Parser Success %': `${parseOkCount}/${total} (${batchSummary.parserSuccessPct}%)`,
+      'JSON Valid %': body.runAI
+        ? `${jsonValidCount}/${total} (${batchSummary.jsonValidPct}%)`
+        : 'chưa chạy AI',
+      'Quality Score %': body.runAI
+        ? `${qualityPassCount}/${total} (${batchSummary.qualityPassPct}%)`
+        : 'chưa chạy AI',
+    };
+    if (avgKnowledgeQuality != null) {
+      metrics['Knowledge Quality'] = `avg ${avgKnowledgeQuality}/100 — ${kqPassCount}/${kqItems.length} bài đạt ≥80`;
+    }
+
+    return reply.status(201).send({
+      benchmarkId: benchmark.id,
+      name: body.name,
+      total,
+      // testtoatiengviet.md Bước 2
+      metrics,
+      avgParser,
+      avgQuality: body.runAI ? avgQuality : null,
+      avgKnowledgeQuality,
+      // testtoatiengviet.md Bước 3: bảng lỗi xếp hạng
+      errorTable: batchSummary.errorTable,
+      topError: batchSummary.topError,
+      recommendation: batchSummary.recommendation,
+      report,
+    });
   });
 }

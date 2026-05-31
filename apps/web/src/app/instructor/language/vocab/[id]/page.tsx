@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Plus, Trash2, Upload, Download, Loader2, Save, X, Pencil, FileSpreadsheet, CheckCircle2, Sparkles, Video, Link as LinkIcon, MessageSquare, Volume2, Brain } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Upload, Download, Loader2, Save, X, Pencil, FileSpreadsheet, CheckCircle2, Sparkles, Video, Link as LinkIcon, MessageSquare, Volume2, Brain, ShieldCheck, AlignLeft, Wand2, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,8 @@ function EditModal({ item, onSave, onClose }: {
   const [example, setExample] = useState(item.example || '');
   const [exTrans, setExTrans] = useState(item.exampleTrans || '');
   const [notes, setNotes] = useState(item.notes || '');
+  const [topic, setTopic] = useState((item as any).topic || '');
+  const [itemLevel, setItemLevel] = useState((item as any).itemLevel || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -43,6 +45,8 @@ function EditModal({ item, onSave, onClose }: {
       example: example.trim() || undefined,
       exampleTrans: exTrans.trim() || undefined,
       notes: notes.trim() || undefined,
+      ...(topic.trim() ? { topic: topic.trim() } : {}),
+      ...(itemLevel.trim() ? { itemLevel: itemLevel.trim() } : {}),
     });
     setSaving(false);
     onClose();
@@ -83,6 +87,20 @@ function EditModal({ item, onSave, onClose }: {
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Dịch ví dụ</label>
               <Input value={exTrans} onChange={e => setExTrans(e.target.value)} placeholder="VD: Cô ấy rất đẹp." />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Chủ đề (topic)</label>
+              <Input value={topic} onChange={e => setTopic(e.target.value)} placeholder="VD: family, food, travel" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Cấp độ từ</label>
+              <select value={itemLevel} onChange={e => setItemLevel(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                <option value="">-- Chọn --</option>
+                {['A1','A2','B1','B2','C1','C2'].map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
             </div>
           </div>
           <div>
@@ -139,6 +157,28 @@ export default function InstructorEditVocabPage() {
   const [fileImportError, setFileImportError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Text parser state
+  const [showTextParser, setShowTextParser] = useState(false);
+  const [parserText, setParserText] = useState('');
+  const [parserParsing, setParserParsing] = useState(false);
+  const [parserResult, setParserResult] = useState<{ items: { word: string; translation: string; pronunciation?: string }[]; failed: string[]; total: number } | null>(null);
+  const [parserError, setParserError] = useState<string | null>(null);
+  const [parserImporting, setParserImporting] = useState(false);
+
+  // Quality validator state
+  const [showQuality, setShowQuality] = useState(false);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [qualityReport, setQualityReport] = useState<{
+    totalItems: number; avgScore: number; perfect: number; incomplete: number;
+    fieldStats: Record<string, number>;
+    items: { id: string; word: string; score: number; missing: string[] }[];
+  } | null>(null);
+
+  // AI enrich state
+  const [enrichingId, setEnrichingId] = useState<string | null>(null);
+  const [batchEnriching, setBatchEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ enriched: number; total: number; skipped: number } | null>(null);
 
   const [showSmartImport, setShowSmartImport] = useState(false);
   const [smartImporting, setSmartImporting] = useState(false);
@@ -274,6 +314,66 @@ export default function InstructorEditVocabPage() {
     setFileImporting(false);
   };
 
+  const handleParseText = async () => {
+    if (!parserText.trim() || !set) return;
+    setParserParsing(true); setParserError(null); setParserResult(null);
+    try {
+      const result = await api.post<{ items: { word: string; translation: string; pronunciation?: string }[]; failed: string[]; total: number }>(
+        '/language/parse-text', { text: parserText, language: set.language },
+      );
+      setParserResult(result);
+    } catch (e: any) { setParserError(e.message || 'Phân tích thất bại'); }
+    setParserParsing(false);
+  };
+
+  const handleParserImport = async () => {
+    if (!parserResult || parserResult.items.length === 0) return;
+    setParserImporting(true);
+    try {
+      await api.post(`/language/vocab-sets/${id}/items/bulk`, { items: parserResult.items });
+      setParserText(''); setParserResult(null); setShowTextParser(false);
+      await load();
+    } catch (e: any) { setParserError(e.message || 'Import thất bại'); }
+    setParserImporting(false);
+  };
+
+  const loadQuality = async () => {
+    setQualityLoading(true);
+    try {
+      const data = await api.get<typeof qualityReport>(`/language/vocab-sets/${id}/quality`);
+      setQualityReport(data);
+    } catch {}
+    setQualityLoading(false);
+  };
+
+  const handleShowQuality = () => {
+    setShowQuality(v => !v);
+    if (!qualityReport) loadQuality();
+  };
+
+  const handleAiEnrich = async (itemId: string) => {
+    setEnrichingId(itemId);
+    try {
+      await api.post(`/language/vocab-items/${itemId}/ai-enrich`, {});
+      await load();
+      if (showQuality) loadQuality();
+    } catch (e: any) { alert(e.message || 'AI enrich thất bại'); }
+    setEnrichingId(null);
+  };
+
+  const handleBatchEnrich = async () => {
+    setBatchEnriching(true); setEnrichResult(null);
+    try {
+      const result = await api.post<{ enriched: number; total: number; skipped: number }>(
+        `/language/vocab-sets/${id}/ai-enrich-batch`, { onlyMissing: true },
+      );
+      setEnrichResult(result);
+      await load();
+      if (showQuality) loadQuality();
+    } catch (e: any) { alert(e.message || 'Batch enrich thất bại'); }
+    setBatchEnriching(false);
+  };
+
   const handleSmartImport = async (file: File) => {
     if (file.size > 20 * 1024 * 1024) { setSmartError('File tối đa 20MB'); return; }
     setSmartImporting(true); setSmartError(null); setSmartResult(null);
@@ -391,18 +491,34 @@ We always eat dinner together as a family. I love my family very much!
           <p className="text-muted-foreground text-sm mt-0.5">{set.language.toUpperCase()} · {set.level} · {set.items.length} từ</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handleShowQuality}
+            className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+            <ShieldCheck className="h-4 w-4 mr-1 text-emerald-500" />
+            {qualityReport ? `Chất lượng ${qualityReport.avgScore}%` : 'Kiểm tra chất lượng'}
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => handleBatchEnrich()}
+            disabled={batchEnriching}
+            className="border-amber-300 text-amber-700 hover:bg-amber-50">
+            {batchEnriching ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1 text-amber-500" />}
+            AI Enrich tất cả
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => { setShowTextParser(!showTextParser); setShowSmartImport(false); setShowFileImport(false); setShowBulk(false); setParserResult(null); setParserError(null); }}>
+            <AlignLeft className="h-4 w-4 mr-1" />Nhập text
+          </Button>
           <Button variant="outline" size="sm" onClick={downloadCsv}>
             <Download className="h-4 w-4 mr-1" />Xuất CSV
           </Button>
           <Button variant="outline" size="sm"
-            onClick={() => { setShowSmartImport(!showSmartImport); setShowFileImport(false); setShowBulk(false); setSmartResult(null); setSmartError(null); }}
+            onClick={() => { setShowSmartImport(!showSmartImport); setShowFileImport(false); setShowBulk(false); setShowTextParser(false); setSmartResult(null); setSmartError(null); }}
             className="border-violet-300 text-violet-700 hover:bg-violet-50">
             <Brain className="h-4 w-4 mr-1 text-violet-500" />SmartImport AI
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setShowFileImport(!showFileImport); setShowBulk(false); setShowSmartImport(false); setFileImportResult(null); setFileImportError(null); }}>
+          <Button variant="outline" size="sm" onClick={() => { setShowFileImport(!showFileImport); setShowBulk(false); setShowSmartImport(false); setShowTextParser(false); setFileImportResult(null); setFileImportError(null); }}>
             <FileSpreadsheet className="h-4 w-4 mr-1" />Import file
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setShowBulk(!showBulk); setShowFileImport(false); }}>
+          <Button variant="outline" size="sm" onClick={() => { setShowBulk(!showBulk); setShowFileImport(false); setShowTextParser(false); }}>
             <Upload className="h-4 w-4 mr-1" />Nhập hàng loạt
           </Button>
           <Button variant="outline" size="sm" onClick={() => setEditingVideo(!editingVideo)}>
@@ -456,6 +572,159 @@ We always eat dinner together as a family. I love my family very much!
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Quality Report Panel ── */}
+      {showQuality && (
+        <Card className="border-emerald-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-emerald-500" />Báo cáo chất lượng từ vựng
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowQuality(false)}><X className="h-4 w-4" /></Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {qualityLoading && <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-emerald-500" /></div>}
+            {qualityReport && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Điểm TB', value: `${qualityReport.avgScore}%`, color: qualityReport.avgScore >= 80 ? 'text-green-600' : qualityReport.avgScore >= 60 ? 'text-amber-600' : 'text-red-600', bg: 'bg-green-50' },
+                    { label: 'Hoàn chỉnh', value: qualityReport.perfect, bg: 'bg-emerald-50', color: 'text-emerald-700' },
+                    { label: 'Thiếu dữ liệu', value: qualityReport.incomplete, bg: 'bg-red-50', color: 'text-red-600' },
+                    { label: 'Tổng từ', value: qualityReport.totalItems, bg: 'bg-gray-50', color: 'text-gray-700' },
+                  ].map(s => (
+                    <div key={s.label} className={`${s.bg} rounded-xl p-3 text-center`}>
+                      <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mức độ điền đầy đủ từng trường</p>
+                  {Object.entries(qualityReport.fieldStats).map(([field, count]) => {
+                    const pct = qualityReport.totalItems > 0 ? Math.round((count / qualityReport.totalItems) * 100) : 0;
+                    const labels: Record<string, string> = { word: 'Từ', translation: 'Nghĩa', pronunciation: 'Phiên âm', example: 'Ví dụ', exampleTrans: 'Dịch ví dụ', synonyms: 'Từ đồng nghĩa', hints: 'Gợi nhớ' };
+                    return (
+                      <div key={field} className="flex items-center gap-3">
+                        <span className="text-xs w-28 shrink-0 text-muted-foreground">{labels[field] || field}</span>
+                        <div className="flex-1 h-2 bg-muted rounded-full">
+                          <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444' }} />
+                        </div>
+                        <span className="text-xs w-10 text-right text-muted-foreground">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {qualityReport.items.filter(i => i.score < 100).length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />Từ cần bổ sung
+                    </p>
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {qualityReport.items.filter(i => i.score < 100).map(item => (
+                        <div key={item.id} className="flex items-center justify-between bg-amber-50 rounded-lg px-3 py-2">
+                          <span className="text-sm font-medium">{item.word}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-amber-600">Thiếu: {item.missing.join(', ')}</span>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${item.score >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{item.score}%</span>
+                            <button onClick={() => handleAiEnrich(item.id)} disabled={enrichingId === item.id}
+                              className="text-xs text-violet-600 hover:text-violet-800 bg-violet-100 hover:bg-violet-200 px-2 py-0.5 rounded transition-colors flex items-center gap-1">
+                              {enrichingId === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}AI
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Batch enrich result */}
+      {enrichResult && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-amber-800">
+            <span className="font-semibold">AI Enrich:</span> đã bổ sung {enrichResult.enriched}/{enrichResult.total} từ
+            {enrichResult.skipped > 0 && ` (bỏ qua ${enrichResult.skipped} từ còn lại)`}
+          </p>
+          <button onClick={() => setEnrichResult(null)} className="text-amber-500 hover:text-amber-700"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {/* ── Text Parser Panel ── */}
+      {showTextParser && (
+        <Card className="border-blue-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlignLeft className="h-4 w-4 text-blue-500" />Nhập từ dạng text đơn giản
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => { setShowTextParser(false); setParserResult(null); setParserError(null); }}><X className="h-4 w-4" /></Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">Định dạng hỗ trợ (mỗi dòng 1 từ):</p>
+              <div className="font-mono space-y-0.5 text-blue-600">
+                <p>apple - quả táo</p>
+                <p>book: quyển sách</p>
+                <p>teacher = giáo viên</p>
+                <p>beautiful /ˈbjuːtɪfəl/ - đẹp</p>
+              </div>
+            </div>
+            <textarea
+              className="w-full h-36 rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+              placeholder={'apple - quả táo\nbook - quyển sách\nteacher - giáo viên'}
+              value={parserText}
+              onChange={e => { setParserText(e.target.value); setParserResult(null); }}
+            />
+            {parserError && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{parserError}</p>}
+            {parserResult && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-green-50 rounded-lg p-2 text-center"><p className="text-lg font-bold text-green-600">{parserResult.total}</p><p className="text-xs text-green-700">Từ hợp lệ</p></div>
+                  <div className="bg-red-50 rounded-lg p-2 text-center"><p className="text-lg font-bold text-red-600">{parserResult.failed.length}</p><p className="text-xs text-red-700">Không nhận dạng được</p></div>
+                  <div className="bg-blue-50 rounded-lg p-2 text-center"><p className="text-lg font-bold text-blue-600">{parserText.trim().split('\n').filter(Boolean).length}</p><p className="text-xs text-blue-700">Tổng dòng</p></div>
+                </div>
+                {parserResult.items.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {parserResult.items.slice(0, 10).map((item, i) => (
+                      <div key={i} className="flex items-center gap-3 bg-white rounded-lg px-3 py-1.5 border border-gray-100 text-sm">
+                        <span className="font-medium text-gray-900 w-32 truncate">{item.word}</span>
+                        <span className="text-gray-400">→</span>
+                        <span className="text-muted-foreground flex-1 truncate">{item.translation}</span>
+                        {item.pronunciation && <span className="text-xs text-blue-500">[{item.pronunciation}]</span>}
+                      </div>
+                    ))}
+                    {parserResult.items.length > 10 && <p className="text-xs text-center text-muted-foreground">...và {parserResult.items.length - 10} từ nữa</p>}
+                  </div>
+                )}
+                {parserResult.failed.length > 0 && (
+                  <p className="text-xs text-red-500">Không nhận dạng: {parserResult.failed.slice(0, 5).join(', ')}{parserResult.failed.length > 5 ? '...' : ''}</p>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button onClick={handleParseText} disabled={parserParsing || !parserText.trim()}>
+                {parserParsing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlignLeft className="h-4 w-4 mr-2" />}
+                Phân tích
+              </Button>
+              {parserResult && parserResult.items.length > 0 && (
+                <Button onClick={handleParserImport} disabled={parserImporting} className="bg-green-600 hover:bg-green-700">
+                  {parserImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                  Nhập {parserResult.total} từ
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => { setShowTextParser(false); setParserResult(null); setParserText(''); }}>Hủy</Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {showSmartImport && (
@@ -821,6 +1090,11 @@ We always eat dinner together as a family. I love my family very much!
                     <td className="px-4 py-3 text-muted-foreground hidden md:table-cell text-xs max-w-xs truncate">{item.example || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                          onClick={() => handleAiEnrich(item.id)} disabled={enrichingId === item.id}
+                          title="AI tự động bổ sung phiên âm, ví dụ, gợi nhớ">
+                          {enrichingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                        </Button>
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
                           onClick={() => setEditItem(item)} title="Chỉnh sửa">
                           <Pencil className="h-3.5 w-3.5" />

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g. 1.2.0)'
+        description: 'Version (e.g. 1.3.0)'
         required: true
-        default: '1.2.0'
+        default: '1.3.0'
 
 jobs:
   # ─── DESKTOP: WINDOWS ───────────────────────────────────────────
@@ -202,14 +202,26 @@ jobs:
           tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
           name: MasterLMS ${{ github.ref_name || format('v{0}', inputs.version) }}
           body: |
-            ## Tính năng mới (v1.2.0)
+            ## Cập nhật (v1.3.0)
 
-            - **Hồ sơ học tập**: Phân tích điểm mạnh / điểm yếu từng học sinh cho Toán và Tiếng Việt
-            - **Analytics giảng viên**: Báo cáo tổng quan lớp học cho môn Toán và Tiếng Việt
-            - **Pipeline AI Toán**: Xử lý tiểu học & THCS — parser, validator, sinh bài tập chất lượng cao
-            - **Pipeline AI Tiếng Việt**: Đọc hiểu, chính tả, tập làm văn — chống hallucination, chống duplicate
-            - **Loại bài học Toán mở rộng**: Thêm nhiều dạng bài mới (số học, hình học, đại số…)
-            - **Cải thiện import**: Tối ưu phân tích file tài liệu cho cả Toán và Tiếng Việt
+            ### Sửa lỗi
+            - **Toán — MATCHING Tiếng Việt**: Sửa lỗi chấm điểm sai do thứ tự key không nhất quán
+            - **Toán — FILL_BLANK**: Sửa lỗi đáp án hiển thị trong câu hỏi khi token lặp trong công thức
+            - **Toán — CALCULATION**: Sửa lỗi đáp án hardcode `'0'` khi ví dụ không có số
+            - **Ngoại ngữ — MATCHING**: Thêm null guard tránh crash khi dữ liệu câu hỏi bị lỗi
+            - **Ngoại ngữ — /vocab-sets/tree**: Sửa route bị shadow bởi `/:id`, không bao giờ được gọi
+            - **Cache**: PATCH topic/set/exercise giờ xóa cache đúng cách (trước đây chỉ DELETE mới xóa)
+            - **Analytics**: Sửa lỗi `due count` bị đóng băng theo thời điểm cache populate
+
+            ### Hiệu năng
+            - **Redis cache**: Toán, Tiếng Việt, Ngoại ngữ — topics/sets/exercises/leaderboard/analytics
+            - **HTTP Brotli/gzip**: Toàn bộ API response > 1KB được nén tự động
+            - **7 Composite indexes**: PostgreSQL query nhanh hơn khi filter theo isPublic/grade/subject
+            - **Next.js Production mode**: Frontend phản hồi nhanh hơn 3–5x so với dev mode
+
+            ### Chất lượng bài tập
+            - **Loại CALCULATION mới**: Tạo bài tính toán từ ví dụ có số thực tế
+            - **AI prompt cải thiện**: Tạo câu hỏi thực hành (tính toán, áp dụng công thức) thay vì thuộc lòng định nghĩa
 
             ## 📥 Tải MasterLMS
 

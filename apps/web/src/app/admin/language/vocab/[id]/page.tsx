@@ -10,7 +10,8 @@ import { api } from '@/lib/api';
 
 interface VocabItem {
   id: string; word: string; translation: string; pronunciation?: string;
-  example?: string; exampleTrans?: string; notes?: string; order: number;
+  example?: string; exampleTrans?: string; notes?: string;
+  topic?: string; itemLevel?: string; order: number;
 }
 interface VocabSet { id: string; title: string; language: string; level: string; items: VocabItem[]; }
 
@@ -26,6 +27,8 @@ function EditModal({ item, onSave, onClose }: {
   const [example, setExample] = useState(item.example || '');
   const [exTrans, setExTrans] = useState(item.exampleTrans || '');
   const [notes, setNotes] = useState(item.notes || '');
+  const [topic, setTopic] = useState(item.topic || '');
+  const [itemLevel, setItemLevel] = useState(item.itemLevel || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -39,6 +42,8 @@ function EditModal({ item, onSave, onClose }: {
       example: example.trim() || undefined,
       exampleTrans: exTrans.trim() || undefined,
       notes: notes.trim() || undefined,
+      topic: topic.trim() || undefined,
+      itemLevel: itemLevel.trim() || undefined,
     });
     setSaving(false);
     onClose();
@@ -79,6 +84,20 @@ function EditModal({ item, onSave, onClose }: {
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Dịch ví dụ</label>
               <Input value={exTrans} onChange={e => setExTrans(e.target.value)} placeholder="VD: Cô ấy rất đẹp." />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Chủ đề (topic)</label>
+              <Input value={topic} onChange={e => setTopic(e.target.value)} placeholder="VD: family, food, travel" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Cấp độ từ</label>
+              <select value={itemLevel} onChange={e => setItemLevel(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                <option value="">-- Chọn --</option>
+                {['A1','A2','B1','B2','C1','C2'].map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
             </div>
           </div>
           <div>
@@ -301,6 +320,7 @@ export default function EditVocabSetPage() {
                   <th className="text-left px-4 py-3 font-medium">Nghĩa</th>
                   <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Phiên âm</th>
                   <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Ví dụ</th>
+                  <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Chủ đề</th>
                   <th className="px-4 py-3 text-right font-medium w-24">Thao tác</th>
                 </tr>
               </thead>
@@ -312,6 +332,13 @@ export default function EditVocabSetPage() {
                     <td className="px-4 py-3">{item.translation}</td>
                     <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{item.pronunciation || '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground hidden md:table-cell text-xs max-w-xs truncate">{item.example || '—'}</td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {item.topic && <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{item.topic}</span>}
+                        {item.itemLevel && <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-medium">{item.itemLevel}</span>}
+                        {!item.topic && !item.itemLevel && <span className="text-xs text-gray-300">—</span>}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <Button

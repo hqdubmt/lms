@@ -43,7 +43,6 @@ export interface VietLesson {
     name: string;
     definition: string;
     example: string;
-    steps: string[];
     hints: string[];
   }>;
   questions: Array<{
@@ -126,11 +125,10 @@ export function scoreVietLesson(lesson: VietLesson): number {
     if (withExample / kCount >= 0.7) score += 12;
     else if (withExample / kCount >= 0.4) score += 6;
 
-    // Steps/hints for active learning
-    const withSteps = kItems.filter((k) => k.steps?.length >= 1).length;
-    if (withSteps / kCount >= 0.4) score += 6;
-    const withHints = kItems.filter((k) => k.hints?.length >= 1).length;
-    if (withHints / kCount >= 0.4) score += 5;
+    // Hints for active learning (≥2 per tieptiengviet.md)
+    const withHints = kItems.filter((k) => k.hints?.length >= 2).length;
+    if (withHints / kCount >= 0.7) score += 11;
+    else if (withHints / kCount >= 0.4) score += 5;
 
     // Vietnamese diacritics preserved (không bị mất dấu)
     const allContent = kItems.map((k) => k.definition + k.example).join(' ');
@@ -156,6 +154,55 @@ export function scoreVietLesson(lesson: VietLesson): number {
 
 const VIET_QUALITY_GATE = 40;
 
+// ─── Simple Knowledge Item Quality Score (tieptiengviet1.md Bước 3) ──────────
+// definition >= 30 ký tự  → +40
+// example có dữ liệu      → +30
+// hints >= 2 mục          → +20
+// JSON hợp lệ (object)    → +10
+// Tổng tối đa: 100 điểm
+
+export interface KnowledgeItemScore {
+  name: string;
+  score: number;
+  breakdown: {
+    jsonValid: boolean;        // +10
+    definitionOk: boolean;    // +40
+    exampleOk: boolean;       // +30
+    hintsOk: boolean;         // +20
+  };
+}
+
+export function scoreKnowledgeItem(item: {
+  name?: string;
+  definition?: string;
+  example?: string;
+  hints?: string[];
+}): KnowledgeItemScore {
+  const hasName = typeof item?.name === 'string' && item.name.trim().length > 0;
+  const definitionOk = typeof item?.definition === 'string' && item.definition.trim().length >= 30;
+  const exampleOk = typeof item?.example === 'string' && item.example.trim().length > 0;
+  const hintsOk = Array.isArray(item?.hints) && item.hints.filter(Boolean).length >= 2;
+
+  const score = (hasName ? 10 : 0) + (definitionOk ? 40 : 0) + (exampleOk ? 30 : 0) + (hintsOk ? 20 : 0);
+  return {
+    name: item?.name?.trim() || '(không rõ)',
+    score,
+    breakdown: { jsonValid: hasName, definitionOk, exampleOk, hintsOk },
+  };
+}
+
+export function scoreKnowledgeItems(items: Array<{
+  name?: string;
+  definition?: string;
+  example?: string;
+  hints?: string[];
+}>): { items: KnowledgeItemScore[]; avgScore: number } {
+  if (!items?.length) return { items: [], avgScore: 0 };
+  const scored = items.map(scoreKnowledgeItem);
+  const avg = Math.round(scored.reduce((s, i) => s + i.score, 0) / scored.length);
+  return { items: scored, avgScore: avg };
+}
+
 // 2b. Completeness enforcer
 function enforceVietCompleteness(lesson: VietLesson): VietLesson {
   return {
@@ -164,7 +211,6 @@ function enforceVietCompleteness(lesson: VietLesson): VietLesson {
       name: k.name?.trim() || 'Từ/khái niệm',
       definition: k.definition?.trim() || k.example?.trim() || '(thiếu định nghĩa)',
       example: k.example?.trim() || '',
-      steps: Array.isArray(k.steps) ? k.steps.filter(Boolean) : [],
       hints: Array.isArray(k.hints) ? k.hints.filter(Boolean) : [],
     })),
     questions: (lesson.questions ?? []).map((q) => ({
@@ -333,6 +379,15 @@ export function splitVietLessons(text: string): VietLessonChunk[] {
     /^[Cc]hương\s+[IVXLCDM\d]+/,
     /^[Uu]nit\s+\d+/,
     /^\d+\.\s+[A-ZĐÁÀẢÃẠ]/,
+    // Grammar/vocab lesson markers (tieptiengviet.md)
+    /^[Dd]anh\s*từ/,
+    /^[Đđ]ộng\s*từ/,
+    /^[Tt]ính\s*từ/,
+    /^[Tt]ừ\s*đồng\s*nghĩa/,
+    /^[Tt]ừ\s*trái\s*nghĩa/,
+    /^[Đđ]ọc\s*hiểu/,
+    /^[Cc]hính\s*tả/,
+    /^[Nn]gữ\s*pháp/,
   ];
 
   const lines = text.split('\n');
@@ -397,7 +452,7 @@ function enrichVietChunks(raw: Array<Omit<VietLessonChunk, 'parserScore' | 'voca
   }));
 }
 
-function vietParserScore(text: string): number {
+export function vietParserScore(text: string): number {
   let score = 0;
   if (text.length >= 150) score += 0.2;
   if (text.length >= 400) score += 0.1;
@@ -422,7 +477,7 @@ function detectLessonSignals(text: string): string[] {
   return signals;
 }
 
-function isVietContentRich(text: string): boolean {
+export function isVietContentRich(text: string): boolean {
   if (text.trim().length < 60) return false;
   // Must have Vietnamese content
   const hasViet = /[àáảãạăắặẳẵằâấậẩẫầèéẻẽẹêếệểễềìíỉĩịòóỏõọôốộổỗồơớợởỡờùúủũụưứựửữừỳýỷỹỵđ]/i.test(text);
@@ -452,11 +507,19 @@ export function validateVietLesson(data: any): ValidationResult {
   const knameSet = new Set<string>();
   for (let i = 0; i < (data.knowledge ?? []).length; i++) {
     const k = data.knowledge[i];
+    // name không rỗng (tieptiengviet.md)
     if (!k?.name?.trim()) { errors.push(`knowledge[${i}].name: missing`); continue; }
     if (knameSet.has(k.name.trim().toLowerCase())) errors.push(`knowledge[${i}].name: duplicate`);
     knameSet.add(k.name.trim().toLowerCase());
-    if (!k?.definition || (k.definition?.length ?? 0) < 5)
-      errors.push(`knowledge[${i}].definition: too short`);
+    // definition >= 30 ký tự (tieptiengviet.md)
+    if (!k?.definition || (k.definition?.length ?? 0) < 30)
+      errors.push(`knowledge[${i}].definition: must be ≥30 chars (got ${k?.definition?.length ?? 0})`);
+    // example không rỗng (tieptiengviet.md)
+    if (!k?.example?.trim())
+      errors.push(`knowledge[${i}].example: must not be empty`);
+    // hints >= 2 items (tieptiengviet.md)
+    if (!Array.isArray(k?.hints) || k.hints.filter(Boolean).length < 2)
+      errors.push(`knowledge[${i}].hints: must have ≥2 items (got ${Array.isArray(k?.hints) ? k.hints.length : 0})`);
   }
 
   if (!Array.isArray(data.questions) || data.questions.length === 0)
@@ -580,7 +643,6 @@ function normalizeVietLesson(lesson: VietLesson, curriculum: VietCurriculumInfo)
       name: (k.name ?? '').trim().slice(0, 200),
       definition: (k.definition ?? '').trim(),
       example: (k.example ?? '').trim(),
-      steps: Array.isArray(k.steps) ? k.steps.filter(Boolean) : [],
       hints: Array.isArray(k.hints) ? k.hints.filter(Boolean) : [],
     })).filter((k) => k.name && k.definition),
     questions: (lesson.questions ?? []).map((q) => ({
@@ -614,7 +676,7 @@ Phân tích bài học Tiếng Việt lớp ${grade}. Process ONE LESSON ONLY. C
 ${chunk.text}
 === HẾT ===
 
-Output CHỈ một JSON object:
+Output CHỈ một JSON object (schema chuẩn tieptiengviet.md):
 {
   "subject": "Tiếng Việt",
   "grade": ${grade},
@@ -624,10 +686,9 @@ Output CHỈ một JSON object:
   "knowledge": [
     {
       "name": "Từ/khái niệm/quy tắc ngữ pháp",
-      "definition": "Định nghĩa/giải thích đầy đủ ≥15 ký tự",
-      "example": "Câu ví dụ hoàn chỉnh bằng tiếng Việt",
-      "steps": ["Bước 1: ...", "Bước 2: ..."],
-      "hints": ["Gợi ý 1", "Gợi ý 2"]
+      "definition": "Định nghĩa/giải thích đầy đủ — TỐI THIỂU 30 ký tự",
+      "example": "Câu ví dụ hoàn chỉnh bằng tiếng Việt (KHÔNG để trống)",
+      "hints": ["Gợi ý học tập 1", "Gợi ý học tập 2"]
     }
   ],
   "questions": [
@@ -636,10 +697,16 @@ Output CHỈ một JSON object:
     { "question": "Câu hỏi khó", "answer": "Đáp án", "difficulty": "hard" }
   ]
 }
-lesson_type: ${VIET_LESSON_TYPES.join('|')}
-difficulty: easy|medium|hard (KHÔNG được dùng "olympic")
-knowledge: 3-8 items, example KHÔNG được để trống
-questions: 3-6 items, không duplicate, đáp án ≠ câu hỏi
+QUAN TRỌNG (tieptiengviet.md):
+- knowledge schema CHÍNH XÁC: {name, definition, example, hints} — KHÔNG có trường "steps"
+- definition: TỐI THIỂU 30 ký tự
+- hints: TỐI THIỂU 2 mục
+- example: KHÔNG được để trống
+- name: KHÔNG được để trống
+- lesson_type: ${VIET_LESSON_TYPES.join('|')}
+- difficulty: easy|medium|hard (KHÔNG được dùng "olympic")
+- knowledge: 3-8 items
+- questions: 3-6 items, không duplicate, đáp án ≠ câu hỏi
 Giữ nguyên dấu tiếng Việt (à á ả ã ạ ă â ê ô ơ ư đ...)`;
 }
 

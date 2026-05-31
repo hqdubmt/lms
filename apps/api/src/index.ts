@@ -8,6 +8,7 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 
 import { env } from './config/env';
 import { prisma } from './services/prisma';
@@ -86,12 +87,23 @@ if (cluster.isPrimary) {
       errorResponseBuilder: () => ({ error: 'Too many requests, please try again later.' }),
     });
 
+    await app.register(compress, { global: true, threshold: 1024 });
     await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } });
     await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
 
     app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
       if (!body || (body as string).trim() === '') { done(null, {}); return; }
       try { done(null, JSON.parse(body as string)); } catch (e: any) { done(e, undefined); }
+    });
+
+    // Must be registered BEFORE routes so it applies to all of them
+    app.setErrorHandler((err: any, _req, reply) => {
+      app.log.error(err);
+      if (err.name === 'ZodError' || Array.isArray(err.issues)) {
+        return reply.status(400).send({ error: 'Validation error', details: err.issues ?? JSON.parse(err.message) });
+      }
+      const status = err.statusCode || 500;
+      reply.status(status).send({ error: err.message || 'Internal server error' });
     });
 
     await app.register(authRoutes, { prefix: '/auth' });
@@ -114,15 +126,6 @@ if (cluster.isPrimary) {
     await app.register(liveSessionsRoutes, { prefix: '/admin' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
-
-    app.setErrorHandler((err, _req, reply) => {
-      app.log.error(err);
-      if (err.name === 'ZodError') {
-        return reply.status(400).send({ error: 'Validation error', details: err.message });
-      }
-      const status = err.statusCode || 500;
-      reply.status(status).send({ error: err.message || 'Internal server error' });
-    });
 
     await connectMongo();
     await initMinioBuckets();

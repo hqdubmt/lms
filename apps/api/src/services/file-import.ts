@@ -264,22 +264,33 @@ export async function generateMathQuestionsWithAI(
   ).join('\n');
 
   const typeMap: Record<string, string> = {
-    MULTIPLE_CHOICE: 'trắc nghiệm 4 lựa chọn (options gồm 4 đáp án, answer là đáp án đúng)',
-    FILL_BLANK: 'điền vào chỗ trống (content có ___, options để [], answer là từ/số cần điền)',
-    TRUE_FALSE: 'đúng/sai (options là ["Đúng","Sai"], answer là "Đúng" hoặc "Sai")',
-    PROOF_STEP: 'tự luận (options để [], answer là lời giải đầy đủ từng bước)',
+    MULTIPLE_CHOICE: 'trắc nghiệm 4 lựa chọn: đặt câu hỏi YÊU CẦU TÍNH TOÁN hoặc áp dụng công thức với số cụ thể, options gồm 4 kết quả khác nhau (1 đúng 3 sai gần đúng), answer là đáp án đúng (phải có trong options)',
+    FILL_BLANK: 'điền số/kết quả: content là bài tính có ___ thay cho kết quả hoặc số còn thiếu, options để [], answer là số/kết quả cần điền (chỉ số, không phải từ)',
+    TRUE_FALSE: 'đúng/sai: đặt câu khẳng định về phép tính/kết quả CỤ THỂ (không chỉ định nghĩa), options là ["Đúng","Sai"], answer là "Đúng" hoặc "Sai"',
+    CALCULATION: 'tính toán: content là bài toán CÓ SỐ CỤ THỂ cần tính (VD: "Tính: 3 × (2 + 5) = ?"), options để [], answer là KẾT QUẢ SỐ (chỉ số, không có đơn vị trừ khi cần)',
+    PROOF_STEP: 'tự luận: đặt bài toán có lời giải từng bước, options để [], answer là lời giải đầy đủ từng bước có số liệu cụ thể',
   };
 
-  const systemPrompt = 'Bạn là hệ thống AI giáo dục Toán tiểu học và THCS Việt Nam. Chỉ output JSON hợp lệ. Không markdown. Không giải thích. Không bịa đặt đáp án sai.';
-  const userPrompt = `Tạo ${count} câu hỏi loại ${typeMap[type] ?? type} từ các khái niệm Toán sau.
+  const typeInstructions: Record<string, string> = {
+    MULTIPLE_CHOICE: 'Tạo bài toán tính toán thực sự (không chỉ hỏi định nghĩa). Các đáp án sai phải có vẻ hợp lý (sai do nhầm công thức hoặc tính sai 1 bước).',
+    FILL_BLANK: 'Answer phải là một số hoặc kết quả ngắn gọn. Không điền tên khái niệm.',
+    TRUE_FALSE: 'Tạo câu khẳng định với số cụ thể, 50% đúng 50% sai. Câu sai phải đưa ra kết quả/số liệu sai.',
+    CALCULATION: 'Mỗi câu phải có số liệu cụ thể để tính. Answer CHỈ là số (VD: "21", "3.14", "150"). Dùng ví dụ từ concept làm gợi ý.',
+    PROOF_STEP: 'Đặt bài toán thực tế có thể giải từng bước. Answer là lời giải chi tiết.',
+  };
 
-KHÁI NIỆM:
+  const systemPrompt = 'Bạn là giáo viên Toán Việt Nam chuyên ra đề kiểm tra. Tạo câu hỏi THỰC HÀNH (tính toán, áp dụng công thức) — không phải câu hỏi thuộc lòng định nghĩa. Chỉ output JSON hợp lệ. Không markdown. Không giải thích.';
+  const userPrompt = `Tạo ${count} câu hỏi loại: ${typeMap[type] ?? type}
+
+YÊU CẦU: ${typeInstructions[type] ?? 'Tạo câu hỏi thực hành có số liệu cụ thể.'}
+
+KHÁI NIỆM (dùng làm ngữ cảnh và lấy số liệu từ ví dụ):
 ${conceptList}
 
 Output CHỈ JSON array:
 [
   {
-    "content": "Nội dung câu hỏi rõ ràng",
+    "content": "Nội dung câu hỏi có số liệu cụ thể",
     "options": [],
     "answer": "Đáp án đúng",
     "solution": "Lời giải chi tiết từng bước",
@@ -290,7 +301,7 @@ Output CHỈ JSON array:
 ]
 
 difficulty: easy|medium|hard|olympic
-Đảm bảo: answer chính xác, có trong options nếu trắc nghiệm, lời giải đầy đủ bước.`;
+QUAN TRỌNG: answer phải chính xác 100%. Nếu trắc nghiệm, answer phải có trong options.`;
 
   const raw = await callAIForJSON(systemPrompt, userPrompt, 2048);
   if (!raw) return null;
@@ -395,6 +406,7 @@ Giữ nguyên dấu thanh tiếng Việt đầy đủ. Đáp án phải chính x
 export interface LangVocabItemDraft {
   word: string; translation: string; pronunciation?: string;
   example?: string; exampleTrans?: string; notes?: string;
+  synonyms?: string[]; hints?: string[];
 }
 export interface LangDialogueDraft {
   context: string; answer: string; options: string[];

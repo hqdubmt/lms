@@ -36,8 +36,8 @@ export default function InstructorMathPage() {
   const load = async () => {
     try {
       const [t, e] = await Promise.all([
-        api.get<MathTopic[]>('/math/topics?mine=true'),
-        api.get<MathExercise[]>('/math/exercises?mine=true'),
+        api.get<MathTopic[]>('/math/topics'),
+        api.get<MathExercise[]>('/math/exercises'),
       ]);
       setTopics(t); setExercises(e);
     } catch (e: any) {
@@ -109,6 +109,15 @@ export default function InstructorMathPage() {
     setBusy((b) => ({ ...b, [`quiz-${topicId}`]: false }));
   };
 
+  const generateVariations = async (topicId: string, topicTitle: string) => {
+    setBusy((b) => ({ ...b, [`var-${topicId}`]: true }));
+    try {
+      const res = await api.post<{ count: number; questions: any[] }>(`/math/topics/${topicId}/generate-variations`, { count: 5 });
+      setToast({ msg: `Đã tạo ${res.count} biến thể câu hỏi từ "${topicTitle}"`, type: 'success' });
+    } catch (e: any) { setToast({ msg: e.message || 'Tạo biến thể thất bại', type: 'error' }); }
+    setBusy((b) => ({ ...b, [`var-${topicId}`]: false }));
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* ── Header ── */}
@@ -149,7 +158,7 @@ export default function InstructorMathPage() {
             </button>
             <Link href="/instructor/math/analytics"
               className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors">
-              <BarChart2 className="h-4 w-4" />Analytics
+              <BarChart2 className="h-4 w-4" />Analytics &amp; Benchmark
             </Link>
           </div>
         </div>
@@ -215,9 +224,11 @@ export default function InstructorMathPage() {
                 busy={busy[topic.id]}
                 genBusy={busy[`gen-${topic.id}`]}
                 quizBusy={busy[`quiz-${topic.id}`]}
+                varBusy={busy[`var-${topic.id}`]}
                 onDelete={() => deleteTopic(topic.id)}
                 onGenerateAll={() => generateAll(topic.id, topic.title)}
                 onGenerateQuiz={() => generateQuiz(topic.id, topic.title)}
+                onGenerateVariations={() => generateVariations(topic.id, topic.title)}
               />
             ))}
           </div>

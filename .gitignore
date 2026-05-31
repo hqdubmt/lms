@@ -8,3 +8,19 @@ dist
 .turbo
 .DS_Store
 deploy/data/
+
+# Build artifacts — too large for git, distributed via CI/GitHub Releases
+apps/web/public/downloads/*.AppImage
+apps/web/public/downloads/*.deb
+apps/web/public/downloads/*.apk
+apps/desktop/dist/
+apps/mobile/android/app/build/
+
+# Temporary planning docs
+jonsontoan.md
+ketthuctoan.md
+muctieutoan.md
+ngoaingu*.md
+testtoatiengviet.md
+tieptiengviet*.md
+toantiep.md

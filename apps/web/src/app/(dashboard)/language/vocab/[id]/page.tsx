@@ -408,7 +408,7 @@ function WriteMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
     setCorrect(isCorrect);
     setChecked(true);
     if (isCorrect) setScore(s => s + 1);
-    api.post(`/language/vocab-items/${item.id}/review`, { quality: isCorrect ? 5 : 1 }).catch(() => {});
+    api.post(`/language/vocab-items/${item.id}/review`, { quality: isCorrect ? 5 : 1, mode: 'write' }).catch(() => {});
   };
 
   const next = () => {
@@ -590,7 +590,10 @@ function ListenMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   const handleSelect = (translation: string) => {
     if (selected !== null) return;
     setSelected(translation);
-    if (translation === item.translation) setScore(s => s + 1);
+    const correct = translation === item.translation;
+    if (correct) setScore(s => s + 1);
+    const listenScore = correct ? 100 : 0;
+    api.post(`/language/vocab-items/${item.id}/review`, { quality: correct ? 5 : 1, mode: 'listen', listenScore }).catch(() => {});
   };
 
   const next = () => {
@@ -750,7 +753,11 @@ function SpeakMode({ set, onExit }: { set: VocabSet; onExit: () => void }) {
   };
 
   const next = () => {
-    if (score !== null) setScores(s => [...s, score]);
+    if (score !== null) {
+      setScores(s => [...s, score]);
+      const quality = score >= 80 ? 5 : score >= 60 ? 3 : score >= 40 ? 2 : 0;
+      api.post(`/language/vocab-items/${item.id}/review`, { quality, mode: 'speak', speakScore: score }).catch(() => {});
+    }
     if (idx < items.length - 1) {
       setIdx(i => i + 1);
       setTranscript(''); setScore(null);

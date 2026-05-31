@@ -34,8 +34,8 @@ export default function InstructorVietPage() {
   const load = async () => {
     try {
       const [s, e] = await Promise.all([
-        api.get<VietSet[]>('/viet/sets?mine=true'),
-        api.get<VietExercise[]>('/viet/exercises?mine=true'),
+        api.get<VietSet[]>('/viet/sets'),
+        api.get<VietExercise[]>('/viet/exercises'),
       ]);
       setSets(s); setExercises(e);
     } catch {
@@ -105,6 +105,15 @@ export default function InstructorVietPage() {
       setToast({ msg: `Đã tạo Quiz Game từ "${setTitle}"! Vào mục Quiz Game để xem.`, type: 'success' });
     } catch (e: any) { setToast({ msg: e.message || 'Tạo quiz thất bại', type: 'error' }); }
     setBusy((b) => ({ ...b, [`quiz-${setId}`]: false }));
+  };
+
+  const generateVariations = async (setId: string, setTitle: string) => {
+    setBusy((b) => ({ ...b, [`var-${setId}`]: true }));
+    try {
+      const res = await api.post<{ count: number; questions: any[] }>(`/viet/sets/${setId}/generate-variations`, { count: 5 });
+      setToast({ msg: `Đã tạo ${res.count} biến thể câu hỏi từ "${setTitle}"`, type: 'success' });
+    } catch (e: any) { setToast({ msg: e.message || 'Tạo biến thể thất bại', type: 'error' }); }
+    setBusy((b) => ({ ...b, [`var-${setId}`]: false }));
   };
 
   return (
@@ -213,9 +222,11 @@ export default function InstructorVietPage() {
                 busy={busy[set.id]}
                 genBusy={busy[`gen-${set.id}`]}
                 quizBusy={busy[`quiz-${set.id}`]}
+                varBusy={busy[`var-${set.id}`]}
                 onDelete={() => deleteSet(set.id)}
                 onGenerateAll={() => generateAll(set.id, set.title)}
                 onGenerateQuiz={() => generateQuiz(set.id, set.title)}
+                onGenerateVariations={() => generateVariations(set.id, set.title)}
               />
             ))}
           </div>

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Calculator, BookOpen, Target, Users, Loader2, Trash2,
-  ChevronRight, FileUp, Bot, WifiOff,
+  ChevronRight, FileUp, Bot, WifiOff, BarChart2, FlaskConical,
+  Play, CheckCircle2, XCircle, TrendingUp, Database,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,34 @@ interface ModuleData {
   userStats: { _count: { userId: number }; _sum: { exercisesDone: number | null; conceptsLearned: number | null } };
 }
 
+interface Benchmark {
+  id: string; name: string; totalFiles: number; parseOk: number;
+  jsonValid: number; qualityPass: number; avgQuality: number; avgParser: number; createdAt: string;
+}
+
+interface ErrorTableRow {
+  errorType: string; label: string; count: number; percentage: number; severity: 'high' | 'medium' | 'low';
+}
+
+interface BatchResult {
+  benchmarkId: string; name: string; total: number;
+  metrics: Record<string, string>; avgParser: number; avgQuality: number | null;
+  errorTable?: ErrorTableRow[]; topError?: string | null; recommendation?: string | null;
+}
+
+interface CombinedStats {
+  summary: { totalFilesProcessed: number; 'Parser Success %': number; 'JSON Valid %': number; 'Quality Score %': number };
+  readiness: { stable: boolean; message: string };
+}
+
+interface RagStats { total: number; model: string; available: boolean }
+
+const SEVERITY_COLOR: Record<string, string> = {
+  high: 'bg-red-100 text-red-700 border-red-200',
+  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  low: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
 export default function AdminMathPage() {
   const [data, setData] = useState<ModuleData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,11 +62,31 @@ export default function AdminMathPage() {
   const [search, setSearch] = useState('');
   const [aiOnline, setAiOnline] = useState<boolean | null>(null);
   const [aiLabel, setAiLabel] = useState('AI');
+  const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
+  const [bRunning, setBRunning] = useState(false);
+  const [bResult, setBResult] = useState<BatchResult | null>(null);
+  const [combined, setCombined] = useState<CombinedStats | null>(null);
+  const [ragStats, setRagStats] = useState<RagStats | null>(null);
 
   const load = () => {
-    api.get<ModuleData>('/math/all')
-      .then(setData)
-      .finally(() => setLoading(false));
+    api.get<ModuleData>('/math/all').then(setData).finally(() => setLoading(false));
+    api.get<Benchmark[]>('/math/benchmarks').then(setBenchmarks).catch(() => {});
+    api.get<CombinedStats>('/viet/combined-stats').then(setCombined).catch(() => {});
+    api.get<RagStats>('/math/rag/stats').then(setRagStats).catch(() => {});
+  };
+
+  const runBenchmark = async () => {
+    setBRunning(true); setBResult(null);
+    try {
+      const res = await api.post<BatchResult>('/math/benchmarks/run-batch', {
+        name: `Admin benchmark ${new Date().toLocaleDateString('vi-VN')}`,
+        useSeed: true,
+        runAI: false,
+      });
+      setBResult(res);
+      api.get<Benchmark[]>('/math/benchmarks').then(setBenchmarks).catch(() => {});
+    } catch (e: any) { alert(e.message || 'Benchmark thất bại'); }
+    setBRunning(false);
   };
 
   useEffect(() => {
@@ -119,9 +168,48 @@ export default function AdminMathPage() {
         </div>
       )}
 
+      {/* RAG Index status */}
+      {ragStats && (
+        <div className={cn(
+          'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium border',
+          ragStats.available
+            ? 'bg-violet-50 border-violet-200 text-violet-700'
+            : 'bg-gray-50 border-gray-200 text-gray-500',
+        )}>
+          <Database className="h-4 w-4 shrink-0" />
+          <span>RAG Index: <strong>{ragStats.total.toLocaleString('vi-VN')}</strong> vectors · {ragStats.model}</span>
+          {ragStats.available ? (
+            <span className="ml-auto text-[11px] bg-violet-100 px-2 py-0.5 rounded-full font-semibold">Online</span>
+          ) : (
+            <span className="ml-auto text-[11px] bg-gray-200 px-2 py-0.5 rounded-full font-semibold text-gray-500">Offline</span>
+          )}
+        </div>
+      )}
+
       {/* Import panel */}
       {showImport && (
         <MathImportPanel onDone={() => { setShowImport(false); setLoading(true); load(); }} />
+      )}
+
+      {/* Combined Stats Toán + Tiếng Việt */}
+      {combined && (
+        <div className={cn(
+          'rounded-2xl border p-4 flex items-start gap-3',
+          combined.readiness.stable ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200',
+        )}>
+          <TrendingUp className={cn('h-5 w-5 mt-0.5 shrink-0', combined.readiness.stable ? 'text-emerald-600' : 'text-orange-500')} />
+          <div className="flex-1">
+            <p className={cn('text-sm font-semibold', combined.readiness.stable ? 'text-emerald-800' : 'text-orange-800')}>
+              {combined.readiness.message}
+            </p>
+            <div className="flex gap-4 mt-1.5 text-xs text-muted-foreground flex-wrap">
+              <span>Parser: <strong className={combined.summary['Parser Success %'] >= 85 ? 'text-emerald-700' : 'text-orange-700'}>{combined.summary['Parser Success %']}%</strong></span>
+              <span>JSON: <strong className={combined.summary['JSON Valid %'] >= 85 ? 'text-emerald-700' : 'text-orange-700'}>{combined.summary['JSON Valid %']}%</strong></span>
+              <span>Quality: <strong className={combined.summary['Quality Score %'] >= 80 ? 'text-emerald-700' : 'text-orange-700'}>{combined.summary['Quality Score %']}%</strong></span>
+              <span className="ml-auto">{combined.summary.totalFilesProcessed} file đã xử lý</span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Search */}
@@ -166,6 +254,125 @@ export default function AdminMathPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Benchmark ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2">
+            <FlaskConical className="h-4 w-4 text-violet-600" />Benchmark Pipeline
+          </h2>
+          <Link href="/instructor/math/analytics"
+            className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+            <BarChart2 className="h-3.5 w-3.5" />Analytics đầy đủ
+          </Link>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={runBenchmark} disabled={bRunning}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-60 transition-colors">
+              {bRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Chạy Gold Dataset (30 bài)
+            </button>
+            <p className="text-xs text-muted-foreground">Parser-only · nhanh · không tốn API</p>
+          </div>
+
+          {bResult && (
+            <div className="space-y-3">
+              <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-violet-800 flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5" />{bResult.total} bài · parser avg {(bResult.avgParser * 100).toFixed(0)}%
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {Object.entries(bResult.metrics).map(([label, val]) => (
+                    <div key={label} className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                      <p className="text-xs font-bold text-gray-900">{val}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {bResult.errorTable && bResult.errorTable.length > 0 && (
+                <div className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                      <XCircle className="h-3.5 w-3.5 text-red-500" />Bảng lỗi
+                    </span>
+                    {bResult.topError && <span className="text-[10px] text-red-600 font-medium">{bResult.topError}</span>}
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody className="divide-y divide-gray-50">
+                      {bResult.errorTable.slice(0, 4).map((row) => (
+                        <tr key={row.errorType} className="hover:bg-gray-50/50">
+                          <td className="px-3 py-1.5 text-gray-700">{row.label}</td>
+                          <td className="px-3 py-1.5 text-center">
+                            <span className={cn('text-[10px] font-bold px-1 py-0.5 rounded border', SEVERITY_COLOR[row.severity])}>
+                              {row.severity.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-center font-bold">{row.count}</td>
+                          <td className="px-3 py-1.5 text-center">
+                            <span className={cn('font-bold', row.percentage >= 30 ? 'text-red-600' : row.percentage >= 15 ? 'text-yellow-600' : 'text-gray-500')}>
+                              {row.percentage}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {bResult.recommendation && (
+                    <div className="px-3 py-2 bg-amber-50 border-t border-amber-100">
+                      <p className="text-[11px] text-amber-800 font-medium">{bResult.recommendation}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {benchmarks.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-center">
+                <thead className="text-muted-foreground bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium">Tên</th>
+                    <th className="px-3 py-1.5 font-medium">Files</th>
+                    <th className="px-3 py-1.5 font-medium">Parse</th>
+                    <th className="px-3 py-1.5 font-medium">JSON</th>
+                    <th className="px-3 py-1.5 font-medium">Quality</th>
+                    <th className="px-3 py-1.5 text-left font-medium">Ngày</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {benchmarks.slice(0, 5).map((b) => (
+                    <tr key={b.id} className="hover:bg-gray-50/50">
+                      <td className="px-3 py-1.5 text-left font-medium text-gray-800 max-w-[140px] truncate">{b.name}</td>
+                      <td className="px-3 py-1.5">{b.totalFiles}</td>
+                      <td className="px-3 py-1.5">
+                        <span className={cn(b.parseOk === b.totalFiles ? 'text-emerald-600' : 'text-yellow-600', 'font-medium')}>
+                          {b.parseOk}/{b.totalFiles}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={cn(b.jsonValid === b.totalFiles ? 'text-emerald-600' : 'text-yellow-600', 'font-medium')}>
+                          {b.jsonValid}/{b.totalFiles}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {b.avgQuality > 0
+                          ? <span className={cn('font-bold', b.avgQuality >= 70 ? 'text-emerald-600' : 'text-red-500')}>{b.avgQuality.toFixed(0)}</span>
+                          : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-left text-muted-foreground">
+                        {new Date(b.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Exercises */}

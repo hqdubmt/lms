@@ -44,6 +44,7 @@ model User {
   exercisesCreated    LangExercise[]       @relation("ExerciseCreator")
   exerciseAttempts    ExerciseAttempt[]    @relation("ExerciseAttemptUser")
   langStats           LangUserStats?       @relation("LangUserStatsUser")
+  langSkillScores     LangSkillScore[]     @relation("LangSkillScoreUser")
   mathTopicsCreated   MathTopic[]          @relation("MathTopicCreator")
   mathExercisesCreated MathExercise[]      @relation("MathExerciseCreator")
   mathAttempts        MathAttempt[]        @relation("MathAttemptUser")
@@ -509,6 +510,7 @@ model VocabSet {
   @@index([createdBy])
   @@index([language])
   @@index([parentId])
+  @@index([isPublic, language])
 }
 
 model VocabItem {
@@ -521,13 +523,18 @@ model VocabItem {
   imageUrl     String?
   example      String?
   exampleTrans String?
+  synonyms     String[]
+  hints        String[]
   notes        String?
+  topic        String?
+  itemLevel    String?
   order        Int                 @default(0)
   set          VocabSet            @relation(fields: [setId], references: [id], onDelete: Cascade)
   progresses   VocabItemProgress[]
   createdAt    DateTime            @default(now())
 
   @@index([setId])
+  @@index([topic])
 }
 
 model VocabProgress {
@@ -553,6 +560,8 @@ model VocabItemProgress {
   nextReview  DateTime  @default(now())
   lastReview  DateTime?
   isLearned   Boolean   @default(false)
+  speakScore  Float?
+  listenScore Float?
   user        User      @relation("VocabItemProgressUser", fields: [userId], references: [id], onDelete: Cascade)
   item        VocabItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
@@ -633,6 +642,19 @@ model LangUserStats {
   @@index([xp])
 }
 
+model LangSkillScore {
+  id        String   @id @default(uuid())
+  userId    String
+  skill     String
+  score     Float    @default(0)
+  sessions  Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation("LangSkillScoreUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skill])
+  @@index([userId])
+}
+
 enum LangExerciseType {
   MULTIPLE_CHOICE
   FILL_BLANK
@@ -710,6 +732,8 @@ model MathTopic {
   @@index([createdBy])
   @@index([subject])
   @@index([grade])
+  @@index([isPublic, subject, grade])
+  @@index([isPublic, courseId])
 }
 
 model MathConcept {
@@ -772,6 +796,8 @@ model MathExercise {
   @@index([createdBy])
   @@index([topicId])
   @@index([courseId])
+  @@index([isPublic, subject, grade])
+  @@index([isPublic, topicId])
 }
 
 model MathQuestion {
@@ -839,19 +865,39 @@ model StudentMathProfile {
 
 // Analytics Engine — tracks pipeline quality per toan.md
 model MathImportLog {
-  id                 String   @id @default(uuid())
-  documentId         String?
-  totalLessons       Int      @default(0)
-  validLessons       Int      @default(0)
-  hallucinationCount Int      @default(0)
-  duplicateCount     Int      @default(0)
-  repairCount        Int      @default(0)
-  retryTotal         Int      @default(0)
-  avgQualityScore    Float    @default(0)
-  textbook           String?
-  grade              Int?
-  createdBy          String
-  createdAt          DateTime @default(now())
+  id                   String   @id @default(uuid())
+  documentId           String?
+  totalLessons         Int      @default(0)
+  validLessons         Int      @default(0)
+  hallucinationCount   Int      @default(0)
+  duplicateCount       Int      @default(0)
+  repairCount          Int      @default(0)
+  retryTotal           Int      @default(0)
+  droppedByQualityGate Int      @default(0)
+  avgQualityScore      Float    @default(0)
+  avgParserScore       Float    @default(0)
+  textbook             String?
+  grade                Int?
+  createdBy            String
+  createdAt            DateTime @default(now())
+
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+model MathBenchmark {
+  id          String   @id @default(uuid())
+  name        String
+  totalFiles  Int      @default(0)
+  parseOk     Int      @default(0)
+  jsonValid   Int      @default(0)
+  qualityPass Int      @default(0)
+  hallucCount Int      @default(0)
+  avgQuality  Float    @default(0)
+  avgParser   Float    @default(0)
+  notes       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
 
   @@index([createdBy])
   @@index([createdAt])
@@ -924,6 +970,8 @@ model VietSet {
   @@index([createdBy])
   @@index([category])
   @@index([grade])
+  @@index([isPublic, category, grade])
+  @@index([isPublic, courseId])
 }
 
 model VietItem {
@@ -1051,19 +1099,38 @@ model StudentVietProfile {
 
 // Analytics Engine — per tiengviet.md
 model VietImportLog {
-  id                 String   @id @default(uuid())
-  documentId         String?
-  totalLessons       Int      @default(0)
-  validLessons       Int      @default(0)
-  hallucinationCount Int      @default(0)
-  duplicateCount     Int      @default(0)
-  repairCount        Int      @default(0)
-  retryTotal         Int      @default(0)
-  avgQualityScore    Float    @default(0)
-  textbook           String?
-  grade              Int?
-  createdBy          String
-  createdAt          DateTime @default(now())
+  id                  String   @id @default(uuid())
+  documentId          String?
+  totalLessons        Int      @default(0)
+  validLessons        Int      @default(0)
+  hallucinationCount  Int      @default(0)
+  duplicateCount      Int      @default(0)
+  repairCount         Int      @default(0)
+  retryTotal          Int      @default(0)
+  avgQualityScore     Float    @default(0)
+  droppedByQualityGate Int     @default(0)
+  avgParserScore      Float    @default(0)
+  textbook            String?
+  grade               Int?
+  createdBy           String
+  createdAt           DateTime @default(now())
+
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+model VietBenchmark {
+  id          String   @id @default(uuid())
+  name        String
+  totalFiles  Int      @default(0)
+  parseOk     Int      @default(0)
+  jsonValid   Int      @default(0)
+  qualityPass Int      @default(0)
+  avgQuality  Float    @default(0)
+  avgParser   Float    @default(0)
+  notes       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
 
   @@index([createdBy])
   @@index([createdAt])

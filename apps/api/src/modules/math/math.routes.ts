@@ -7,8 +7,20 @@ import {
   detectCurriculum, mathClean, unicodeNormalize,
   processMathDocument, generateQuestionVariations,
   computeProfileUpdate, scoreLesson, lessonToEntry,
+  splitIntoLessons, isContentRich, parserConfidenceScore,
   type ProcessOpts,
 } from '../../services/math-pipeline';
+import { MATH_GOLD_DATASET } from '../../data/math-gold-dataset';
+import {
+  classifyItemErrors, buildBatchSummary,
+  type ErrorType,
+} from '../../services/error-classifier';
+import {
+  embedText, upsertEntry, searchConcepts, ragGenerate,
+  getIndexStats, isEmbedModelAvailable,
+} from '../../services/rag';
+import { aiChatOnce } from '../../services/ai-provider';
+import { getOrSet, cacheDelPattern } from '../../services/cache';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
 import { env } from '../../config/env';
 import crypto from 'crypto';
@@ -34,7 +46,7 @@ function sm2(quality: number, repetitions: number, interval: number, easeFactor:
 async function addXP(userId: string, xp: number) {
   const stats = await prisma.mathUserStats.upsert({
     where: { userId },
-    create: { userId, xp, lastStudied: new Date() },
+    create: { userId, xp: 0, lastStudied: new Date() },
     update: {},
   });
   const today = new Date().toDateString();
@@ -71,10 +83,14 @@ function buildMathQuestions(concepts: Concept[], type: string, count: number): a
       const others = concepts.filter((x) => x.id !== c.id);
       const distractors = shuffleArr(others).slice(0, 3).map((x) => x.name);
       const options = shuffleArr([c.name, ...distractors]);
+      // Prefer example-based question over pure definition recall
+      const questionText = c.example
+        ? `Ví dụ sau thuộc khái niệm nào? "${c.example.slice(0, 150)}"`
+        : `Công thức/khái niệm nào phù hợp với: "${c.definition.slice(0, 120)}${c.definition.length > 120 ? '...' : ''}"?`;
       return {
-        content: `Khái niệm/công thức nào sau đây mô tả: "${c.definition.slice(0, 150)}${c.definition.length > 150 ? '...' : ''}"?`,
+        content: questionText,
         options, answer: c.name,
-        solution: c.formula ? `Công thức: ${c.formula}` : c.definition,
+        solution: c.formula ? `${c.name}: ${c.formula}` : c.definition,
         hints: c.hints, order: i, points: 1, difficulty: 1,
       };
     }
@@ -82,25 +98,65 @@ function buildMathQuestions(concepts: Concept[], type: string, count: number): a
       const useTrue = Math.random() > 0.5;
       let content: string, answer: string;
       if (useTrue) {
-        content = `Đúng hay Sai: "${c.name}" — ${c.definition.slice(0, 120)}`;
+        // Use formula or example for true statement — more useful than definition repeat
+        const stmt = c.formula ? `Công thức: ${c.formula}` : c.definition.slice(0, 120);
+        content = `Đúng hay Sai: "${c.name}" có ${stmt}`;
         answer = 'Đúng';
       } else {
         const other = shuffleArr(concepts.filter((x) => x.id !== c.id))[0];
-        content = `Đúng hay Sai: "${c.name}" — ${other?.definition.slice(0, 120) ?? 'định nghĩa không chính xác'}`;
+        const wrongStmt = other?.formula ? `công thức: ${other.formula}` : (other?.definition.slice(0, 100) ?? 'định nghĩa không chính xác');
+        content = `Đúng hay Sai: "${c.name}" có ${wrongStmt}`;
         answer = 'Sai';
       }
-      return { content, options: ['Đúng', 'Sai'], answer, solution: c.definition, hints: c.hints, order: i, points: 1, difficulty: 1 };
+      return { content, options: ['Đúng', 'Sai'], answer, solution: c.formula ? `Công thức đúng: ${c.formula}` : c.definition, hints: c.hints, order: i, points: 1, difficulty: 1 };
     }
     if (type === 'FILL_BLANK') {
-      const text = c.formula || c.name;
-      const words = text.split(' ');
-      if (words.length < 2) {
-        return { content: `Điền tên khái niệm: ${c.definition.slice(0, 100)}`, answer: c.name, solution: c.definition, hints: c.hints, order: i, points: 1, difficulty: 2 };
+      // Prefer formula blanks — they test actual math knowledge
+      if (c.formula) {
+        const parts = c.formula.split(/([=+\-×÷*/^()\s]+)/);
+        const tokenIndices = parts
+          .map((p, idx) => (/\d|[a-zA-Z]/.test(p) ? idx : -1))
+          .filter((idx) => idx >= 0);
+        if (tokenIndices.length >= 2) {
+          const pick = Math.floor(Math.random() * tokenIndices.length);
+          const partIdx = tokenIndices[pick];
+          const answer = parts[partIdx];
+          // Replace only the specific position in parts — no ambiguity with repeated tokens
+          const filledParts = [...parts];
+          filledParts[partIdx] = '___';
+          const filled = filledParts.join('');
+          return { content: `Điền vào công thức (${c.name}):\n${filled}`, answer, solution: `Công thức đầy đủ: ${c.formula}`, hints: c.hints, order: i, points: 1, difficulty: 2 };
+        }
       }
-      const blankIdx = Math.floor(Math.random() * words.length);
-      const answer = words[blankIdx];
-      const filled = [...words]; filled[blankIdx] = '___';
-      return { content: `Điền vào chỗ trống (${c.name}):\n${filled.join(' ')}`, answer, solution: text, hints: c.hints, order: i, points: 1, difficulty: 2 };
+      if (c.example) {
+        return { content: `Hoàn thành ví dụ (${c.name}):\n${c.example.replace(/\d+(?:\.\d+)?$/, '___')}`, answer: c.example.match(/\d+(?:\.\d+)?$/)?.[0] ?? c.name, solution: c.example, hints: c.hints, order: i, points: 1, difficulty: 2 };
+      }
+      return { content: `Điền tên khái niệm: ${c.definition.slice(0, 100)}`, answer: c.name, solution: c.definition, hints: c.hints, order: i, points: 1, difficulty: 1 };
+    }
+    if (type === 'CALCULATION') {
+      // Only generate CALCULATION questions when example has numeric content
+      if (c.example) {
+        const numMatch = c.example.match(/\d+(?:\.\d+)?/g);
+        const lastNum = numMatch?.[numMatch.length - 1];
+        if (lastNum) {
+          // Replace the last number in example with '?' using exact string replacement
+          const lastIdx = c.example.lastIndexOf(lastNum);
+          const content = c.example.slice(0, lastIdx) + '?' + c.example.slice(lastIdx + lastNum.length);
+          return {
+            content: `Tính (áp dụng ${c.name}):\n${content}`,
+            answer: lastNum,
+            solution: c.example,
+            hints: c.hints, order: i, points: 2, difficulty: 2,
+          };
+        }
+      }
+      // Fall back to PROOF_STEP when no numeric content available — CALCULATION needs numbers
+      return {
+        content: c.example ? `Giải bài toán:\n${c.example}` : `Giải thích và trình bày: ${c.name}`,
+        answer: c.solution || c.definition,
+        solution: c.solution,
+        hints: c.hints, order: i, points: 2, difficulty: 3,
+      };
     }
     // PROOF_STEP — open-ended
     return {
@@ -132,11 +188,13 @@ export async function mathRoutes(app: FastifyInstance) {
   });
 
   app.get('/leaderboard', { preHandler: requireAuth }, async () => {
-    return prisma.mathUserStats.findMany({
-      orderBy: { xp: 'desc' },
-      take: 20,
-      include: { user: { select: { id: true, name: true, avatarUrl: true } } },
-    });
+    return getOrSet('math:leaderboard', 300, () =>
+      prisma.mathUserStats.findMany({
+        orderBy: { xp: 'desc' },
+        take: 20,
+        include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+      })
+    );
   });
 
   // ─── TOPICS ───────────────────────────────────────────────────────────────
@@ -149,10 +207,16 @@ export async function mathRoutes(app: FastifyInstance) {
     if (q.grade) where.grade = parseInt(q.grade);
     if (q.courseId) where.courseId = q.courseId;
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
-    return prisma.mathTopic.findMany({
-      where, orderBy: { createdAt: 'desc' },
-      include: { creator: { select: { id: true, name: true } }, _count: { select: { concepts: true, exercises: true } } },
-    });
+    const isMine = q.mine === 'true';
+    const cacheKey = isMine
+      ? `math:topics:mine:${sub}`
+      : `math:topics:pub:${q.subject ?? ''}:${q.grade ?? ''}:${q.courseId ?? ''}`;
+    return getOrSet(cacheKey, 60, () =>
+      prisma.mathTopic.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { creator: { select: { id: true, name: true } }, _count: { select: { concepts: true, exercises: true } } },
+      })
+    );
   });
 
   app.get('/topics/:id', { preHandler: requireAuth }, async (req) => {
@@ -178,6 +242,7 @@ export async function mathRoutes(app: FastifyInstance) {
       courseId: z.string().optional(),
     }).parse(req.body);
     const topic = await prisma.mathTopic.create({ data: { ...body, createdBy: sub } });
+    await cacheDelPattern('math:topics:*');
     return reply.status(201).send(topic);
   });
 
@@ -198,7 +263,9 @@ export async function mathRoutes(app: FastifyInstance) {
       isPublic: z.boolean().optional(),
       courseId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.mathTopic.update({ where: { id }, data: body });
+    const updated = await prisma.mathTopic.update({ where: { id }, data: body });
+    await cacheDelPattern('math:topics:*');
+    return updated;
   });
 
   app.delete('/topics/:id', { preHandler: requireInstructor }, async (req) => {
@@ -207,6 +274,7 @@ export async function mathRoutes(app: FastifyInstance) {
     const topic = await prisma.mathTopic.findUniqueOrThrow({ where: { id } });
     if (topic.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.mathTopic.delete({ where: { id } });
+    await cacheDelPattern('math:topics:*');
     return { message: 'Đã xóa chủ đề' };
   });
 
@@ -365,10 +433,16 @@ export async function mathRoutes(app: FastifyInstance) {
     if (q.courseId) where.courseId = q.courseId;
     if (q.topicId) where.topicId = q.topicId;
     if (q.mine === 'true') { delete where.isPublic; where.createdBy = sub; }
-    return prisma.mathExercise.findMany({
-      where, orderBy: { createdAt: 'desc' },
-      include: { creator: { select: { id: true, name: true } }, _count: { select: { questions: true, attempts: true } } },
-    });
+    const isMine = q.mine === 'true';
+    const cacheKey = isMine
+      ? `math:exercises:mine:${sub}`
+      : `math:exercises:pub:${q.subject ?? ''}:${q.type ?? ''}:${q.grade ?? ''}:${q.courseId ?? ''}:${q.topicId ?? ''}`;
+    return getOrSet(cacheKey, 60, () =>
+      prisma.mathExercise.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        include: { creator: { select: { id: true, name: true } }, _count: { select: { questions: true, attempts: true } } },
+      })
+    );
   });
 
   app.get('/exercises/:id', { preHandler: requireAuth }, async (req) => {
@@ -409,6 +483,7 @@ export async function mathRoutes(app: FastifyInstance) {
       data: { ...exerciseData, createdBy: sub, questions: { create: questions as any } },
       include: { questions: { orderBy: { order: 'asc' } } },
     });
+    await cacheDelPattern('math:exercises:*');
     return reply.status(201).send(exercise);
   });
 
@@ -417,7 +492,7 @@ export async function mathRoutes(app: FastifyInstance) {
     const { sub } = req.user as { sub: string };
     const body = z.object({
       topicId: z.string(),
-      type: z.enum(['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'] as const),
+      type: z.enum(['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'CALCULATION', 'PROOF_STEP'] as const),
       questionCount: z.number().min(2).max(50).default(10),
       title: z.string().min(2),
       description: z.string().optional(),
@@ -472,7 +547,7 @@ export async function mathRoutes(app: FastifyInstance) {
 
     if (topic.concepts.length < 2) throw { statusCode: 400, message: 'Cần ít nhất 2 khái niệm để tạo bài tập' };
 
-    const types: Array<'MULTIPLE_CHOICE' | 'FILL_BLANK' | 'TRUE_FALSE' | 'PROOF_STEP'> = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'PROOF_STEP'];
+    const types: Array<'MULTIPLE_CHOICE' | 'FILL_BLANK' | 'TRUE_FALSE' | 'CALCULATION' | 'PROOF_STEP'> = ['MULTIPLE_CHOICE', 'FILL_BLANK', 'TRUE_FALSE', 'CALCULATION', 'PROOF_STEP'];
     const generated: any[] = [];
     const errors: any[] = [];
 
@@ -482,7 +557,7 @@ export async function mathRoutes(app: FastifyInstance) {
       const questions = (aiQ && aiQ.length > 0) ? aiQ : buildMathQuestions(topic.concepts, type, body.questionCount);
       if ('error' in (questions as any)) { errors.push({ type, error: (questions as any).error }); continue; }
       try {
-        const typeLabel: Record<string, string> = { MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền số', TRUE_FALSE: 'Đúng/Sai', PROOF_STEP: 'Chứng minh' };
+        const typeLabel: Record<string, string> = { MULTIPLE_CHOICE: 'Trắc nghiệm', FILL_BLANK: 'Điền số', TRUE_FALSE: 'Đúng/Sai', CALCULATION: 'Tính toán', PROOF_STEP: 'Chứng minh' };
         const ex = await prisma.mathExercise.create({
           data: {
             title: `${topic.title} — ${typeLabel[type]}`,
@@ -509,7 +584,9 @@ export async function mathRoutes(app: FastifyInstance) {
       level: z.string().optional(),
       courseId: z.string().nullable().optional(),
     }).parse(req.body);
-    return prisma.mathExercise.update({ where: { id }, data: body });
+    const updated = await prisma.mathExercise.update({ where: { id }, data: body });
+    await cacheDelPattern('math:exercises:*');
+    return updated;
   });
 
   app.delete('/exercises/:id', { preHandler: requireInstructor }, async (req) => {
@@ -518,6 +595,7 @@ export async function mathRoutes(app: FastifyInstance) {
     const ex = await prisma.mathExercise.findUniqueOrThrow({ where: { id } });
     if (ex.createdBy !== sub && role !== 'ADMIN') throw { statusCode: 403, message: 'Không có quyền' };
     await prisma.mathExercise.delete({ where: { id } });
+    await cacheDelPattern('math:exercises:*');
     return { message: 'Đã xóa bài tập' };
   });
 
@@ -545,13 +623,14 @@ export async function mathRoutes(app: FastifyInstance) {
       const expected = String(q.answer).toLowerCase().trim();
       const given = String(userAnswer ?? '').toLowerCase().trim();
 
-      if (exercise.type === 'MULTIPLE_CHOICE' || exercise.type === 'TRUE_FALSE') {
+      const hasOptions = Array.isArray((q as any).options) && (q as any).options.length > 0;
+      if (exercise.type === 'MULTIPLE_CHOICE' || exercise.type === 'TRUE_FALSE' || hasOptions) {
         correct = given === expected;
       } else if (exercise.type === 'FILL_BLANK' || exercise.type === 'CALCULATION') {
         const numA = parseFloat(expected), numB = parseFloat(given);
         correct = !isNaN(numA) && !isNaN(numB) ? Math.abs(numA - numB) < 0.001 : given === expected;
       } else {
-        // PROOF_STEP: credit if answered with >= 10 chars
+        // PROOF_STEP open-ended: credit if answered with >= 10 chars
         correct = given.length >= 10;
       }
       if (correct) earnedPoints += q.points;
@@ -566,7 +645,7 @@ export async function mathRoutes(app: FastifyInstance) {
     });
     await prisma.mathUserStats.upsert({
       where: { userId: sub },
-      create: { userId: sub, exercisesDone: 1, xp: xpEarned, lastStudied: new Date() },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
       update: { exercisesDone: { increment: 1 } },
     });
     await addXP(sub, xpEarned);
@@ -666,7 +745,15 @@ export async function mathRoutes(app: FastifyInstance) {
       try {
         const { concepts, generateExercises, ...topicData } = entrySchema.parse(entry);
         const topic = await prisma.mathTopic.create({
-          data: { ...topicData, createdBy: sub, concepts: { create: concepts.map((c, i) => ({ ...c, order: i })) } },
+          data: {
+            ...topicData, createdBy: sub,
+            concepts: {
+              create: concepts.map((c, i) => {
+                const { steps, ...conceptData } = c as any;
+                return { ...conceptData, order: i };
+              }),
+            },
+          },
           include: { concepts: true, _count: { select: { concepts: true } } },
         });
 
@@ -805,7 +892,9 @@ export async function mathRoutes(app: FastifyInstance) {
         duplicateCount: pipelineResult.analytics.duplicateCount,
         repairCount: pipelineResult.analytics.repairCount,
         retryTotal: pipelineResult.analytics.retryTotal,
+        droppedByQualityGate: pipelineResult.analytics.droppedByQualityGate,
         avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        avgParserScore: pipelineResult.analytics.avgParserScore,
         textbook: pipelineResult.curriculum.textbook,
         grade: pipelineResult.curriculum.grade,
         createdBy: sub,
@@ -993,7 +1082,9 @@ export async function mathRoutes(app: FastifyInstance) {
         duplicateCount: pipelineResult.analytics.duplicateCount,
         repairCount: pipelineResult.analytics.repairCount,
         retryTotal: pipelineResult.analytics.retryTotal,
+        droppedByQualityGate: pipelineResult.analytics.droppedByQualityGate,
         avgQualityScore: pipelineResult.analytics.avgQualityScore,
+        avgParserScore: pipelineResult.analytics.avgParserScore,
         textbook: pipelineResult.curriculum.textbook,
         grade: pipelineResult.curriculum.grade,
         createdBy: sub,
@@ -1020,7 +1111,7 @@ export async function mathRoutes(app: FastifyInstance) {
     return reply.send({ ok: true });
   });
 
-  // ─── ANALYTICS ENGINE ────────────────────────────────────────────────────
+  // ─── ANALYTICS ENGINE (Giai đoạn 2 — toantiep.md) ───────────────────────
 
   app.get('/analytics', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub, role } = req.user as { sub: string; role: string };
@@ -1032,17 +1123,33 @@ export async function mathRoutes(app: FastifyInstance) {
     const total = logs.length;
     if (total === 0) return reply.send({ total: 0, logs: [] });
 
+    const totalChunks = Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+    const totalValid = logs.reduce((s: number, l: any) => s + l.validLessons, 0);
+    const totalRepair = logs.reduce((s: number, l: any) => s + l.repairCount, 0);
+    const totalDropped = logs.reduce((s: number, l: any) => s + (l.droppedByQualityGate ?? 0), 0);
+    const totalHalluc = logs.reduce((s: number, l: any) => s + l.hallucinationCount, 0);
+    const totalDup = logs.reduce((s: number, l: any) => s + l.duplicateCount, 0);
     const avgQuality = logs.reduce((s: number, l: any) => s + l.avgQualityScore, 0) / total;
-    const hallucinationRate = logs.reduce((s: number, l: any) => s + l.hallucinationCount, 0) /
-      Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
-    const duplicateRate = logs.reduce((s: number, l: any) => s + l.duplicateCount, 0) /
-      Math.max(1, logs.reduce((s: number, l: any) => s + l.totalLessons, 0));
+    const avgParser = logs.reduce((s: number, l: any) => s + (l.avgParserScore ?? 0), 0) / total;
+
+    // toantiep.md Giai đoạn 2 — 4 key rates
+    const parserSuccessRate = Math.round(((totalChunks - totalRepair) / totalChunks) * 1000) / 10;
+    const jsonValidRate = Math.round(((totalChunks - totalDropped) / totalChunks) * 1000) / 10;
+    const qualityGatePassRate = Math.round((totalValid / totalChunks) * 1000) / 10;
+    const hallucinationRate = Math.round((totalHalluc / totalChunks) * 1000) / 10;
+    const duplicateRate = Math.round((totalDup / totalChunks) * 1000) / 10;
 
     return reply.send({
       total,
+      // 4 rates — toantiep.md Giai đoạn 2
+      parserSuccessRate,
+      jsonValidRate,
+      qualityGatePassRate,
+      hallucinationRate,
+      // existing
       avgQualityScore: Math.round(avgQuality * 10) / 10,
-      hallucinationRate: Math.round(hallucinationRate * 1000) / 10,
-      duplicateRate: Math.round(duplicateRate * 1000) / 10,
+      avgParserScore: Math.round(avgParser * 1000) / 10,
+      duplicateRate,
       logs,
     });
   });
@@ -1103,5 +1210,498 @@ export async function mathRoutes(app: FastifyInstance) {
       update,
     });
     return reply.send(profile);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // muctieutoan.md — Step 1: TEST PARSER
+  // POST /math/test-parser  { text } or file upload
+  // Returns: chunks, parsed concepts, validation report
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/test-parser', { preHandler: requireInstructor }, async (req, reply) => {
+    const { text, grade } = z.object({
+      text: z.string().min(10),
+      grade: z.number().min(1).max(9).optional(),
+    }).parse(req.body);
+
+    const cleaned = unicodeNormalize(mathClean(text));
+    const curriculum = detectCurriculum(cleaned);
+    if (grade) curriculum.grade = grade;
+
+    const chunks = splitIntoLessons(cleaned);
+
+    const report = chunks.map((chunk) => {
+      const dummyLesson = {
+        subject: 'Toán',
+        grade: curriculum.grade ?? 5,
+        lesson_type: 'arithmetic',
+        topic: chunk.title,
+        knowledge: [],
+        questions: [],
+      } as any;
+
+      return {
+        title: chunk.title,
+        textLength: chunk.text.length,
+        parserScore: chunk.parserScore,
+        formulaTokens: chunk.formulaTokens,
+        mathSignals: chunk.mathSignals,
+        isRich: chunk.text.length >= 80,
+      };
+    });
+
+    return reply.send({
+      curriculum,
+      totalChunks: chunks.length,
+      avgParserScore: chunks.length
+        ? Math.round(chunks.reduce((s, c) => s + c.parserScore, 0) / chunks.length * 100)
+        : 0,
+      chunks: report,
+      checks: {
+        '✓ Tách đúng bài học': chunks.length > 0,
+        '✓ Có công thức': chunks.some(c => c.formulaTokens.length > 0),
+        '✓ Parser score ≥ 0.5': chunks.some(c => c.parserScore >= 0.5),
+      },
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // muctieutoan.md — Step 4: TEST OLLAMA
+  // POST /math/topics/:id/test-ollama
+  // Feeds topic's JSON concepts to Ollama: explain + generate 10 exercises
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/topics/:id/test-ollama', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { count } = z.object({ count: z.number().min(1).max(20).default(10) }).parse(req.body ?? {});
+
+    const topic = await prisma.mathTopic.findUniqueOrThrow({
+      where: { id },
+      include: { concepts: { orderBy: { order: 'asc' } } },
+    });
+
+    if (!topic.concepts.length) throw { statusCode: 400, message: 'Topic không có concept nào' };
+
+    const jsonContext = JSON.stringify({
+      subject: 'Toán',
+      grade: topic.grade,
+      topic: topic.title,
+      knowledge: topic.concepts.map(c => ({
+        name: c.name,
+        definition: c.definition,
+        formula: c.formula ?? '',
+        example: c.example ?? '',
+        hints: c.hints,
+      })),
+    }, null, 2);
+
+    const prompt = `Dựa vào JSON này:\n\n${jsonContext}\n\nHãy:\n1. Giải thích lại từng khái niệm theo cách đơn giản cho học sinh lớp ${topic.grade}\n2. Tạo ${count} bài tập mới (khác với ví dụ có sẵn)\n3. Tạo đáp án cho mỗi bài\n\nOutput JSON:\n{\n  "explanations": [{"name":"...","explanation":"..."}],\n  "exercises": [{"question":"...","answer":"...","difficulty":"easy|medium|hard"}]\n}`;
+
+    const raw = await aiChatOnce([
+      { role: 'system', content: 'Bạn là giáo viên Toán Việt Nam. Chỉ output JSON hợp lệ. Không giải thích thêm.' },
+      { role: 'user', content: prompt },
+    ]);
+
+    let parsed: any = null;
+    const objMatch = raw.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try { parsed = JSON.parse(objMatch[0]); } catch { /* keep null */ }
+    }
+
+    return reply.send({
+      topicId: id,
+      topicTitle: topic.title,
+      grade: topic.grade,
+      conceptCount: topic.concepts.length,
+      ollamaResult: parsed,
+      rawOutput: parsed ? undefined : raw.slice(0, 500),
+      checks: {
+        '✓ Parser OK': true,
+        '✓ Data OK': !!parsed,
+        '✓ Có explanations': !!(parsed?.explanations?.length),
+        '✓ Có exercises': !!(parsed?.exercises?.length),
+      },
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // muctieutoan.md — Step 5: RAG PIPELINE
+  // POST /math/rag/embed   — embed all public topics into vector store
+  // GET  /math/rag/stats   — index stats
+  // POST /math/rag/search  — semantic search
+  // POST /math/rag/generate — RAG-based exercise generation
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/rag/embed', { preHandler: requireInstructor }, async (req, reply) => {
+    const { grade, subject, limit: lim } = z.object({
+      grade: z.number().min(1).max(9).optional(),
+      subject: z.string().optional(),
+      limit: z.number().min(1).max(500).default(100),
+    }).parse(req.body ?? {});
+
+    const available = await isEmbedModelAvailable();
+    if (!available) {
+      return reply.status(503).send({
+        ok: false,
+        message: `Ollama embed model "${process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text'}" chưa sẵn sàng. Chạy: ollama pull nomic-embed-text`,
+      });
+    }
+
+    const where: any = { isPublic: true };
+    if (grade) where.grade = grade;
+    if (subject) where.subject = subject;
+
+    const topics = await prisma.mathTopic.findMany({
+      where,
+      include: { concepts: true },
+      take: lim,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let embedded = 0, failed = 0;
+    for (const topic of topics) {
+      for (const concept of topic.concepts) {
+        const text = [
+          concept.name,
+          concept.definition,
+          concept.formula ?? '',
+          concept.example ?? '',
+          concept.hints.join(' '),
+        ].filter(Boolean).join('. ');
+
+        const vector = await embedText(text);
+        if (!vector) { failed++; continue; }
+
+        await upsertEntry({
+          id: concept.id,
+          text,
+          vector,
+          metadata: {
+            topicId: topic.id,
+            topicTitle: topic.title,
+            conceptName: concept.name,
+            grade: topic.grade,
+            subject: topic.subject,
+          },
+        });
+        embedded++;
+      }
+    }
+
+    return reply.send({ ok: true, embedded, failed, topics: topics.length });
+  });
+
+  app.get('/rag/stats', { preHandler: requireInstructor }, async (_req, reply) => {
+    const stats = await getIndexStats();
+    return reply.send(stats);
+  });
+
+  app.post('/rag/search', { preHandler: requireAuth }, async (req, reply) => {
+    const { query, topK, grade, subject } = z.object({
+      query: z.string().min(2),
+      topK: z.number().min(1).max(20).default(5),
+      grade: z.number().min(1).max(9).optional(),
+      subject: z.string().optional(),
+    }).parse(req.body);
+
+    const results = await searchConcepts(query, topK, { grade, subject });
+    return reply.send({
+      query,
+      total: results.length,
+      results: results.map(r => ({
+        score: Math.round(r.score * 1000) / 1000,
+        conceptName: r.entry.metadata.conceptName,
+        topicTitle: r.entry.metadata.topicTitle,
+        grade: r.entry.metadata.grade,
+        subject: r.entry.metadata.subject,
+        text: r.entry.text.slice(0, 200),
+      })),
+    });
+  });
+
+  app.post('/rag/generate', { preHandler: requireAuth }, async (req, reply) => {
+    const { query, grade, subject, count } = z.object({
+      query: z.string().min(2),
+      grade: z.number().min(1).max(9).optional(),
+      subject: z.string().optional(),
+      count: z.number().min(1).max(20).default(10),
+    }).parse(req.body);
+
+    const result = await ragGenerate(query, grade, subject, count);
+    if (!result) throw { statusCode: 503, message: 'RAG generate thất bại — embed index trống hoặc AI không khả dụng' };
+
+    return reply.send({
+      query,
+      sources: result.sources,
+      questionCount: result.questions.length,
+      questions: result.questions,
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // toantiep.md Giai đoạn 6 — BENCHMARK ENGINE
+  // POST /math/benchmarks         — tạo benchmark run
+  // GET  /math/benchmarks         — list all
+  // GET  /math/benchmarks/:id     — detail
+  // DELETE /math/benchmarks/:id  — xóa
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/benchmarks', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      name: z.string().min(2).max(200),
+      totalFiles: z.number().min(1),
+      parseOk: z.number().min(0),
+      jsonValid: z.number().min(0),
+      qualityPass: z.number().min(0),
+      hallucCount: z.number().min(0).default(0),
+      avgQuality: z.number().min(0).max(100).default(0),
+      avgParser: z.number().min(0).max(1).default(0),
+      notes: z.string().optional(),
+    }).parse(req.body);
+
+    const benchmark = await (prisma as any).mathBenchmark.create({
+      data: { ...body, createdBy: sub },
+    });
+    return reply.status(201).send(benchmark);
+  });
+
+  app.get('/benchmarks', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub, role } = req.user as { sub: string; role: string };
+    const benchmarks = await (prisma as any).mathBenchmark.findMany({
+      where: role === 'ADMIN' ? {} : { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return reply.send(benchmarks);
+  });
+
+  app.get('/benchmarks/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const b = await (prisma as any).mathBenchmark.findUnique({ where: { id } });
+    if (!b) throw { statusCode: 404, message: 'Không tìm thấy benchmark' };
+    if (role !== 'ADMIN' && b.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    return reply.send(b);
+  });
+
+  app.delete('/benchmarks/:id', { preHandler: requireInstructor }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { sub, role } = req.user as { sub: string; role: string };
+    const b = await (prisma as any).mathBenchmark.findUnique({ where: { id } });
+    if (!b) throw { statusCode: 404, message: 'Không tìm thấy benchmark' };
+    if (role !== 'ADMIN' && b.createdBy !== sub) throw { statusCode: 403, message: 'Không có quyền' };
+    await (prisma as any).mathBenchmark.delete({ where: { id } });
+    return reply.send({ ok: true });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ketthuctoan.md — BATCH BENCHMARK RUNNER
+  // POST /math/benchmarks/run-batch
+  //
+  // Chạy pipeline trên nhiều bài cùng lúc, ghi lại 4 chỉ số:
+  //   - Parse thành công (parserScore >= 0.3 và isContentRich)
+  //   - JSON hợp lệ (validateToanLesson qua)
+  //   - Quality > 70 (scoreLesson >= 70, chỉ khi runAI=true)
+  //   - AI Generate tốt (AI trả kết quả, chỉ khi runAI=true)
+  //
+  // Dùng useSeed=true để test với gold dataset chuẩn (30 bài mặc định).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/benchmarks/run-batch', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+
+    const body = z.object({
+      name: z.string().min(2).max(200).default(`Benchmark ${new Date().toLocaleDateString('vi-VN')}`),
+      useSeed: z.boolean().default(false),
+      runAI: z.boolean().default(false),
+      notes: z.string().optional(),
+      items: z.array(z.object({
+        label: z.string().min(1),
+        text: z.string().min(10),
+        grade: z.number().min(1).max(9).default(5),
+      })).optional(),
+    }).parse(req.body);
+
+    const items = body.useSeed
+      ? MATH_GOLD_DATASET
+      : (body.items ?? []);
+
+    if (items.length === 0) {
+      throw { statusCode: 400, message: 'Cần ít nhất 1 item hoặc dùng useSeed=true để dùng gold dataset' };
+    }
+
+    const report: Array<{
+      label: string;
+      grade: number;
+      parseOk: boolean;
+      parserScore: number;
+      chunkCount: number;
+      jsonValid?: boolean;
+      qualityScore?: number;
+      qualityPass?: boolean;
+      aiOk?: boolean;
+      // testtoatiengviet.md Bước 3
+      errors: ErrorType[];
+      errorLabels: string[];
+      error?: string;
+    }> = [];
+
+    for (const item of items) {
+      try {
+        const cleaned = unicodeNormalize(mathClean(item.text));
+        const curriculum = detectCurriculum(cleaned);
+        if (item.grade) curriculum.grade = item.grade;
+
+        const chunks = splitIntoLessons(cleaned);
+        const richChunks = chunks.filter(c => isContentRich(c.text));
+        const avgParser = richChunks.length > 0
+          ? richChunks.reduce((s, c) => s + c.parserScore, 0) / richChunks.length
+          : 0;
+        const parseOk = richChunks.length > 0 && avgParser >= 0.3;
+
+        // Error classification — parser stage
+        const errReport = classifyItemErrors({
+          text: item.text,
+          richChunkCount: richChunks.length,
+          totalChunkCount: chunks.length,
+        });
+
+        if (!body.runAI) {
+          report.push({
+            label: item.label,
+            grade: item.grade,
+            parseOk,
+            parserScore: Math.round(avgParser * 100) / 100,
+            chunkCount: richChunks.length,
+            errors: errReport.errors,
+            errorLabels: errReport.errorLabels,
+          });
+          continue;
+        }
+
+        // Full AI pipeline
+        const result = await processMathDocument(item.text, {
+          grade: item.grade,
+          generateExercises: false,
+          userId: sub,
+        });
+
+        const validEntries = result.entries;
+        const jsonValid = validEntries.length > 0;
+        const avgQuality = result.analytics.avgQualityScore;
+        const qualityPass = avgQuality >= 70;
+
+        // Error classification — AI stage
+        const errReportAI = classifyItemErrors({
+          text: item.text,
+          richChunkCount: richChunks.length,
+          totalChunkCount: chunks.length,
+          jsonRepairFailed: result.analytics.repairCount > 0 && !jsonValid,
+          qualityScore: avgQuality,
+          qualityGate: 40,
+          hallucinationCount: result.analytics.hallucinationCount,
+        });
+
+        report.push({
+          label: item.label,
+          grade: item.grade,
+          parseOk,
+          parserScore: Math.round(avgParser * 100) / 100,
+          chunkCount: richChunks.length,
+          jsonValid,
+          qualityScore: avgQuality,
+          qualityPass,
+          aiOk: jsonValid,
+          errors: errReportAI.errors,
+          errorLabels: errReportAI.errorLabels,
+        });
+      } catch (e: any) {
+        const errReport = classifyItemErrors({
+          text: item.text,
+          richChunkCount: 0,
+          totalChunkCount: 0,
+        });
+        report.push({
+          label: item.label,
+          grade: item.grade,
+          parseOk: false,
+          parserScore: 0,
+          chunkCount: 0,
+          errors: errReport.errors,
+          errorLabels: errReport.errorLabels,
+          error: e.message,
+        });
+      }
+    }
+
+    const total = report.length;
+    const parseOkCount = report.filter(r => r.parseOk).length;
+    const jsonValidCount = report.filter(r => r.jsonValid === true).length;
+    const qualityPassCount = report.filter(r => r.qualityPass === true).length;
+    const aiOkCount = report.filter(r => r.aiOk === true).length;
+    const avgParser = total > 0
+      ? Math.round(report.reduce((s, r) => s + r.parserScore, 0) / total * 100) / 100
+      : 0;
+    const avgQuality = body.runAI && total > 0
+      ? Math.round(report.filter(r => r.qualityScore != null).reduce((s, r) => s + (r.qualityScore ?? 0), 0) / Math.max(1, report.filter(r => r.qualityScore != null).length))
+      : 0;
+
+    // testtoatiengviet.md Bước 3: Error table
+    const batchSummary = buildBatchSummary({
+      total,
+      parserSuccessCount: parseOkCount,
+      jsonValidCount: body.runAI ? jsonValidCount : parseOkCount,
+      qualityPassCount,
+      errorReports: report.map(r => ({ errors: r.errors })),
+    });
+
+    // Ghi kết quả vào MathBenchmark
+    const benchmark = await (prisma as any).mathBenchmark.create({
+      data: {
+        name: body.name,
+        totalFiles: total,
+        parseOk: parseOkCount,
+        jsonValid: body.runAI ? jsonValidCount : parseOkCount,
+        qualityPass: qualityPassCount,
+        hallucCount: 0,
+        avgQuality,
+        avgParser,
+        notes: [
+          body.notes,
+          `useSeed=${body.useSeed}`,
+          `runAI=${body.runAI}`,
+          `items=${total}`,
+          batchSummary.topError ? `topError=${batchSummary.topError}` : null,
+        ].filter(Boolean).join(' | '),
+        createdBy: sub,
+      },
+    });
+
+    // Metrics — testtoatiengviet.md Bước 2
+    const metrics: Record<string, string> = {
+      'Parser Success %': `${parseOkCount}/${total} (${batchSummary.parserSuccessPct}%)`,
+      'JSON Valid %': body.runAI
+        ? `${jsonValidCount}/${total} (${batchSummary.jsonValidPct}%)`
+        : 'chưa chạy AI',
+      'Quality Score %': body.runAI
+        ? `${qualityPassCount}/${total} (${batchSummary.qualityPassPct}%)`
+        : 'chưa chạy AI',
+    };
+
+    return reply.status(201).send({
+      benchmarkId: benchmark.id,
+      name: body.name,
+      total,
+      // testtoatiengviet.md Bước 2
+      metrics,
+      avgParser,
+      avgQuality: body.runAI ? avgQuality : null,
+      // testtoatiengviet.md Bước 3: bảng lỗi xếp hạng
+      errorTable: batchSummary.errorTable,
+      topError: batchSummary.topError,
+      recommendation: batchSummary.recommendation,
+      report,
+    });
   });
 }

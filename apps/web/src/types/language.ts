@@ -5,7 +5,13 @@ export interface VocabItem {
   pronunciation?: string;
   example?: string;
   exampleTrans?: string;
+  synonyms?: string[];
+  hints?: string[];
   notes?: string;
+  topic?: string;
+  itemLevel?: string;
+  audioUrl?: string;
+  imageUrl?: string;
   order: number;
 }
 

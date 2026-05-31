@@ -16,6 +16,30 @@ import { callAIForJSON } from './ai-provider';
 import { redis } from './redis';
 import type { MathConceptDraft, MathCurriculumEntry } from './file-import';
 
+// ─── jonsontoan.md: clean knowledge name (strip numbering / lesson prefixes) ──
+function cleanKnowledgeName(name: string): string {
+  return name
+    .replace(/^\s*(?:Bài|Tiết|Chương)\s*\d+\s*[:\-–—.]?\s*/i, '')
+    .replace(/^\s*\d+[\s.:\-–—]+/, '')
+    .trim();
+}
+
+// ─── jonsontoan.md: filter a knowledge array per jonsontoan rules ─────────────
+export function jonsontoanFilter<T extends { name: string; definition: string; example: string; hints: string[] }>(
+  items: T[],
+): T[] {
+  const seen = new Set<string>();
+  return items.filter((k) => {
+    if ((k.definition?.trim().length ?? 0) < 30) return false;
+    if (!k.example?.trim()) return false;
+    if (!Array.isArray(k.hints) || k.hints.filter(Boolean).length < 2) return false;
+    const key = k.name.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CurriculumInfo {
@@ -372,8 +396,8 @@ export function scoreLesson(lesson: ToanLesson): number {
     if (withSteps / kCount >= 0.5) score += 8;
     else if (withSteps / kCount >= 0.25) score += 4;
 
-    // Hints presence
-    const withHints = kItems.filter((k) => Array.isArray(k.hints) && k.hints.length > 0).length;
+    // jonsontoan: hints ≥ 2
+    const withHints = kItems.filter((k) => Array.isArray(k.hints) && k.hints.length >= 2).length;
     if (withHints / kCount >= 0.5) score += 7;
   }
 
@@ -402,15 +426,15 @@ export function scoreLesson(lesson: ToanLesson): number {
 // 2b. Minimum quality gate — below 45 means data is too poor to save
 const QUALITY_GATE = 45;
 
-// 2c. Data Completeness Enforcer — fix obvious gaps before self-critic
+// 2c. Data Completeness Enforcer — normalise field values only; filtering happens in normalizeLesson
 function enforceCompleteness(lesson: ToanLesson): ToanLesson {
   return {
     ...lesson,
     knowledge: (lesson.knowledge ?? []).map((k) => ({
-      name: k.name?.trim() || 'Khái niệm',
-      definition: k.definition?.trim() || k.example?.trim() || '(thiếu định nghĩa)',
+      name: cleanKnowledgeName(k.name?.trim() || 'Khái niệm'),
+      definition: k.definition?.trim() || k.example?.trim() || '',
       formula: k.formula ?? '',
-      example: k.example ?? '',
+      example: k.example?.trim() ?? '',
       steps: Array.isArray(k.steps) ? k.steps.filter(Boolean) : [],
       hints: Array.isArray(k.hints) ? k.hints.filter(Boolean) : [],
     })),
@@ -433,8 +457,13 @@ async function selfCritic(lesson: ToanLesson, chunk: LessonChunk, score: number)
   if (qCount < 3) issues.push(`questions chỉ có ${qCount} items (cần ≥3)`);
   const noSteps = (lesson.knowledge ?? []).filter((k) => !k.steps?.length).length;
   if (noSteps > 0) issues.push(`${noSteps} knowledge items thiếu steps`);
-  const noDef = (lesson.knowledge ?? []).filter((k) => (k.definition?.length ?? 0) < 20).length;
-  if (noDef > 0) issues.push(`${noDef} knowledge items có definition quá ngắn`);
+  // jonsontoan: definition ≥ 30, example non-empty, hints ≥ 2
+  const noDef = (lesson.knowledge ?? []).filter((k) => (k.definition?.trim().length ?? 0) < 30).length;
+  if (noDef > 0) issues.push(`${noDef} knowledge items có definition quá ngắn (<30 ký tự)`);
+  const noExample = (lesson.knowledge ?? []).filter((k) => !k.example?.trim()).length;
+  if (noExample > 0) issues.push(`${noExample} knowledge items thiếu example`);
+  const noHints = (lesson.knowledge ?? []).filter((k) => !Array.isArray(k.hints) || k.hints.filter(Boolean).length < 2).length;
+  if (noHints > 0) issues.push(`${noHints} knowledge items có hints < 2`);
   const diffSet = new Set((lesson.questions ?? []).map((q) => q.difficulty));
   if (diffSet.size < 2) issues.push('questions thiếu đa dạng difficulty (cần ≥2 mức)');
   if (chunk.formulaTokens.length > 0) {
@@ -504,11 +533,24 @@ export function validateToanLesson(data: any): ValidationResult {
   for (let i = 0; i < (data.knowledge ?? []).length; i++) {
     const k = data.knowledge[i];
     if (!k?.name?.trim()) { errors.push(`knowledge[${i}].name: missing`); continue; }
+    // jonsontoan: name must not contain lesson numbering
+    if (/^\s*(?:Bài|Tiết|Chương)\s*\d+/i.test(k.name) || /^\s*\d+[\s.:\-]/i.test(k.name))
+      errors.push(`knowledge[${i}].name: contains lesson numbering "${k.name}"`);
     if (knowledgeNames.has(k.name.trim().toLowerCase()))
       errors.push(`knowledge[${i}].name: duplicate "${k.name}"`);
     knowledgeNames.add(k.name.trim().toLowerCase());
-    if (!k?.definition || (k.definition?.length ?? 0) < 10)
-      errors.push(`knowledge[${i}].definition: too short (<10 chars)`);
+    // jonsontoan: definition ≥ 30 chars
+    if (!k?.definition || (k.definition?.trim().length ?? 0) < 30)
+      errors.push(`knowledge[${i}].definition: too short (<30 chars)`);
+    // jonsontoan: example must not be empty
+    if (!k?.example?.trim())
+      errors.push(`knowledge[${i}].example: empty`);
+    // jonsontoan: formula field must exist (can be empty string, not null/undefined)
+    if (!('formula' in k))
+      errors.push(`knowledge[${i}].formula: missing field`);
+    // jonsontoan: hints ≥ 2
+    if (!Array.isArray(k?.hints) || k.hints.filter(Boolean).length < 2)
+      errors.push(`knowledge[${i}].hints: needs ≥2 items`);
   }
 
   if (!Array.isArray(data.questions) || data.questions.length === 0)
@@ -655,14 +697,16 @@ function normalizeLesson(lesson: ToanLesson, curriculum: CurriculumInfo): ToanLe
     lesson_type,
     topic: (lesson.topic ?? '').trim().slice(0, 200) || chunk_title(lesson),
     textbook: lesson.textbook ?? curriculum.textbook ?? null,
-    knowledge: (lesson.knowledge ?? []).map((k) => ({
-      name: (k.name ?? '').trim().slice(0, 200),
-      definition: (k.definition ?? '').trim(),
-      formula: (k.formula ?? '').trim(),
-      example: (k.example ?? '').trim(),
-      steps: Array.isArray(k.steps) ? k.steps.filter(Boolean) : [],
-      hints: Array.isArray(k.hints) ? k.hints.filter(Boolean) : [],
-    })).filter((k) => k.name && k.definition),
+    knowledge: jonsontoanFilter(
+      (lesson.knowledge ?? []).map((k) => ({
+        name: cleanKnowledgeName((k.name ?? '').trim()).slice(0, 200),
+        definition: (k.definition ?? '').trim(),
+        formula: (k.formula ?? '').trim(),
+        example: (k.example ?? '').trim(),
+        steps: Array.isArray(k.steps) ? k.steps.filter(Boolean) : [],
+        hints: Array.isArray(k.hints) ? k.hints.filter(Boolean) : [],
+      })).filter((k) => k.name),
+    ),
     questions: (lesson.questions ?? []).map((q) => ({
       question: (q.question ?? '').trim(),
       answer: (q.answer ?? '').trim(),
@@ -708,12 +752,12 @@ Output CHỈ một JSON object:
   "textbook": ${curriculum.textbook ? `"${curriculum.textbook}"` : 'null'},
   "knowledge": [
     {
-      "name": "Tên khái niệm/quy tắc/định lý",
-      "definition": "Định nghĩa ≥30 ký tự, rõ ràng, phù hợp lớp ${grade}",
-      "formula": "Công thức nếu có, rỗng '' nếu không",
-      "example": "Ví dụ cụ thể với số thực",
+      "name": "Tên khái niệm (không chứa 'Bài/Tiết/Chương' hoặc số thứ tự)",
+      "definition": "Định nghĩa ≥30 ký tự, mô tả khái niệm là gì, dùng khi nào, ý nghĩa",
+      "formula": "Công thức nếu có, bắt buộc để '' nếu không có (không được null)",
+      "example": "Ví dụ cụ thể với số thực (bắt buộc, không được để trống)",
       "steps": ["Bước 1: ...", "Bước 2: ...", "Bước 3: ..."],
-      "hints": ["Gợi ý 1", "Gợi ý 2"]
+      "hints": ["Gợi ý 1", "Gợi ý 2 (tối thiểu 2 gợi ý)"]
     }
   ],
   "questions": [

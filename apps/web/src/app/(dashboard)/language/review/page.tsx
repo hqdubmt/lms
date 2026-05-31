@@ -96,9 +96,10 @@ export default function GlobalReviewPage() {
     }
   }, [idx, mode, items]);
 
-  const submitReview = async (quality: number) => {
+  const submitReview = async (quality: number, reviewMode?: 'srs' | 'quiz' | 'speak') => {
+    const effectiveMode = reviewMode ?? (mode === 'flash' ? 'srs' : mode as 'quiz' | 'speak');
     const item = items[idx];
-    await api.post(`/language/vocab-items/${item.id}/review`, { quality }).catch(() => {});
+    await api.post(`/language/vocab-items/${item.id}/review`, { quality, mode: effectiveMode }).catch(() => {});
     if (quality >= 3) setXpEarned(x => x + 5);
     if (idx < items.length - 1) { setIdx(i => i + 1); setFlipped(false); setSelected(null); }
     else setDone(true);
@@ -161,7 +162,11 @@ export default function GlobalReviewPage() {
 
   const spSubmit = async (score: number) => {
     const quality = score >= 80 ? 5 : score >= 60 ? 3 : score >= 40 ? 2 : 0;
-    await submitReview(quality);
+    const item = items[idx];
+    await api.post(`/language/vocab-items/${item.id}/review`, { quality, mode: 'speak', speakScore: score }).catch(() => {});
+    if (quality >= 3) setXpEarned(x => x + 5);
+    if (idx < items.length - 1) { setIdx(i => i + 1); setFlipped(false); setSelected(null); }
+    else setDone(true);
     setSpTranscript(''); setSpScore(null);
   };
 

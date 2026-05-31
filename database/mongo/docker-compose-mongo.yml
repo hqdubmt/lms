@@ -3,7 +3,7 @@ version: '3.8'
 services:
 
   mongo:
-    image: mongo:latest
+    image: mongo:7
     container_name: ${MONGO_CONTAINER_NAME}
     restart: always
 
@@ -15,9 +15,9 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
 
-    ports:
 
-      - "${MONGO_PORT}:27017"
+    ports:
+      - "127.0.0.1:${MONGO_PORT}:27017"
 
     volumes:
       - ./mongo-entrypoint:/docker-entrypoint-initdb.d

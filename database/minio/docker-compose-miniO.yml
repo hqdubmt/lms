@@ -10,8 +10,8 @@ services:
       - .env
 
     ports:
-      - "${adminport}:9000"
-      - "${serverport}:9001"
+      - "127.0.0.1:${adminport}:9000"
+      - "127.0.0.1:${serverport}:9001"
 
     volumes:
       - minio_data:/data

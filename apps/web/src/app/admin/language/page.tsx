@@ -6,6 +6,7 @@ import {
   Plus, BookOpen, Brain, Edit, Trash2, Globe,
   Loader2, X, Zap, Flame, Star,
   FolderOpen, Folder, ChevronDown, ChevronUp,
+  Database, CheckCircle2, AlertTriangle, PlayCircle, Wand2, ChevronRight,
 } from 'lucide-react';
 import { EXERCISE_ICONS, EXERCISE_TYPE_LABEL, LEVELS, LANGUAGES, LANG_NAMES } from '@/constants/language';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,11 @@ import { cn } from '@/lib/utils';
 interface LangStats {
   xp: number; level: number; streak: number; longestStreak: number;
   wordsLearned: number; exercisesDone: number; reviewsDue: number;
+}
+interface Analytics {
+  wordStats: { total: number; seen: number; mastered: number; due: number };
+  skillScores: Record<string, number>;
+  levelBreakdown: { level: string; seen: number; mastered: number }[];
 }
 interface VocabSet {
   id: string; title: string; language: string; level: string; isPublic: boolean;
@@ -200,6 +206,27 @@ export default function AdminLanguagePage() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [showFolderForm, setShowFolderForm] = useState(false);
 
+  // Sample data state
+  const [showSamplePanel, setShowSamplePanel] = useState(false);
+  const [sampleInfo, setSampleInfo] = useState<{
+    sets: { level: string; title: string; description: string; wordCount: number }[];
+    validation: { total: number; avgScore: number; perfect: number; byLevel: Record<string, { count: number; avgScore: number }> };
+  } | null>(null);
+  const [sampleInfoLoading, setSampleInfoLoading] = useState(false);
+  const [seedLevels, setSeedLevels] = useState<string[]>(['A1', 'A2', 'B1', 'B2']);
+  const [seedWithEx, setSeedWithEx] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ seeded: number; totalWords: number; totalExercises: number } | null>(null);
+  const [validateReport, setValidateReport] = useState<{
+    summary: { totalWords: number; totalParsed: number; totalFailed: number; parseRate: number };
+    sets: { level: string; setTitle: string; wordCount: number; failedCount: number; parseRate: number; failedSamples: string[] }[];
+  } | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{ deleted: number } | null>(null);
+
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+
   const [showExForm, setShowExForm] = useState(false);
   const [eTitle, setETitle] = useState('');
   const [eLang, setELang] = useState('en');
@@ -211,12 +238,13 @@ export default function AdminLanguagePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [s, v, e] = await Promise.all([
+    const [s, v, e, a] = await Promise.all([
       api.get<LangStats>('/language/stats').catch(() => null),
       api.get<VocabSet[]>('/language/vocab-sets/tree').catch(() => []),
       api.get<Exercise[]>('/language/exercises').catch(() => []),
+      api.get<Analytics>('/language/analytics').catch(() => null),
     ]);
-    setStats(s); setFolders(v as VocabSet[]); setExercises(e as Exercise[]);
+    setStats(s); setFolders(v as VocabSet[]); setExercises(e as Exercise[]); setAnalytics(a);
     setLoading(false);
   }, []);
 
@@ -250,6 +278,54 @@ export default function AdminLanguagePage() {
     setBusy((b) => ({ ...b, [childId]: false }));
   };
 
+  const loadSampleInfo = async () => {
+    if (sampleInfo) return;
+    setSampleInfoLoading(true);
+    try {
+      const data = await api.get<typeof sampleInfo>('/language/sample-data');
+      setSampleInfo(data);
+    } catch {}
+    setSampleInfoLoading(false);
+  };
+
+  const handleShowSamplePanel = () => {
+    setShowSamplePanel(v => !v);
+    if (!sampleInfo) loadSampleInfo();
+  };
+
+  const handleValidate = async () => {
+    setValidating(true); setValidateReport(null);
+    try {
+      const data = await api.get<typeof validateReport>('/language/sample-data/validate');
+      setValidateReport(data);
+    } catch {}
+    setValidating(false);
+  };
+
+  const handleSeed = async () => {
+    if (!confirm(`Seed ${seedLevels.join(', ')} — bộ từ mẫu sẽ được tạo. Tiếp tục?`)) return;
+    setSeeding(true); setSeedResult(null);
+    try {
+      const data = await api.post<typeof seedResult>('/language/sample-data/seed', {
+        levels: seedLevels, withExercises: seedWithEx,
+      });
+      setSeedResult(data);
+      await load();
+    } catch (e: any) { alert(e.message || 'Seed thất bại'); }
+    setSeeding(false);
+  };
+
+  const handleCleanup = async () => {
+    if (!confirm('Xóa tất cả dữ liệu mẫu [Mẫu] của bạn?')) return;
+    setCleaning(true); setCleanResult(null);
+    try {
+      const data = await api.delete<typeof cleanResult>('/language/sample-data/cleanup');
+      setCleanResult(data);
+      await load();
+    } catch {}
+    setCleaning(false);
+  };
+
   const createExercise = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!eTitle.trim()) return;
@@ -276,12 +352,157 @@ export default function AdminLanguagePage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Globe className="h-6 w-6 text-primary" />Ngoại ngữ</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Quản lý bộ từ vựng và bài tập cho học viên</p>
         </div>
+        <Button variant="outline" size="sm" onClick={handleShowSamplePanel}
+          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+          <Database className="h-4 w-4 mr-1.5 text-indigo-500" />Dữ liệu mẫu (500 từ)
+        </Button>
       </div>
+
+      {/* ── Sample Data Panel ── */}
+      {showSamplePanel && (
+        <Card className="border-indigo-200">
+          <div className="p-5 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-base flex items-center gap-2">
+                <Database className="h-5 w-5 text-indigo-500" />
+                Bộ dữ liệu mẫu — Test Parser với 100 từ/cấp độ
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowSamplePanel(false)}><X className="h-4 w-4" /></Button>
+            </div>
+
+            <div className="bg-indigo-50 rounded-xl p-4 text-sm text-indigo-800 space-y-1.5">
+              <p className="font-semibold">Gold Dataset — 500 từ · 15 set · 4 cấp độ</p>
+              <div className="grid grid-cols-2 gap-1.5 text-indigo-700 pl-1">
+                <div>🔵 <strong>A1</strong> (201 từ) — Gia đình, màu sắc, nhà cửa, quần áo, thể thao, tháng/ngày</div>
+                <div>🟢 <strong>A2</strong> (153 từ) — Trường học, du lịch, mua sắm, công nghệ, sức khỏe</div>
+                <div>🟡 <strong>B1</strong> (66 từ) — Thiên nhiên, xã hội, khoa học, nghệ thuật</div>
+                <div>🟠 <strong>B2</strong> (80 từ) — Học thuật, nghề nghiệp, môi trường, tư duy phản biện</div>
+              </div>
+              <p className="text-indigo-600 text-xs">Mỗi từ: word · translation · pronunciation · example · exampleTrans · synonyms · hints · topic · itemLevel</p>
+            </div>
+
+            {/* Validation report */}
+            {sampleInfo && (
+              <div className="grid grid-cols-4 gap-3">
+                <div className="bg-white border rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-indigo-600">{sampleInfo.validation.total}</p>
+                  <p className="text-xs text-muted-foreground">Tổng từ</p>
+                </div>
+                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{sampleInfo.validation.avgScore}%</p>
+                  <p className="text-xs text-muted-foreground">Điểm TB</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{sampleInfo.validation.perfect}</p>
+                  <p className="text-xs text-muted-foreground">Từ hoàn chỉnh 100%</p>
+                </div>
+                {Object.entries(sampleInfo.validation.byLevel).map(([lvl, stat]) => (
+                  <div key={lvl} className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{stat.avgScore}%</p>
+                    <p className="text-xs text-muted-foreground">{lvl} ({stat.count} từ)</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {sampleInfoLoading && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>}
+
+            {/* Parser Validate */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button variant="outline" size="sm" onClick={handleValidate} disabled={validating}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                {validating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                Test Parser
+              </Button>
+              <span className="text-xs text-muted-foreground">Kiểm tra tỷ lệ parse thành công của 300 từ</span>
+            </div>
+
+            {validateReport && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { label: 'Tổng', value: validateReport.summary.totalWords, color: 'text-gray-700' },
+                    { label: 'Parse OK', value: validateReport.summary.totalParsed, color: 'text-green-600' },
+                    { label: 'Thất bại', value: validateReport.summary.totalFailed, color: 'text-red-500' },
+                    { label: 'Tỷ lệ', value: `${validateReport.summary.parseRate}%`, color: validateReport.summary.parseRate >= 95 ? 'text-green-600' : 'text-amber-600' },
+                  ].map(s => (
+                    <div key={s.label} className="bg-white border rounded-lg p-2 text-center">
+                      <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-muted-foreground">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1.5">
+                  {validateReport.sets.map(s => (
+                    <div key={s.setTitle} className="flex items-center gap-3 bg-white rounded-lg border px-3 py-2">
+                      <span className="text-xs font-bold w-8 shrink-0 text-center bg-indigo-100 text-indigo-700 rounded px-1 py-0.5">{s.level}</span>
+                      <span className="text-sm flex-1 truncate">{s.setTitle.replace('[Mẫu] ', '')}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">{s.wordCount} từ</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${s.parseRate >= 95 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{s.parseRate}%</span>
+                        {s.failedCount > 0 && <span className="text-xs text-red-500">{s.failedCount} lỗi</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Seed Controls */}
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">Nhập dữ liệu mẫu vào database</p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Cấp độ:</span>
+                  {['A1', 'A2', 'B1', 'B2'].map(lvl => (
+                    <button key={lvl} onClick={() => setSeedLevels(prev => prev.includes(lvl) ? prev.filter(l => l !== lvl) : [...prev, lvl])}
+                      className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${seedLevels.includes(lvl) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={seedWithEx} onChange={e => setSeedWithEx(e.target.checked)} className="rounded" />
+                  Tạo bài tập tự động
+                </label>
+              </div>
+
+              {seedResult && (
+                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-green-700">Seed thành công!</p>
+                    <p className="text-green-600">{seedResult.seeded} bộ từ vựng · {seedResult.totalWords} từ · {seedResult.totalExercises} bài tập</p>
+                  </div>
+                </div>
+              )}
+
+              {cleanResult && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm text-amber-700">
+                  Đã xóa {cleanResult.deleted} bộ dữ liệu mẫu.
+                </div>
+              )}
+
+              <div className="flex gap-3 flex-wrap">
+                <Button onClick={handleSeed} disabled={seeding || seedLevels.length === 0}
+                  className="bg-indigo-600 hover:bg-indigo-700">
+                  {seeding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <PlayCircle className="h-4 w-4 mr-2" />}
+                  Seed {seedLevels.join('+')} vào database
+                </Button>
+                <Button variant="outline" onClick={handleCleanup} disabled={cleaning}
+                  className="border-red-200 text-red-600 hover:bg-red-50">
+                  {cleaning ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                  Xóa data mẫu
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       {stats && (
@@ -316,6 +537,53 @@ export default function AdminLanguagePage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Analytics mini - word stats + skill scores + level breakdown */}
+      {analytics && analytics.wordStats.total > 0 && (
+        <Card className="border-violet-100 bg-gradient-to-r from-violet-50/50 to-indigo-50/50">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm flex items-center gap-2 text-violet-800">
+                <ChevronRight className="h-4 w-4 text-violet-500" />Phân tích học tập học viên
+              </h3>
+              <Link href="/language/analytics">
+                <Button variant="ghost" size="sm" className="text-xs text-violet-600 h-7">Xem chi tiết →</Button>
+              </Link>
+            </div>
+            {/* Word stats */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Tổng từ gặp', v: analytics.wordStats.seen, color: 'text-blue-600' },
+                { label: 'Đã thuộc', v: analytics.wordStats.mastered, color: 'text-green-600' },
+                { label: 'Cần ôn', v: analytics.wordStats.due, color: analytics.wordStats.due > 0 ? 'text-amber-600' : 'text-gray-400' },
+                { label: 'Tổng trong DB', v: analytics.wordStats.total, color: 'text-violet-600' },
+              ].map(({ label, v, color }) => (
+                <div key={label} className="text-center bg-white/70 rounded-lg p-2">
+                  <p className={`text-xl font-bold ${color}`}>{v}</p>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+            {/* Level breakdown */}
+            {analytics.levelBreakdown.length > 0 && (
+              <div className="space-y-1.5">
+                {analytics.levelBreakdown.map(({ level, seen, mastered }) => {
+                  const pct = seen > 0 ? Math.round((mastered / seen) * 100) : 0;
+                  return (
+                    <div key={level} className="flex items-center gap-2">
+                      <span className="text-xs font-bold w-8 text-center bg-indigo-100 text-indigo-700 rounded px-1">{level}</span>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-indigo-400 to-violet-500 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground w-24 text-right">{mastered}/{seen} · {pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Folders */}

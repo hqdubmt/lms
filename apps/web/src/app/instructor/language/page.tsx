@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   ChevronLeft, Plus, Globe, Loader2, Sparkles,
   FolderOpen, Folder, Trash2, ChevronDown, ChevronUp,
-  BookOpen, Edit, Gamepad2,
+  BookOpen, Edit, Gamepad2, Database, CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -233,13 +233,15 @@ export default function InstructorLanguagePage() {
   const [showFolderForm, setShowFolderForm] = useState(false);
   const [showExForm, setShowExForm] = useState(false);
   const [showGenForm, setShowGenForm] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ seeded: number; totalWords: number; totalExercises: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
       const [v, e] = await Promise.all([
-        api.get<VocabSet[]>('/language/vocab-sets/tree?mine=true'),
-        api.get<Exercise[]>('/language/exercises?mine=true'),
+        api.get<VocabSet[]>('/language/vocab-sets/tree'),
+        api.get<Exercise[]>('/language/exercises'),
       ]);
       setFolders(Array.isArray(v) ? v : []);
       setExercises(Array.isArray(e) ? e : []);
@@ -280,6 +282,22 @@ export default function InstructorLanguagePage() {
       }));
     } catch { }
     setBusy((b) => ({ ...b, [childId]: false }));
+  };
+
+  const seedSampleData = async () => {
+    if (!confirm('Seed ~500 từ vựng mẫu (A1, A2, B1, B2) vào tài khoản của bạn?')) return;
+    setSeeding(true); setSeedResult(null);
+    try {
+      const result = await api.post<{ seeded: number; totalWords: number; totalExercises: number }>(
+        '/language/sample-data/seed',
+        { levels: ['A1', 'A2', 'B1', 'B2'], withExercises: true },
+      );
+      setSeedResult(result);
+      await load();
+    } catch (e: any) {
+      alert(e.message || 'Seed thất bại');
+    }
+    setSeeding(false);
   };
 
   const generateQuiz = async (setId: string, setTitle: string) => {
@@ -343,9 +361,16 @@ export default function InstructorLanguagePage() {
               <Folder className="h-5 w-5 text-indigo-500" />
               Thư mục từ vựng ({folders.length})
             </h2>
-            <Button size="sm" onClick={() => { setShowFolderForm((v) => !v); }}>
-              <Plus className="h-4 w-4 mr-1" />Tạo thư mục
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                onClick={seedSampleData} disabled={seeding}>
+                {seeding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Database className="h-4 w-4 mr-1" />}
+                Seed mẫu
+              </Button>
+              <Button size="sm" onClick={() => { setShowFolderForm((v) => !v); }}>
+                <Plus className="h-4 w-4 mr-1" />Tạo thư mục
+              </Button>
+            </div>
           </div>
 
           {showFolderForm && (
@@ -355,12 +380,24 @@ export default function InstructorLanguagePage() {
             />
           )}
 
+          {seedResult && (
+            <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-3">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>Đã seed <strong>{seedResult.seeded}</strong> bộ từ với <strong>{seedResult.totalWords}</strong> từ vựng và <strong>{seedResult.totalExercises}</strong> bài tập!</span>
+            </div>
+          )}
+
           {folders.length === 0 ? (
             <Card>
               <CardContent className="py-10 text-center text-muted-foreground">
                 <Folder className="h-10 w-10 mx-auto mb-3 text-gray-300" />
                 <p className="font-medium text-gray-500">Chưa có thư mục nào</p>
-                <p className="text-sm mt-1">Nhấn "Tạo thư mục" để bắt đầu tổ chức bộ từ vựng</p>
+                <p className="text-sm mt-1">Nhấn "Tạo thư mục" để bắt đầu, hoặc seed ~500 từ mẫu</p>
+                <Button size="sm" variant="outline" className="mt-4 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                  onClick={seedSampleData} disabled={seeding}>
+                  {seeding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Database className="h-4 w-4 mr-2" />}
+                  Seed dữ liệu mẫu (~500 từ)
+                </Button>
               </CardContent>
             </Card>
           ) : (

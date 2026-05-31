@@ -58,6 +58,9 @@ export default function MathExercisePage() {
       });
       setResult(res);
       setSubmitted(true);
+      if (exercise.lessonType) {
+        api.post('/math/profile/update', { lessonType: exercise.lessonType, score: res.score }).catch(() => {});
+      }
     } catch (e: any) {
       alert(e.message || 'Nộp bài thất bại');
     }
@@ -141,9 +144,26 @@ export default function MathExercisePage() {
           })}
         </div>
 
+        {/* Profile recommendation */}
+        {result.score < 60 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+            <p className="font-semibold mb-1">Gợi ý ôn tập</p>
+            <p>Điểm dưới 60% — hãy xem lại lý thuyết ở mục <Link href="/math/topics" className="underline font-medium">Chủ đề</Link> hoặc ôn tập SRS ở <Link href="/math/review" className="underline font-medium">Ôn tập</Link>.</p>
+          </div>
+        )}
+        {result.score >= 90 && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-sm text-emerald-800">
+            <p className="font-semibold">Xuất sắc! Hồ sơ học tập đã được cập nhật.</p>
+            <p className="mt-0.5">Xem phân tích điểm mạnh / yếu tại <Link href="/math/profile" className="underline font-medium">Hồ sơ học tập</Link>.</p>
+          </div>
+        )}
+
         <div className="flex gap-3">
           <Link href="/math" className="flex-1 py-2.5 text-center bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">
             Về trang toán
+          </Link>
+          <Link href="/math/profile" className="px-4 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors flex items-center gap-1.5">
+            <Eye className="h-4 w-4" />Hồ sơ
           </Link>
           <button onClick={() => { setSubmitted(false); setResult(null); setAnswers({}); setElapsed(0); }}
             className="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors">
