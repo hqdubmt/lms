@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, BookOpen, Users, GraduationCap,
   LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
-  Image as ImageIcon, Palette,
+  Image as ImageIcon, Palette, HardDrive,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,7 @@ const navItems = [
   { href: '/admin/viet', label: 'Tiếng Việt', icon: BookType },
   { href: '/admin/media', label: 'Thư viện', icon: ImageIcon },
   { href: '/admin/branding', label: 'Thương hiệu', icon: Palette },
+  { href: '/admin/backup', label: 'Backup', icon: HardDrive },
 ];
 
 const COLLAPSED_KEY = 'admin_sidebar_collapsed';

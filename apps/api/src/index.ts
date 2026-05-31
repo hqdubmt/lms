@@ -24,6 +24,7 @@ import { lessonsRoutes } from './modules/lessons/lessons.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
 import { classRoutes } from './modules/admin/class.routes';
 import { liveSessionsRoutes } from './modules/admin/live-sessions.routes';
+import { backupRoutes } from './modules/admin/backup.routes';
 import { uploadRoutes } from './modules/upload/upload.routes';
 import { todoRoutes } from './modules/todo/todo.routes';
 import { languageRoutes } from './modules/language/language.routes';
@@ -124,6 +125,7 @@ if (cluster.isPrimary) {
     await app.register(adminRoutes, { prefix: '/admin' });
     await app.register(classRoutes, { prefix: '/admin' });
     await app.register(liveSessionsRoutes, { prefix: '/admin' });
+    await app.register(backupRoutes, { prefix: '/admin' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

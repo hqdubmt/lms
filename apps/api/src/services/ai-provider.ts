@@ -363,7 +363,7 @@ export async function aiChatOnce(messages: ChatMessage[]): Promise<string> {
   if (getGeminiKey()) {
     try { return await geminiChat(messages); } catch { /* fallback */ }
   }
-  return ollamaChat(messages, true);
+  return ollamaChat(messages);
 }
 
 export async function* aiChatStream(messages: ChatMessage[]): AsyncGenerator<string> {
@@ -379,5 +379,5 @@ export async function* aiChatStream(messages: ChatMessage[]): AsyncGenerator<str
       return;
     } catch { /* fallback */ }
   }
-  yield* ollamaStream(messages, true);
+  yield* ollamaStream(messages);
 }
