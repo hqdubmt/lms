@@ -78,6 +78,8 @@ services:
     image: hqdu/lms-api:latest
     container_name: lms_api
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mydb}?connection_limit=20&pool_timeout=30
@@ -133,6 +135,8 @@ services:
     command: node dist/workers/index.js
     container_name: lms_worker
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mydb}?connection_limit=5&pool_timeout=30
