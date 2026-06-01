@@ -4,7 +4,7 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 import { siteConfig } from '@/config/site';
 
-const inter = Inter({ subsets: ['latin', 'vietnamese'], display: 'swap' });
+const inter = Inter({ subsets: ['latin', 'vietnamese'], display: 'swap', preload: false });
 
 export const metadata: Metadata = {
   title: { default: siteConfig.name, template: `%s | ${siteConfig.name}` },
