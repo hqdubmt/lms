@@ -5,13 +5,13 @@ RUN apk add --no-cache libc6-compat
 FROM base AS deps
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm install --omit=dev --legacy-peer-deps && npx prisma@5 generate
+RUN npm install --omit=dev --legacy-peer-deps && npx prisma generate
 
 FROM base AS builder
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
 COPY . .
-RUN npx prisma@5 generate && npm run build
+RUN npx prisma generate && npm run build
 
 FROM base AS runner
 RUN apk add --no-cache espeak-ng
@@ -22,4 +22,4 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
 EXPOSE 4000
-CMD ["sh", "-c", "npx prisma@5 migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

@@ -187,7 +187,7 @@ jobs:
     name: Create GitHub Release
     needs: [build-windows, build-mac, build-linux, build-android, build-ios]
     runs-on: ubuntu-latest
-    if: always()
+    if: ${{ !cancelled() && contains(needs.*.result, 'success') }}
     permissions:
       contents: write
     steps:
@@ -202,7 +202,7 @@ jobs:
           tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
           name: MasterLMS ${{ github.ref_name || format('v{0}', inputs.version) }}
           body: |
-            ## Cập nhật (v1.5.0)
+            ## Cập nhật (${{ github.ref_name || format('v{0}', inputs.version) }})
 
             ### AI Chatbox
             - **Chatbox AI**: Hỗ trợ 4 mode (Giải thích, Bài tập, Chấm bài, Quiz) theo môn học

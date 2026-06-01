@@ -86,3 +86,16 @@ jobs:
             NEXT_PUBLIC_APP_NAME=${{ secrets.NEXT_PUBLIC_APP_NAME || 'MasterLMS' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ── AUTO-DEPLOY ───────────────────────────────────────────────────────────
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            docker compose pull api web worker
+            docker compose up -d --no-deps api web worker
+            docker image prune -f

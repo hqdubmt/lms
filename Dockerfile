@@ -62,7 +62,7 @@ COPY --from=web-builder /mono/apps/web/public              ./web/public
 
 # ── Config files ──
 COPY docker/nginx.conf       /etc/nginx/nginx.conf
-COPY docker/supervisord.conf /etc/supervisor.d/lms.ini
+COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh    /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
