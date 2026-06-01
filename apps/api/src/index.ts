@@ -37,7 +37,7 @@ import { announcementRoutes } from './modules/announcements/announcement.routes'
 import { forumRoutes } from './modules/forum/forum.routes';
 import { quizRoutes } from './modules/quiz/quiz.routes';
 
-const NUM_WORKERS = os.cpus().length;
+const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
 if (cluster.isPrimary) {
   console.log(`[Primary ${process.pid}] Forking ${NUM_WORKERS} workers`);
