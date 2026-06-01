@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g. 1.3.0)'
+        description: 'Version (e.g. 1.5.0)'
         required: true
-        default: '1.3.0'
+        default: '1.5.0'
 
 jobs:
   # ─── DESKTOP: WINDOWS ───────────────────────────────────────────
@@ -202,9 +202,18 @@ jobs:
           tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
           name: MasterLMS ${{ github.ref_name || format('v{0}', inputs.version) }}
           body: |
-            ## Cập nhật (v1.3.0)
+            ## Cập nhật (v1.5.0)
 
-            ### Sửa lỗi
+            ### AI Chatbox
+            - **Chatbox AI**: Hỗ trợ 4 mode (Giải thích, Bài tập, Chấm bài, Quiz) theo môn học
+            - **Streaming SSE**: Phản hồi token theo thời gian thực, không chờ toàn bộ câu trả lời
+            - **Markdown + LaTeX**: Hiển thị công thức toán, code, bảng biểu trong chat
+            - **Multi-provider**: Groq → Gemini → Ollama (tự động fallback)
+            - **Ollama 7b timeout**: Tăng timeout lên 180s để hỗ trợ model lớn (qwen2.5:7b cần ~90s load)
+            - **Token refresh**: Tự động refresh token khi hết hạn trong quá trình chat
+            - **STT**: Nhận diện giọng nói (Web Speech API)
+
+            ### Sửa lỗi (v1.3.0 → v1.4.0)
             - **Toán — MATCHING Tiếng Việt**: Sửa lỗi chấm điểm sai do thứ tự key không nhất quán
             - **Toán — FILL_BLANK**: Sửa lỗi đáp án hiển thị trong câu hỏi khi token lặp trong công thức
             - **Toán — CALCULATION**: Sửa lỗi đáp án hardcode `'0'` khi ví dụ không có số

@@ -243,7 +243,7 @@ async function ollamaChat(messages: ChatMessage[], light = false): Promise<strin
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: false }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(180_000),
   });
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
   const data = await res.json() as { message?: { content: string } };
@@ -256,7 +256,7 @@ async function* ollamaStream(messages: ChatMessage[], light = false): AsyncGener
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: true }),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(180_000),
   });
   if (!res.ok || !res.body) throw new Error('Ollama không khả dụng');
 
