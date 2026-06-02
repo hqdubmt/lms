@@ -361,10 +361,9 @@ export function getActiveProviderName(): string {
 export type ProviderPref = 'groq' | 'gemini' | 'ollama';
 
 function buildProviderOrder(prefer?: ProviderPref): ProviderPref[] {
-  const cloud: ProviderPref[] = prefer && prefer !== 'ollama'
-    ? [prefer, ...(['groq', 'gemini'] as ProviderPref[]).filter(p => p !== prefer)]
-    : ['groq', 'gemini'];
-  return [...cloud, 'ollama']; // Ollama LUÔN đứng cuối
+  const base: ProviderPref[] = ['groq', 'gemini', 'ollama'];
+  if (!prefer) return base;
+  return [prefer, ...base.filter(p => p !== prefer)];
 }
 
 // ─── Unified chat (Groq → Gemini → Ollama fallback) ───────────────────────────
