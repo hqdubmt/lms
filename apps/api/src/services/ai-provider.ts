@@ -355,16 +355,19 @@ export function getActiveProviderName(): string {
 }
 
 // ─── Provider order builder ───────────────────────────────────────────────────
+// Ollama là fallback CUỐI CÙNG — luôn có mặt, không bao giờ bị bỏ qua,
+// không bao giờ bị đẩy lên trước Groq/Gemini dù prefer = 'ollama'.
 
-type ProviderPref = 'groq' | 'gemini' | 'ollama';
+export type ProviderPref = 'groq' | 'gemini' | 'ollama';
 
 function buildProviderOrder(prefer?: ProviderPref): ProviderPref[] {
-  const base: ProviderPref[] = ['groq', 'gemini', 'ollama'];
-  if (!prefer) return base;
-  return [prefer, ...base.filter(p => p !== prefer)];
+  const cloud: ProviderPref[] = prefer && prefer !== 'ollama'
+    ? [prefer, ...(['groq', 'gemini'] as ProviderPref[]).filter(p => p !== prefer)]
+    : ['groq', 'gemini'];
+  return [...cloud, 'ollama']; // Ollama LUÔN đứng cuối
 }
 
-// ─── Unified chat (Groq → Gemini → Ollama) ────────────────────────────────────
+// ─── Unified chat (Groq → Gemini → Ollama fallback) ───────────────────────────
 
 export async function aiChatOnce(
   messages: ChatMessage[],
@@ -374,8 +377,8 @@ export async function aiChatOnce(
     try {
       if (provider === 'groq' && getGroqClient()) return await groqChat(messages);
       if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages);
-      if (provider === 'ollama') return await ollamaChat(messages);
-    } catch { /* try next provider */ }
+      if (provider === 'ollama') return await ollamaChat(messages); // luôn thử
+    } catch { /* thử provider tiếp theo */ }
   }
   throw new Error('Tất cả AI provider không khả dụng');
 }
@@ -388,7 +391,8 @@ export async function* aiChatStream(
     try {
       if (provider === 'groq' && getGroqClient()) { yield* groqStream(messages); return; }
       if (provider === 'gemini' && getGeminiKey()) { yield* geminiStream(messages); return; }
-      if (provider === 'ollama') { yield* ollamaStream(messages); return; }
-    } catch { /* try next provider */ }
+      if (provider === 'ollama') { yield* ollamaStream(messages); return; } // luôn thử
+    } catch { /* thử provider tiếp theo */ }
   }
+  throw new Error('Tất cả AI provider không khả dụng');
 }
