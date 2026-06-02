@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { extractText, structureLangWithAI } from '../../services/file-import';
 import { serveTTS } from '../../services/tts';
 import { callAIForJSON, isAnyAIAvailable } from '../../services/ai-provider';
+import { embedText, upsertEntry, getIndexStats, isEmbedModelAvailable } from '../../services/rag';
 import { env } from '../../config/env';
 import { LANG_GOLD_DATASET, validateDataset, toFullParserText } from '../../data/lang-gold-dataset';
 import { getOrSet, cacheDelPattern } from '../../services/cache';
@@ -1616,6 +1617,75 @@ Return ONLY valid JSON array, one object per word in the same order:
       folders: Object.entries(folderMap).map(([level, id]) => ({ level, id })),
       sets: results,
     });
+  });
+
+  // ─── RAG: Embed VocabItems vào vector store ───────────────────────────────────
+
+  app.post('/rag/embed', { preHandler: requireInstructor }, async (req, reply) => {
+    const { language, level, limit: lim } = z.object({
+      language: z.string().optional(),
+      level: z.string().optional(),
+      limit: z.number().min(1).max(500).default(100),
+    }).parse(req.body ?? {});
+
+    const available = await isEmbedModelAvailable();
+    if (!available) {
+      return reply.status(503).send({
+        ok: false,
+        message: `Ollama embed model "${process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text'}" chưa sẵn sàng. Chạy: ollama pull nomic-embed-text`,
+      });
+    }
+
+    const where: any = { isPublic: true };
+    if (language) where.language = language;
+    if (level) where.level = level;
+
+    const sets = await prisma.vocabSet.findMany({
+      where,
+      include: { items: true },
+      take: lim,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let embedded = 0, failed = 0;
+    for (const set of sets) {
+      for (const item of set.items) {
+        const text = [
+          item.word,
+          item.translation,
+          item.pronunciation ?? '',
+          item.example ?? '',
+          item.exampleTrans ?? '',
+          item.synonyms.join(', '),
+          item.hints.join(' '),
+          item.notes ?? '',
+        ].filter(Boolean).join('. ');
+
+        const vector = await embedText(text);
+        if (!vector) { failed++; continue; }
+
+        await upsertEntry({
+          id: item.id,
+          text,
+          vector,
+          metadata: {
+            topicId: set.id,
+            topicTitle: set.title,
+            conceptName: item.word,
+            grade: 0,
+            subject: `language:${set.language}`,
+          },
+        }, 'language');
+        embedded++;
+      }
+    }
+
+    return reply.send({ ok: true, embedded, failed, sets: sets.length });
+  });
+
+  app.get('/rag/stats', { preHandler: requireInstructor }, async (_req, reply) => {
+    const stats = await getIndexStats('language');
+    return reply.send(stats);
   });
 
   // ─── Gold Dataset: xóa tất cả data mẫu (cleanup) ─────────────────────────────

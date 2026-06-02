@@ -89,11 +89,12 @@ export async function aiRoutes(app: FastifyInstance) {
     const { messages, subject, mode } = body.data;
     const lastUserMsg = messages.filter(m => m.role === 'user').at(-1)?.content ?? '';
 
-    // RAG context retrieval (Phase 2)
+    // RAG context retrieval (Phase 2) — query subject-specific index
+    const ragSubject = (subject === 'language' || subject === 'viet') ? subject : 'math';
     let ragSources: Array<{ lesson: string; topic: string }> = [];
     let ragContextBlock = '';
     try {
-      const hits = await searchConcepts(lastUserMsg, 3);
+      const hits = await searchConcepts(lastUserMsg, 3, undefined, ragSubject as any);
       const relevant = hits.filter(h => h.score > RAG_MIN_SCORE);
       if (relevant.length > 0) {
         ragContextBlock = relevant.map(h => h.entry.text).join('\n\n');

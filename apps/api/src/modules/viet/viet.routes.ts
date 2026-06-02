@@ -16,6 +16,7 @@ import {
   type ErrorType,
 } from '../../services/error-classifier';
 import { minioClient, getSignedUrl, deleteObject } from '../../services/minio';
+import { embedText, upsertEntry, getIndexStats, isEmbedModelAvailable } from '../../services/rag';
 import { env } from '../../config/env';
 import crypto from 'crypto';
 import { serveTTS } from '../../services/tts';
@@ -1611,5 +1612,70 @@ export async function vietRoutes(app: FastifyInstance) {
       recommendation: batchSummary.recommendation,
       report,
     });
+  });
+
+  // ─── RAG: Embed VietItems vào vector store ────────────────────────────────────
+
+  app.post('/rag/embed', { preHandler: requireInstructor }, async (req, reply) => {
+    const { grade, category, limit: lim } = z.object({
+      grade: z.number().min(1).max(12).optional(),
+      category: z.string().optional(),
+      limit: z.number().min(1).max(500).default(100),
+    }).parse(req.body ?? {});
+
+    const available = await isEmbedModelAvailable();
+    if (!available) {
+      return reply.status(503).send({
+        ok: false,
+        message: `Ollama embed model "${process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text'}" chưa sẵn sàng. Chạy: ollama pull nomic-embed-text`,
+      });
+    }
+
+    const where: any = { isPublic: true };
+    if (grade) where.grade = grade;
+    if (category) where.category = category;
+
+    const sets = await prisma.vietSet.findMany({
+      where,
+      include: { items: true },
+      take: lim,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let embedded = 0, failed = 0;
+    for (const set of sets) {
+      for (const item of set.items) {
+        const text = [
+          item.word,
+          item.meaning,
+          item.example ?? '',
+          item.note ?? '',
+        ].filter(Boolean).join('. ');
+
+        const vector = await embedText(text);
+        if (!vector) { failed++; continue; }
+
+        await upsertEntry({
+          id: item.id,
+          text,
+          vector,
+          metadata: {
+            topicId: set.id,
+            topicTitle: set.title,
+            conceptName: item.word,
+            grade: set.grade,
+            subject: `viet:${set.category}`,
+          },
+        }, 'viet');
+        embedded++;
+      }
+    }
+
+    return reply.send({ ok: true, embedded, failed, sets: sets.length });
+  });
+
+  app.get('/rag/stats', { preHandler: requireInstructor }, async (_req, reply) => {
+    const stats = await getIndexStats('viet');
+    return reply.send(stats);
   });
 }

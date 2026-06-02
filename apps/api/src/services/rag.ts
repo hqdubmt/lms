@@ -8,9 +8,12 @@ import { callAIForJSON } from './ai-provider';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
-const RAG_INDEX_KEY = 'rag:math:index';
-const RAG_PREFIX = 'rag:math:concept:';
 const EMBED_TTL = 7 * 24 * 3600; // 7 days
+
+type RagSubject = 'math' | 'language' | 'viet';
+
+function ragIndexKey(subject: RagSubject = 'math') { return `rag:${subject}:index`; }
+function ragPrefix(subject: RagSubject = 'math') { return `rag:${subject}:concept:`; }
 
 export interface RagEntry {
   id: string;
@@ -70,30 +73,31 @@ function cosineSim(a: number[], b: number[]): number {
 
 // ─── Vector store (Redis) ─────────────────────────────────────────────────────
 
-export async function upsertEntry(entry: RagEntry): Promise<void> {
-  const key = `${RAG_PREFIX}${entry.id}`;
+export async function upsertEntry(entry: RagEntry, subject: RagSubject = 'math'): Promise<void> {
+  const key = `${ragPrefix(subject)}${entry.id}`;
   await redis.setex(key, EMBED_TTL, JSON.stringify(entry));
-  await redis.sadd(RAG_INDEX_KEY, entry.id);
+  await redis.sadd(ragIndexKey(subject), entry.id);
 }
 
-export async function deleteEntry(id: string): Promise<void> {
-  await redis.del(`${RAG_PREFIX}${id}`);
-  await redis.srem(RAG_INDEX_KEY, id);
+export async function deleteEntry(id: string, subject: RagSubject = 'math'): Promise<void> {
+  await redis.del(`${ragPrefix(subject)}${id}`);
+  await redis.srem(ragIndexKey(subject), id);
 }
 
 export async function searchConcepts(
   query: string,
   topK = 5,
   filter?: { grade?: number; subject?: string },
+  ragSubject: RagSubject = 'math',
 ): Promise<Array<{ entry: RagEntry; score: number }>> {
   const queryVec = await embedText(query);
   if (!queryVec) return [];
 
-  const ids = await redis.smembers(RAG_INDEX_KEY);
+  const ids = await redis.smembers(ragIndexKey(ragSubject));
   if (!ids.length) return [];
 
   const pipeline = redis.pipeline();
-  for (const id of ids) pipeline.get(`${RAG_PREFIX}${id}`);
+  for (const id of ids) pipeline.get(`${ragPrefix(ragSubject)}${id}`);
   const results = await pipeline.exec();
 
   const scored: Array<{ entry: RagEntry; score: number }> = [];
@@ -111,8 +115,8 @@ export async function searchConcepts(
   return scored.sort((a, b) => b.score - a.score).slice(0, topK);
 }
 
-export async function getIndexStats(): Promise<{ total: number; model: string; available: boolean }> {
-  const total = await redis.scard(RAG_INDEX_KEY);
+export async function getIndexStats(subject: RagSubject = 'math'): Promise<{ total: number; model: string; available: boolean }> {
+  const total = await redis.scard(ragIndexKey(subject));
   const available = await isEmbedModelAvailable();
   return { total, model: EMBED_MODEL, available };
 }
@@ -124,8 +128,9 @@ export async function ragGenerate(
   grade?: number,
   subject?: string,
   count = 10,
+  ragSubject: RagSubject = 'math',
 ): Promise<{ questions: any[]; context: string; sources: string[] } | null> {
-  const hits = await searchConcepts(query, 5, { grade, subject });
+  const hits = await searchConcepts(query, 5, { grade, subject }, ragSubject);
   if (!hits.length) return null;
 
   const context = hits.map(h =>
