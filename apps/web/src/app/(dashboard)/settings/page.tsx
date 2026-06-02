@@ -586,28 +586,30 @@ function NotificationsTab() {
 
 // ─── Apps Tab ────────────────────────────────────────────────────────────────
 
+const APP_VERSION = 'v1.4.0';
+
 const APPS = [
   {
     id: 'android',
     label: 'Android',
-    desc: 'Tương thích Android 7.0 trở lên · v1.1.0',
+    desc: `Tương thích Android 7.0 trở lên · ${APP_VERSION}`,
     icon: Smartphone,
     iconBg: 'bg-green-50',
     iconColor: 'text-green-600',
     btnColor: 'bg-green-600 hover:bg-green-700',
-    href: '/downloads/masterlms-v1.1.0.apk',
-    badge: 'APK · 3.6 MB',
+    href: `https://github.com/hqdubmt/lms/releases/download/${APP_VERSION}/MasterLMS-${APP_VERSION}-android.apk`,
+    badge: 'APK',
     note: 'Cho phép cài từ nguồn không rõ trong Cài đặt → Bảo mật trước khi cài đặt.',
   },
   {
     id: 'desktop',
     label: 'Desktop (Windows / macOS / Linux)',
-    desc: 'Ứng dụng máy tính · v1.1.0 · Electron',
+    desc: `Ứng dụng máy tính · ${APP_VERSION} · Electron`,
     icon: Monitor,
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     btnColor: 'bg-blue-600 hover:bg-blue-700',
-    href: 'https://github.com/hqdubmt/lms/releases',
+    href: `https://github.com/hqdubmt/lms/releases/tag/${APP_VERSION}`,
     badge: 'GitHub Releases',
     note: 'Tải file .exe (Windows) hoặc .AppImage (Linux) từ trang GitHub Releases.',
   },
@@ -633,7 +635,7 @@ function AppsTab() {
               </div>
               <a
                 href={app.href}
-                download={app.id === 'android' ? 'masterlms-v1.1.0.apk' : undefined}
+                download={app.id === 'android' ? `MasterLMS-${APP_VERSION}-android.apk` : undefined}
                 target={app.id === 'android' ? undefined : '_blank'}
                 rel="noreferrer"
                 className={`flex items-center gap-2 px-4 py-2.5 ${app.btnColor} text-white text-sm font-semibold rounded-xl transition-colors shrink-0`}
@@ -649,7 +651,7 @@ function AppsTab() {
       <Section title="Hướng dẫn cài đặt Android" desc="Các bước cài đặt file APK trên điện thoại Android">
         <ol className="space-y-3 text-sm text-gray-700">
           {[
-            'Nhấn nút "Tải về" ở trên để tải file masterlms-v1.1.0.apk',
+            `Nhấn nút "Tải về" ở trên để tải file MasterLMS-${APP_VERSION}-android.apk`,
             'Mở Cài đặt → Bảo mật → Cho phép cài ứng dụng từ nguồn không rõ',
             'Mở file APK vừa tải và nhấn Cài đặt',
             'Sau khi cài xong, mở ứng dụng và nhập địa chỉ máy chủ của trường',
