@@ -354,30 +354,41 @@ export function getActiveProviderName(): string {
   return `Ollama · ${OLLAMA_MODEL}`;
 }
 
-// ─── Unified chat (Groq → Gemini → Ollama) ────────────────────────────────────
+// ─── Provider order builder ───────────────────────────────────────────────────
 
-export async function aiChatOnce(messages: ChatMessage[]): Promise<string> {
-  if (getGroqClient()) {
-    try { return await groqChat(messages); } catch { /* fallback */ }
-  }
-  if (getGeminiKey()) {
-    try { return await geminiChat(messages); } catch { /* fallback */ }
-  }
-  return ollamaChat(messages);
+type ProviderPref = 'groq' | 'gemini' | 'ollama';
+
+function buildProviderOrder(prefer?: ProviderPref): ProviderPref[] {
+  const base: ProviderPref[] = ['groq', 'gemini', 'ollama'];
+  if (!prefer) return base;
+  return [prefer, ...base.filter(p => p !== prefer)];
 }
 
-export async function* aiChatStream(messages: ChatMessage[]): AsyncGenerator<string> {
-  if (getGroqClient()) {
+// ─── Unified chat (Groq → Gemini → Ollama) ────────────────────────────────────
+
+export async function aiChatOnce(
+  messages: ChatMessage[],
+  opts?: { prefer?: ProviderPref },
+): Promise<string> {
+  for (const provider of buildProviderOrder(opts?.prefer)) {
     try {
-      yield* groqStream(messages);
-      return;
-    } catch { /* fallback */ }
+      if (provider === 'groq' && getGroqClient()) return await groqChat(messages);
+      if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages);
+      if (provider === 'ollama') return await ollamaChat(messages);
+    } catch { /* try next provider */ }
   }
-  if (getGeminiKey()) {
+  throw new Error('Tất cả AI provider không khả dụng');
+}
+
+export async function* aiChatStream(
+  messages: ChatMessage[],
+  opts?: { prefer?: ProviderPref },
+): AsyncGenerator<string> {
+  for (const provider of buildProviderOrder(opts?.prefer)) {
     try {
-      yield* geminiStream(messages);
-      return;
-    } catch { /* fallback */ }
+      if (provider === 'groq' && getGroqClient()) { yield* groqStream(messages); return; }
+      if (provider === 'gemini' && getGeminiKey()) { yield* geminiStream(messages); return; }
+      if (provider === 'ollama') { yield* ollamaStream(messages); return; }
+    } catch { /* try next provider */ }
   }
-  yield* ollamaStream(messages);
 }

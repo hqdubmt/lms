@@ -6,13 +6,14 @@ import { aiChatOnce, aiChatStream, checkAllProviders, type ChatMessage } from '.
 import { transcribeWithWhisper } from '../../services/stt';
 import { prisma } from '../../services/prisma';
 import { redis } from '../../services/redis';
-import { searchConcepts } from '../../services/rag';
+import { searchConcepts, getIndexStats, rewriteQuery } from '../../services/rag';
 import {
-  getBrain, updateBrain, deleteBrain,
+  getBrain, updateBrain, updateMastery, deleteBrain,
   extractTopic, detectLevel, extractMistakes,
   buildBrainContext, buildSummary,
 } from '../../services/conversation-brain';
 import { buildResponseStrategy, strategyToPrompt } from '../../services/response-strategy';
+import { orchestrate } from '../../services/orchestrator';
 
 const CHAT_SESSION_TTL = 7 * 24 * 3600;
 const MAX_HISTORY_MESSAGES = 20;
@@ -25,10 +26,10 @@ function chatSessionKey(userId: string, subject: string): string {
 // ─── Intent Engine — multi-label ─────────────────────────────────────────────
 
 const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: Mode }> = [
-  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i,          intent: 'quiz' },
-  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i,              intent: 'exercise' },
-  { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của em/i,       intent: 'homework' },
-  { pattern: /giải thích|nghĩa là|là gì|tại sao|thế nào|how|what|why/i, intent: 'tutor' },
+  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i,                   intent: 'quiz' },
+  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i,                       intent: 'exercise' },
+  { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của em/i,                intent: 'homework' },
+  { pattern: /giải thích|nghĩa là|là gì|tại sao|thế nào|how|what|why/i,   intent: 'tutor' },
 ];
 
 function detectIntent(text: string): { primary: Mode; secondary: Mode[]; confidence: number } {
@@ -85,41 +86,53 @@ export async function aiRoutes(app: FastifyInstance) {
     const lastUserMsg = messages.filter(m => m.role === 'user').at(-1)?.content ?? '';
     const { sub } = req.user as { sub: string };
 
-    // ── Intent Engine (multi-label) ──────────────────────────────────────────
+    // ── Intent Engine ────────────────────────────────────────────────────────
     const intent = detectIntent(lastUserMsg);
     const effectiveMode = intent.primary !== 'tutor' ? intent.primary : mode;
 
-    // ── Conversation Brain — load state ──────────────────────────────────────
+    // ── Conversation Brain ───────────────────────────────────────────────────
     const brain = await getBrain(sub, subject);
 
-    // ── RAG context — subject-specific index ─────────────────────────────────
+    // ── AI Orchestrator ──────────────────────────────────────────────────────
     const ragSubject = (subject === 'language' || subject === 'viet') ? subject : 'math';
+    const indexStats = await getIndexStats(ragSubject as any).catch(() => ({ total: 0 }));
+    const orch = orchestrate({
+      subject,
+      mode: effectiveMode,
+      brain,
+      messageLen: lastUserMsg.length,
+      ragIndexSize: indexStats.total,
+    });
+
+    // ── RAG — subject-specific index + optional query rewrite ─────────────────
     let ragSources: Array<{ lesson: string; topic: string }> = [];
     let ragContextBlock = '';
-    try {
-      const hits = await searchConcepts(lastUserMsg, 3, undefined, ragSubject as any);
-      const relevant = hits.filter(h => h.score > RAG_MIN_SCORE);
-      if (relevant.length > 0) {
-        ragContextBlock = relevant.map(h => h.entry.text).join('\n\n');
-        ragSources = relevant.map(h => ({
-          lesson: h.entry.metadata.conceptName,
-          topic: h.entry.metadata.topicTitle,
-        }));
-      }
-    } catch { /* RAG không khả dụng */ }
+    if (orch.useRAG) {
+      try {
+        const query = orch.expandQuery ? rewriteQuery(lastUserMsg, brain.topic) : lastUserMsg;
+        const hits = await searchConcepts(query, 3, undefined, ragSubject as any);
+        const relevant = hits.filter(h => h.score > RAG_MIN_SCORE);
+        if (relevant.length > 0) {
+          ragContextBlock = relevant.map(h => h.entry.text).join('\n\n');
+          ragSources = relevant.map(h => ({
+            lesson: h.entry.metadata.conceptName,
+            topic: h.entry.metadata.topicTitle,
+          }));
+        }
+      } catch { /* RAG không khả dụng */ }
+    }
 
     // ── Response Strategy Engine ──────────────────────────────────────────────
     const strategy = buildResponseStrategy(effectiveMode, brain, lastUserMsg.length);
     const strategyPrompt = strategyToPrompt(strategy);
 
-    // ── Context Compiler — kết hợp tất cả thành system prompt ────────────────
+    // ── Context Compiler ──────────────────────────────────────────────────────
     const basePrompt = buildSystemPrompt(subject as Subject, effectiveMode as Mode);
     const brainContext = buildBrainContext(brain);
 
     const systemParts = [basePrompt, strategyPrompt];
     if (brainContext) systemParts.push(`\nTrạng thái học tập:\n${brainContext}`);
     if (ragContextBlock) systemParts.push(`\nNội dung giáo trình liên quan:\n${ragContextBlock}`);
-
     const systemPrompt = systemParts.join('\n\n');
 
     const fullMessages: ChatMessage[] = [
@@ -136,7 +149,8 @@ export async function aiRoutes(app: FastifyInstance) {
 
     let aiFullContent = '';
     try {
-      for await (const token of aiChatStream(fullMessages)) {
+      // ── LLM Router — dùng preferred provider từ Orchestrator ─────────────
+      for await (const token of aiChatStream(fullMessages, { prefer: orch.preferredProvider ?? undefined })) {
         aiFullContent += token;
         reply.raw.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
@@ -146,8 +160,8 @@ export async function aiRoutes(app: FastifyInstance) {
       const sources = ragSources.length > 0 ? ragSources : await findSources(lastUserMsg);
       reply.raw.write(`data: ${JSON.stringify({ type: 'meta', suggestions, sources })}\n\n`);
 
-      // ── Lưu lịch sử Redis ────────────────────────────────────────────────
       if (lastUserMsg && aiFullContent) {
+        // ── Redis history ───────────────────────────────────────────────────
         const key = chatSessionKey(sub, subject);
         const existing = await redis.get(key);
         const prev: Array<{ role: string; content: string }> = existing ? JSON.parse(existing) : [];
@@ -158,12 +172,12 @@ export async function aiRoutes(app: FastifyInstance) {
         ].slice(-MAX_HISTORY_MESSAGES);
         await redis.set(key, JSON.stringify(updated), 'EX', CHAT_SESSION_TTL);
 
-        // ── Conversation Brain — update state (async, không block response) ─
+        // ── Memory Update Loop (async) ──────────────────────────────────────
         const newCount = brain.messageCount + 1;
         const topic = extractTopic(lastUserMsg) ?? brain.topic;
         const level = detectLevel(lastUserMsg, brain.level);
         const mistakes = effectiveMode === 'homework' ? extractMistakes(aiFullContent) : [];
-        const summary = newCount > 8 ? buildSummary({ ...brain, topic, level }, lastUserMsg) : brain.summary;
+        const summary = newCount > 8 ? buildSummary({ ...brain, topic, level, mistakes: brain.mistakes }, lastUserMsg) : brain.summary;
 
         updateBrain(sub, subject, {
           topic,
@@ -173,7 +187,16 @@ export async function aiRoutes(app: FastifyInstance) {
           summary,
           messageCount: newCount,
           goal: brain.goal ?? (newCount === 1 ? lastUserMsg.slice(0, 100) : undefined),
-        }).catch(() => { /* fire and forget */ });
+        }).catch(() => {});
+
+        // ── Mastery update khi chấm bài ─────────────────────────────────────
+        if (effectiveMode === 'homework' && brain.topic) {
+          const scoreMatch = aiFullContent.match(/\*\*Điểm:\s*(\d+(?:\.\d+)?)\/10\*\*/i);
+          if (scoreMatch) {
+            const score01 = parseFloat(scoreMatch[1]) / 10;
+            updateMastery(sub, subject, brain.topic, score01).catch(() => {});
+          }
+        }
       }
     } catch {
       reply.raw.write(`data: ${JSON.stringify({ error: 'AI không khả dụng' })}\n\n`);
@@ -193,16 +216,14 @@ export async function aiRoutes(app: FastifyInstance) {
   app.get('/brain', { preHandler: requireAuth }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
     const subject = ((req.query as any).subject as string) || 'general';
-    const brain = await getBrain(sub, subject);
-    return reply.send(brain);
+    return reply.send(await getBrain(sub, subject));
   });
 
   // ─── Lịch sử chat ─────────────────────────────────────────────────────────────
   app.get('/history', { preHandler: requireAuth }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
     const subject = ((req.query as any).subject as string) || 'general';
-    const key = chatSessionKey(sub, subject);
-    const data = await redis.get(key);
+    const data = await redis.get(chatSessionKey(sub, subject));
     const messages: Array<{ role: string; content: string }> = data ? JSON.parse(data) : [];
     return reply.send({ messages });
   });
@@ -276,7 +297,8 @@ export async function aiRoutes(app: FastifyInstance) {
       const result = await aiChatOnce([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Đây là bài làm của em:\n\n${content}` },
-      ]);
+      ], { prefer: 'gemini' });
+
       const scoreMatch = result.match(/\*\*Điểm:\s*(\d+(?:\.\d+)?)\/10\*\*/i);
       const score = scoreMatch ? parseFloat(scoreMatch[1]) : null;
       return reply.send({ feedback: result, score, mistakes: [] });

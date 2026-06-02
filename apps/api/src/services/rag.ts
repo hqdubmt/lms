@@ -167,3 +167,10 @@ Output JSON array:
     return null;
   }
 }
+
+// ─── Query Rewriter — mở rộng câu hỏi ngắn bằng context từ brain ─────────────
+
+export function rewriteQuery(query: string, topicContext: string | null): string {
+  if (!topicContext || query.length > 50) return query;
+  return `${query} ${topicContext}`.trim();
+}
