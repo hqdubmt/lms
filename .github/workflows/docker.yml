@@ -1,5 +1,5 @@
 name: Build & Push Docker (multi-arch)
-# v1.5.0
+# v1.6.0
 
 on:
   push:
@@ -68,15 +68,5 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── AUTO-DEPLOY ───────────────────────────────────────────────────────────
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            docker compose pull api web worker
-            docker compose up -d --no-deps api web worker nginx
-            docker image prune -f
+      # ── AUTO-DEPLOY: Watchtower trên server tự pull image mới ──────────────
+      # (không cần SSH — server chạy Watchtower watch lms_api, lms_web, lms_worker)

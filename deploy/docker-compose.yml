@@ -218,6 +218,17 @@ services:
     networks:
       - frontend
 
+  # ── Watchtower: tự pull image mới từ Docker Hub mỗi 60s ─────────────────
+  watchtower:
+    image: containrrr/watchtower
+    container_name: lms_watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 60 --cleanup lms_api lms_web lms_worker
+    networks:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:
