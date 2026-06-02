@@ -9,6 +9,7 @@ import rehypeKatex from 'rehype-katex';
 import {
   Bot, X, Send, RotateCcw, Minimize2, Maximize2, Mic, MicOff,
   Copy, Check, Volume2, VolumeX, BookOpen, PenLine, CheckSquare, HelpCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
@@ -22,16 +23,59 @@ interface Source {
   topic: string;
 }
 
+interface QuizQ {
+  num: number;
+  text: string;
+  options: { key: string; text: string }[];
+  answer: string;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   loading?: boolean;
+  error?: boolean;
   sources?: Source[];
   suggestions?: string[];
 }
 
 type Subject = 'math' | 'language' | 'viet' | 'general';
 type Mode = 'tutor' | 'exercise' | 'homework' | 'quiz';
+
+// ─── Quiz parser ──────────────────────────────────────────────────────────────
+
+function parseQuiz(content: string): QuizQ[] {
+  const questions: QuizQ[] = [];
+  const blocks = content.split(/(?=\*\*Câu\s+\d+)/);
+
+  for (const block of blocks) {
+    const numMatch = block.match(/\*\*Câu\s+(\d+)/);
+    if (!numMatch) continue;
+    const answerMatch = block.match(/\*\*Đáp án[:\s]*([A-D])\*\*/i);
+    if (!answerMatch) continue;
+
+    // Lấy text câu hỏi: từ sau "**Câu N:**" đến trước option đầu tiên
+    const questionMatch = block.match(/\*\*Câu\s+\d+[:\.]?\*\*\s*([\s\S]+?)(?=\n?[A-D][.:]\s)/);
+    if (!questionMatch) continue;
+    const text = questionMatch[1].trim();
+
+    // Phần options: sau câu hỏi, trước **Đáp án**
+    const optSection = block.slice(block.search(/[A-D][.:]\s/)).split('**Đáp án')[0];
+
+    // Hỗ trợ cả inline (A. text B. text...) lẫn multiline (A. text\nB. text...)
+    const options: { key: string; text: string }[] = [];
+    for (const key of ['A', 'B', 'C', 'D']) {
+      // Dừng tại option tiếp theo ([B-D].) hoặc hết chuỗi
+      const re = new RegExp(`\\b${key}[.:]\\s*([\\s\\S]+?)(?=\\s[B-D][.:]\\s|\\n[A-D][.:]\\s|$)`);
+      const m = optSection.match(re);
+      if (m) options.push({ key, text: m[1].replace(/\n/g, ' ').trim() });
+    }
+
+    if (options.length < 2) continue;
+    questions.push({ num: parseInt(numMatch[1]), text, options, answer: answerMatch[1].toUpperCase() });
+  }
+  return questions;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -63,6 +107,19 @@ function detectSubject(pathname: string): Subject {
   return 'general';
 }
 
+const INTENT_PATTERNS: Array<{ pattern: RegExp; mode: Mode }> = [
+  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh/i, mode: 'quiz' },
+  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i, mode: 'exercise' },
+  { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của/i, mode: 'homework' },
+];
+
+function inferMode(text: string): Mode | null {
+  for (const { pattern, mode } of INTENT_PATTERNS) {
+    if (pattern.test(text)) return mode;
+  }
+  return null;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function TypingDots() {
@@ -79,7 +136,60 @@ function TypingDots() {
   );
 }
 
+function QuizRenderer({ questions }: { questions: QuizQ[] }) {
+  const [selected, setSelected] = useState<Record<number, string>>({});
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const score = Object.keys(revealed).filter(n => selected[+n] === questions.find(q => q.num === +n)?.answer).length;
+
+  return (
+    <div className="space-y-3 w-full">
+      {questions.map(q => (
+        <div key={q.num} className="bg-white rounded-xl border border-gray-200 p-3 text-left">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Câu {q.num}: {q.text}</p>
+          <div className="space-y-1.5">
+            {q.options.map(opt => {
+              const isSelected = selected[q.num] === opt.key;
+              const isRev = revealed[q.num];
+              const isCorrect = opt.key === q.answer;
+              return (
+                <button
+                  key={opt.key}
+                  disabled={isRev}
+                  onClick={() => {
+                    setSelected(s => ({ ...s, [q.num]: opt.key }));
+                    setRevealed(r => ({ ...r, [q.num]: true }));
+                  }}
+                  className={cn(
+                    'w-full text-left text-xs rounded-lg px-2.5 py-1.5 border transition-colors',
+                    !isRev && 'border-gray-200 hover:border-primary hover:bg-primary/5 cursor-pointer',
+                    isRev && isCorrect && 'border-green-400 bg-green-50 text-green-700 font-medium',
+                    isRev && isSelected && !isCorrect && 'border-red-400 bg-red-50 text-red-700',
+                    isRev && !isSelected && !isCorrect && 'border-gray-100 text-gray-400',
+                  )}
+                >
+                  <span className="font-medium">{opt.key}.</span> {opt.text}
+                </button>
+              );
+            })}
+          </div>
+          {revealed[q.num] && selected[q.num] !== q.answer && (
+            <p className="text-xs text-green-600 mt-1.5 font-medium">Đáp án: {q.answer}</p>
+          )}
+        </div>
+      ))}
+      {Object.keys(revealed).length === questions.length && (
+        <p className="text-xs text-center text-gray-500 font-medium">
+          Kết quả: <span className="text-primary">{score}/{questions.length}</span> câu đúng
+        </p>
+      )}
+    </div>
+  );
+}
+
 function MessageContent({ content }: { content: string }) {
+  const questions = parseQuiz(content);
+  if (questions.length > 0) return <QuizRenderer questions={questions} />;
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath] as any}
@@ -186,10 +296,12 @@ export function AiChat() {
   const [aiLabel, setAiLabel] = useState('');
   const [micListening, setMicListening] = useState(false);
   const [micAvailable, setMicAvailable] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sttRef = useRef<STTHandle | null>(null);
+  const historyLoadedRef = useRef<string | null>(null);
 
   const subject = detectSubject(pathname);
   const meta = SUBJECT_META[subject];
@@ -230,6 +342,25 @@ export function AiChat() {
     setMicAvailable(isSTTAvailable());
   }, []);
 
+  // Load lịch sử khi mở chat (mỗi subject load một lần)
+  useEffect(() => {
+    if (!open || minimized) return;
+    if (historyLoadedRef.current === subject) return;
+    historyLoadedRef.current = subject;
+    setHistoryLoading(true);
+    api.get<{ messages: Array<{ role: string; content: string }> }>(`/ai/history?subject=${subject}`)
+      .then(data => {
+        if (data.messages.length > 0 && messages.length === 0) {
+          setMessages(data.messages.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })));
+        }
+      })
+      .catch(() => { /* bỏ qua nếu lỗi */ })
+      .finally(() => setHistoryLoading(false));
+  }, [open, subject]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (open && !minimized) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -243,6 +374,11 @@ export function AiChat() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
     setInput('');
+
+    // Intent auto-detection: tự động switch mode nếu phát hiện intent từ text
+    const inferred = inferMode(text);
+    const effectiveMode = inferred ?? mode;
+    if (inferred && inferred !== mode) setMode(inferred);
 
     const newMessages: Message[] = [...messages, { role: 'user', content: text.trim() }];
     setMessages([...newMessages, { role: 'assistant', content: '', loading: true }]);
@@ -264,7 +400,7 @@ export function AiChat() {
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           subject,
-          mode,
+          mode: effectiveMode,
         }),
         signal: ctrl.signal,
       });
@@ -280,7 +416,7 @@ export function AiChat() {
           body: JSON.stringify({
             messages: newMessages.map(m => ({ role: m.role, content: m.content })),
             subject,
-            mode,
+            mode: effectiveMode,
           }),
           signal: ctrl.signal,
         });
@@ -344,7 +480,7 @@ export function AiChat() {
         const msg = err.message === 'AUTH_EXPIRED'
           ? 'Phiên đăng nhập hết hạn. Vui lòng tải lại trang.'
           : 'Không thể kết nối tới AI. Vui lòng thử lại.';
-        setMessages([...newMessages, { role: 'assistant', content: msg }]);
+        setMessages([...newMessages, { role: 'assistant', content: msg, error: true }]);
       }
     } finally {
       setStreaming(false);
@@ -479,7 +615,10 @@ export function AiChat() {
                   <Bot className="h-7 w-7 text-white" />
                 </div>
                 <p className="text-sm font-semibold text-gray-700 mb-1">AI Trợ lý · {meta.label}</p>
-                <p className="text-xs text-gray-400 mb-3">{currentHint}</p>
+                {historyLoading
+                  ? <p className="text-xs text-gray-400 mb-3">Đang tải lịch sử...</p>
+                  : <p className="text-xs text-gray-400 mb-3">{currentHint}</p>
+                }
               </div>
             )}
 
@@ -497,7 +636,9 @@ export function AiChat() {
                     'px-3 py-2 rounded-2xl text-sm leading-relaxed',
                     msg.role === 'user'
                       ? 'bg-primary text-white rounded-br-sm'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-sm',
+                      : msg.error
+                        ? 'bg-red-50 text-red-700 border border-red-200 rounded-bl-sm'
+                        : 'bg-gray-100 text-gray-800 rounded-bl-sm',
                   )}>
                     {msg.loading && !msg.content ? (
                       <TypingDots />
@@ -509,11 +650,27 @@ export function AiChat() {
                   </div>
 
                   {/* AI message actions */}
-                  {msg.role === 'assistant' && !msg.loading && msg.content && (
+                  {msg.role === 'assistant' && !msg.loading && msg.content && !msg.error && (
                     <div className="flex items-center gap-0.5 px-1">
                       <CopyButton text={msg.content} />
                       <TtsButton text={msg.content} lang={ttsLang} />
                     </div>
+                  )}
+
+                  {/* Retry button khi lỗi */}
+                  {msg.error && i === messages.length - 1 && (
+                    <button
+                      onClick={() => {
+                        const lastUser = [...messages].reverse().find(m => m.role === 'user');
+                        if (lastUser) {
+                          setMessages(messages.slice(0, -1));
+                          sendMessage(lastUser.content);
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-1 transition-colors"
+                    >
+                      <RefreshCw className="h-3 w-3" />Thử lại
+                    </button>
                   )}
 
                   {/* Sources */}
@@ -607,7 +764,11 @@ export function AiChat() {
 
             {messages.length > 0 && (
               <button
-                onClick={() => setMessages([])}
+                onClick={() => {
+                  setMessages([]);
+                  historyLoadedRef.current = null;
+                  api.delete(`/ai/history?subject=${subject}`).catch(() => {});
+                }}
                 className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1.5 transition-colors"
               >
                 <RotateCcw className="h-3 w-3" />Xoá hội thoại

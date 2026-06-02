@@ -5,6 +5,31 @@ import { buildSystemPrompt, SUGGESTIONS, type Subject, type Mode } from '../../s
 import { aiChatOnce, aiChatStream, checkAllProviders, type ChatMessage } from '../../services/ai-provider';
 import { transcribeWithWhisper } from '../../services/stt';
 import { prisma } from '../../services/prisma';
+import { redis } from '../../services/redis';
+import { searchConcepts } from '../../services/rag';
+
+const CHAT_SESSION_TTL = 7 * 24 * 3600; // 7 ngày
+const MAX_HISTORY_MESSAGES = 20;
+const RAG_MIN_SCORE = 0.45;
+
+function chatSessionKey(userId: string, subject: string): string {
+  return `ai:chat:${userId}:${subject}`;
+}
+
+// Intent detection — keyword-based (Phase 3)
+const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: Mode }> = [
+  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i, intent: 'quiz' },
+  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i, intent: 'exercise' },
+  { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của em/i, intent: 'homework' },
+  { pattern: /giải thích|nghĩa là|là gì|tại sao|thế nào|how|what|why/i, intent: 'tutor' },
+];
+
+function detectIntent(text: string): { intent: Mode; confidence: number } {
+  for (const { pattern, intent } of INTENT_PATTERNS) {
+    if (pattern.test(text)) return { intent, confidence: 0.85 };
+  }
+  return { intent: 'tutor', confidence: 0.6 };
+}
 
 const chatBodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(4000) })).max(20),
@@ -62,14 +87,32 @@ export async function aiRoutes(app: FastifyInstance) {
     if (!body.success) return reply.status(400).send({ error: 'Dữ liệu không hợp lệ' });
 
     const { messages, subject, mode } = body.data;
-    const systemPrompt = buildSystemPrompt(subject as Subject, mode as Mode);
+    const lastUserMsg = messages.filter(m => m.role === 'user').at(-1)?.content ?? '';
+
+    // RAG context retrieval (Phase 2)
+    let ragSources: Array<{ lesson: string; topic: string }> = [];
+    let ragContextBlock = '';
+    try {
+      const hits = await searchConcepts(lastUserMsg, 3);
+      const relevant = hits.filter(h => h.score > RAG_MIN_SCORE);
+      if (relevant.length > 0) {
+        ragContextBlock = relevant.map(h => h.entry.text).join('\n\n');
+        ragSources = relevant.map(h => ({
+          lesson: h.entry.metadata.conceptName,
+          topic: h.entry.metadata.topicTitle,
+        }));
+      }
+    } catch { /* RAG không khả dụng, tiếp tục không có context */ }
+
+    const basePrompt = buildSystemPrompt(subject as Subject, mode as Mode);
+    const systemPrompt = ragContextBlock
+      ? `${basePrompt}\n\nNội dung giáo trình liên quan:\n${ragContextBlock}`
+      : basePrompt;
 
     const fullMessages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
-
-    const lastUserMsg = messages.filter(m => m.role === 'user').at(-1)?.content ?? '';
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -78,23 +121,65 @@ export async function aiRoutes(app: FastifyInstance) {
       'X-Accel-Buffering': 'no',
     });
 
+    let aiFullContent = '';
     try {
       for await (const token of aiChatStream(fullMessages)) {
+        aiFullContent += token;
         reply.raw.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
       reply.raw.write('data: [DONE]\n\n');
 
-      // Send metadata: suggestions + sources
-      const [sources, suggestions] = await Promise.all([
-        findSources(lastUserMsg),
-        Promise.resolve(SUGGESTIONS[subject as Subject]?.[mode as Mode] ?? SUGGESTIONS.general.tutor),
-      ]);
+      // Metadata: RAG sources + keyword fallback + suggestions
+      const suggestions = SUGGESTIONS[subject as Subject]?.[mode as Mode] ?? SUGGESTIONS.general.tutor;
+      const sources = ragSources.length > 0 ? ragSources : await findSources(lastUserMsg);
       reply.raw.write(`data: ${JSON.stringify({ type: 'meta', suggestions, sources })}\n\n`);
+
+      // Lưu lịch sử vào Redis
+      if (lastUserMsg && aiFullContent) {
+        const { sub } = req.user as { sub: string };
+        const key = chatSessionKey(sub, subject);
+        const existing = await redis.get(key);
+        const prev: Array<{ role: string; content: string }> = existing ? JSON.parse(existing) : [];
+        const updated = [
+          ...prev,
+          { role: 'user', content: lastUserMsg },
+          { role: 'assistant', content: aiFullContent },
+        ].slice(-MAX_HISTORY_MESSAGES);
+        await redis.set(key, JSON.stringify(updated), 'EX', CHAT_SESSION_TTL);
+      }
     } catch {
       reply.raw.write(`data: ${JSON.stringify({ error: 'AI không khả dụng' })}\n\n`);
     } finally {
       reply.raw.end();
     }
+  });
+
+  // ─── Intent detection (Phase 3) ───────────────────────────────────────────────
+  app.post('/intent', { preHandler: requireAuth }, async (req, reply) => {
+    const body = z.object({
+      message: z.string().max(500),
+    }).safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'Dữ liệu không hợp lệ' });
+    const result = detectIntent(body.data.message);
+    return reply.send(result);
+  });
+
+  // ─── Lịch sử chat ─────────────────────────────────────────────────────────────
+  app.get('/history', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const subject = ((req.query as any).subject as string) || 'general';
+    const key = chatSessionKey(sub, subject);
+    const data = await redis.get(key);
+    const messages: Array<{ role: string; content: string }> = data ? JSON.parse(data) : [];
+    return reply.send({ messages });
+  });
+
+  app.delete('/history', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const subject = ((req.query as any).subject as string) || 'general';
+    const key = chatSessionKey(sub, subject);
+    await redis.del(key);
+    return reply.send({ ok: true });
   });
 
   // ─── Speech-to-text (OpenAI Whisper) ─────────────────────────────────────────
