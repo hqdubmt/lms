@@ -3,15 +3,14 @@ module.exports = {
     {
       name: 'lms-api',
       cwd: '/home/hqdu/quangdu/lms/apps/api',
-      script: 'npx',
-      args: 'tsx src/index.ts',
-      interpreter: 'none',
+      script: 'dist/index.js',
+      interpreter: 'node',
       watch: false,
       autorestart: true,
       max_restarts: 10,
       min_uptime: '5s',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
       },
       error_file: '/home/hqdu/.pm2/logs/lms-api-error.log',
       out_file: '/home/hqdu/.pm2/logs/lms-api-out.log',
