@@ -21,7 +21,7 @@ RUN npm ci
 
 # Generate Prisma client into root node_modules
 COPY apps/api/prisma ./apps/api/prisma
-RUN cd apps/api && npx prisma generate
+RUN cd apps/api && npx prisma@5 generate
 
 # ─── Stage 2: Build API + Worker ──────────────────────────────────────────────
 FROM deps AS api-builder
