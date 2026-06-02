@@ -1,7 +1,7 @@
 {
   "name": "masterlms-mobile",
-  "version": "1.4.0",
-  "description": "MasterLMS Mobile - Android & iOS (Toán & Tiếng Việt pipeline, hồ sơ học tập, analytics)",
+  "version": "1.5.0",
+  "description": "MasterLMS Mobile - Android & iOS (AI Tutor OS v2, Orchestrator, mastery tracking, memory decay, Groq/Gemini/Ollama)",
   "author": {
     "name": "MasterLMS",
     "email": "admin@masterlms.vn"
