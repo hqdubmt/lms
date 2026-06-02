@@ -191,6 +191,40 @@ export default function VietPage() {
         </div>
       )}
 
+      {/* ── Học theo lớp ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-red-600" />Học theo lớp
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {([
+            { g: 2, grad: 'from-rose-500 to-red-600',    emoji: '🌿' },
+            { g: 3, grad: 'from-red-500 to-orange-600',  emoji: '🌳' },
+            { g: 4, grad: 'from-orange-500 to-amber-600',emoji: '📖' },
+            { g: 5, grad: 'from-amber-500 to-yellow-600',emoji: '🎓' },
+          ] as const).map(({ g, grad, emoji }) => {
+            const count = sets.filter(s => s.grade === g).length;
+            return (
+              <Link key={g} href={`/viet/grade/${g}`}
+                className="relative overflow-hidden rounded-2xl p-4 text-white flex flex-col gap-1 hover:shadow-lg transition-all hover:-translate-y-0.5 group">
+                <div className={cn('absolute inset-0 bg-gradient-to-br', grad)} />
+                <div className="absolute right-2 top-1 opacity-20 text-3xl">{emoji}</div>
+                <div className="relative z-10">
+                  <p className="text-xs font-semibold opacity-80">Lớp {g}</p>
+                  <p className="text-2xl font-bold">{count}</p>
+                  <p className="text-xs opacity-70">bộ bài học</p>
+                </div>
+                <div className="relative z-10 flex items-center gap-1 text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                  Vào học <span>→</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── Smart Import Panel (instructor only) ── */}
       {isInstructor && (
         <div className="rounded-2xl border border-orange-200 bg-orange-50/60 overflow-hidden">

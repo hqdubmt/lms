@@ -208,6 +208,44 @@ export default function MathPage() {
         </div>
       )}
 
+      {/* ── Học theo lớp ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-blue-600" />Học theo lớp
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[2, 3, 4, 5].map(g => {
+            const count = topics.filter(t => t.grade === g).length;
+            const gradients = [
+              'from-sky-500 to-blue-600',
+              'from-blue-500 to-indigo-600',
+              'from-indigo-500 to-violet-600',
+              'from-violet-500 to-purple-600',
+            ];
+            const grad = gradients[g - 2] ?? gradients[0];
+            return (
+              <Link key={g} href={`/math/grade/${g}`}
+                className="relative overflow-hidden rounded-2xl p-4 text-white flex flex-col gap-1 hover:shadow-lg transition-all hover:-translate-y-0.5 group"
+                style={{ background: `linear-gradient(135deg, var(--tw-gradient-stops))` }}
+              >
+                <div className={cn('absolute inset-0 bg-gradient-to-br', grad)} />
+                <div className="absolute right-2 top-2 opacity-20 text-4xl font-black">{g}</div>
+                <div className="relative z-10">
+                  <p className="text-xs font-semibold opacity-80">Lớp {g}</p>
+                  <p className="text-2xl font-bold">{count}</p>
+                  <p className="text-xs opacity-70">chủ đề</p>
+                </div>
+                <div className="relative z-10 flex items-center gap-1 text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                  Vào học <span>→</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── Smart Import Panel (instructor only) ── */}
       {isInstructor && (
         <div className="rounded-2xl border border-violet-200 bg-violet-50/60 overflow-hidden">

@@ -134,9 +134,13 @@ export default function BackupPage() {
     abortRef.current = ctrl;
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = api.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/admin/backup/exec', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ cmd }),
         signal: ctrl.signal,
