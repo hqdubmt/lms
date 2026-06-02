@@ -19,7 +19,7 @@ module.exports = {
     {
       name: 'lms-web',
       cwd: '/home/hqdu/quangdu/lms/apps/web/.next/standalone/apps/web',
-      script: 'server.js',
+      script: 'custom-server.js',
       interpreter: 'node',
       watch: false,
       autorestart: true,
