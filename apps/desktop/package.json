@@ -1,6 +1,6 @@
 {
   "name": "masterlms-desktop",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "MasterLMS Desktop - Ứng dụng học tập thông minh với AI Tutor OS v2 (Orchestrator, mastery tracking, memory decay, Groq/Gemini/Ollama)",
   "main": "main.js",
   "author": {

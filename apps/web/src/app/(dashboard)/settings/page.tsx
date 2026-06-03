@@ -586,7 +586,7 @@ function NotificationsTab() {
 
 // ─── Apps Tab ────────────────────────────────────────────────────────────────
 
-const APP_VERSION = 'v1.5.0';
+const APP_VERSION = 'v1.6.0';
 
 const APPS = [
   {
@@ -597,7 +597,7 @@ const APPS = [
     iconBg: 'bg-green-50',
     iconColor: 'text-green-600',
     btnColor: 'bg-green-600 hover:bg-green-700',
-    href: `/downloads/masterlms-v1.5.0.apk`,
+    href: `/downloads/masterlms-v1.6.0.apk`,
     badge: 'APK',
     note: 'Cho phép cài từ nguồn không rõ trong Cài đặt → Bảo mật trước khi cài đặt.',
   },
@@ -609,9 +609,9 @@ const APPS = [
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     btnColor: 'bg-blue-600 hover:bg-blue-700',
-    href: `/downloads/MasterLMS-1.5.0.AppImage`,
+    href: `/downloads/MasterLMS-1.6.0.AppImage`,
     badge: 'AppImage',
-    note: 'Hoặc tải file .deb: /downloads/masterlms-desktop_1.5.0_amd64.deb',
+    note: 'Hoặc tải file .deb: /downloads/masterlms-desktop_1.6.0_amd64.deb',
   },
 ];
 
