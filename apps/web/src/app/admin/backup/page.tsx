@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   HardDrive, Play, Eye, ShieldCheck, RefreshCw, FileText,
   CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp,
-  Terminal, Settings, Clock,
+  Terminal, Settings, Clock, CalendarClock, Plus, Trash2,
+  ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,222 @@ interface LogLine {
 }
 
 type RunState = 'idle' | 'running' | 'success' | 'error';
+
+interface BackupSchedule {
+  id: string; label: string; cron: string; cmd: 'run' | 'check';
+  enabled: boolean; createdAt: string;
+  lastRunAt?: string; lastRunOk?: boolean; nextRunAt?: string;
+}
+
+const CRON_PRESETS = [
+  { label: 'Hàng ngày lúc 1:00',        cron: '0 1 * * *' },
+  { label: 'Hàng ngày lúc 2:00',        cron: '0 2 * * *' },
+  { label: 'Hàng ngày lúc 3:00',        cron: '0 3 * * *' },
+  { label: 'Hàng ngày lúc 4:00',        cron: '0 4 * * *' },
+  { label: 'Mỗi 6 giờ',                 cron: '0 */6 * * *' },
+  { label: 'Mỗi 12 giờ',                cron: '0 */12 * * *' },
+  { label: 'Hàng tuần — Chủ nhật 2:00', cron: '0 2 * * 0' },
+  { label: 'Hàng tuần — Thứ 2 lúc 2:00', cron: '0 2 * * 1' },
+  { label: 'Hàng tháng — ngày 1 lúc 2:00', cron: '0 2 1 * *' },
+  { label: 'Tùy chỉnh (nhập cron)…',    cron: '' },
+];
+
+function fmtDate(iso?: string) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function ScheduleSection() {
+  const [schedules, setSchedules] = useState<BackupSchedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+
+  const [label, setLabel] = useState('');
+  const [preset, setPreset] = useState(CRON_PRESETS[1].cron);
+  const [customCron, setCustomCron] = useState('');
+  const [cmd, setCmd] = useState<'run' | 'check'>('run');
+  const [saving, setSaving] = useState(false);
+  const [formErr, setFormErr] = useState('');
+
+  const isCustom = preset === '';
+  const cron = isCustom ? customCron : preset;
+
+  const load = () => {
+    setLoading(true);
+    api.get<BackupSchedule[]>('/admin/backup/schedules')
+      .then(setSchedules).catch(() => setSchedules([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!label.trim() || !cron.trim()) { setFormErr('Vui lòng điền đầy đủ thông tin'); return; }
+    setSaving(true); setFormErr('');
+    try {
+      const s = await api.post<BackupSchedule>('/admin/backup/schedules', { label: label.trim(), cron: cron.trim(), cmd });
+      setSchedules(prev => [...prev, s]);
+      setLabel(''); setPreset(CRON_PRESETS[1].cron); setCustomCron(''); setShowForm(false);
+    } catch (err: any) { setFormErr(err.message || 'Tạo thất bại'); }
+    setSaving(false);
+  };
+
+  const toggle = async (s: BackupSchedule) => {
+    setBusy(b => ({ ...b, [s.id]: true }));
+    try {
+      const updated = await api.put<BackupSchedule>(`/admin/backup/schedules/${s.id}`, { enabled: !s.enabled });
+      setSchedules(prev => prev.map(x => x.id === s.id ? updated : x));
+    } catch {}
+    setBusy(b => ({ ...b, [s.id]: false }));
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm('Xóa lịch này?')) return;
+    setBusy(b => ({ ...b, [id]: true }));
+    try {
+      await api.delete(`/admin/backup/schedules/${id}`);
+      setSchedules(prev => prev.filter(x => x.id !== id));
+    } catch {}
+    setBusy(b => ({ ...b, [id]: false }));
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <CalendarClock className="h-4 w-4 text-muted-foreground" />
+          Lịch hẹn tự động
+          {schedules.length > 0 && (
+            <span className="text-xs font-normal text-muted-foreground">({schedules.length})</span>
+          )}
+        </div>
+        <button onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
+          <Plus className="h-3.5 w-3.5" />Thêm lịch
+        </button>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {/* Form tạo lịch */}
+        {showForm && (
+          <form onSubmit={create} className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4 space-y-3">
+            <p className="text-sm font-semibold text-primary">Tạo lịch backup mới</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-gray-600 block mb-1">Tên lịch *</label>
+                <input value={label} onChange={e => setLabel(e.target.value)}
+                  placeholder="VD: Backup hàng đêm"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Lịch chạy *</label>
+                <select value={preset} onChange={e => setPreset(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  {CRON_PRESETS.map(p => (
+                    <option key={p.cron} value={p.cron}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Lệnh thực thi</label>
+                <select value={cmd} onChange={e => setCmd(e.target.value as 'run' | 'check')}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="run">Backup thật (run)</option>
+                  <option value="check">Dry-run (check)</option>
+                </select>
+              </div>
+              {isCustom && (
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Cron expression *</label>
+                  <input value={customCron} onChange={e => setCustomCron(e.target.value)}
+                    placeholder="VD: 0 2 * * * (2:00 AM mỗi ngày)"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  <p className="text-xs text-muted-foreground mt-1">Định dạng: phút giờ ngày tháng thứ</p>
+                </div>
+              )}
+            </div>
+            {!isCustom && cron && (
+              <p className="text-xs text-muted-foreground font-mono bg-gray-50 px-3 py-1.5 rounded-lg">
+                cron: <span className="text-gray-700">{cron}</span>
+              </p>
+            )}
+            {formErr && <p className="text-xs text-red-500">{formErr}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving}
+                className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-60 transition-colors">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5" />}
+                Tạo lịch
+              </button>
+              <button type="button" onClick={() => { setShowForm(false); setFormErr(''); }}
+                className="text-sm text-muted-foreground hover:text-foreground px-3 py-2 rounded-lg transition-colors">
+                Hủy
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Danh sách lịch */}
+        {loading ? (
+          <div className="space-y-2">{[1,2].map(i => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}</div>
+        ) : schedules.length === 0 && !showForm ? (
+          <div className="text-center py-6 text-sm text-muted-foreground">
+            <CalendarClock className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+            Chưa có lịch nào — nhấn <strong>Thêm lịch</strong> để bắt đầu
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {schedules.map(s => (
+              <div key={s.id} className={cn(
+                'flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors',
+                s.enabled ? 'border-green-100 bg-green-50/30' : 'border-gray-100 bg-gray-50/50',
+              )}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900 truncate">{s.label}</span>
+                    <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded',
+                      s.cmd === 'run' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')}>
+                      {s.cmd === 'run' ? 'BACKUP' : 'DRY-RUN'}
+                    </span>
+                    {s.lastRunOk !== undefined && (
+                      <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded',
+                        s.lastRunOk ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+                        {s.lastRunOk ? 'OK' : 'LỖI'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    <span className="text-xs font-mono text-gray-500">{s.cron}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />Tiếp theo: {fmtDate(s.nextRunAt)}
+                    </span>
+                    {s.lastRunAt && (
+                      <span className="text-xs text-muted-foreground">Lần cuối: {fmtDate(s.lastRunAt)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => toggle(s)} disabled={busy[s.id]}
+                    className={cn('flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors',
+                      s.enabled ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-gray-500 bg-gray-100 hover:bg-gray-200')}>
+                    {busy[s.id] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> :
+                      s.enabled ? <ToggleRight className="h-3.5 w-3.5" /> : <ToggleLeft className="h-3.5 w-3.5" />}
+                    {s.enabled ? 'Bật' : 'Tắt'}
+                  </button>
+                  <button onClick={() => remove(s.id)} disabled={busy[s.id]}
+                    className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
+                    {busy[s.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─── Config groups ────────────────────────────────────────────────────────────
 
@@ -331,6 +548,9 @@ export default function BackupPage() {
           <TerminalOutput lines={output} />
         </div>
       )}
+
+      {/* Schedule section */}
+      <ScheduleSection />
 
       {/* Config section */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">

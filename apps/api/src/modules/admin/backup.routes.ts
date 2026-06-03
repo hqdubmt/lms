@@ -3,13 +3,92 @@ import { requireAdmin } from '../../middleware/auth';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+// @ts-ignore
+import cronParser from 'cron-parser';
 
 const BACKUP_DIR = process.env.BACKUP_DIR || path.resolve(__dirname, '../../../../../codebackup');
 const BACKUP_SCRIPT = path.join(BACKUP_DIR, 'backup.sh');
 const BACKUP_ENV = path.join(BACKUP_DIR, '.env');
 const BACKUP_LOG = path.join(BACKUP_DIR, 'backup.log');
 
+const BACKUP_SCHEDULES = path.join(BACKUP_DIR, 'schedules.json');
 const SENSITIVE_KEYS = ['KEY', 'SECRET', 'PASSWORD', 'TOKEN', 'PASS', 'CRYPT'];
+
+// ─── Schedule types & storage ─────────────────────────────────────────────────
+
+interface BackupSchedule {
+  id: string;
+  label: string;
+  cron: string;
+  cmd: 'run' | 'check';
+  enabled: boolean;
+  createdAt: string;
+  lastRunAt?: string;
+  lastRunOk?: boolean;
+  nextRunAt?: string;
+}
+
+function readSchedules(): BackupSchedule[] {
+  try { return JSON.parse(fs.readFileSync(BACKUP_SCHEDULES, 'utf8')); } catch { return []; }
+}
+
+function writeSchedules(list: BackupSchedule[]) {
+  fs.mkdirSync(path.dirname(BACKUP_SCHEDULES), { recursive: true });
+  fs.writeFileSync(BACKUP_SCHEDULES, JSON.stringify(list, null, 2));
+}
+
+function nextRun(cron: string): string | undefined {
+  try {
+    const interval = cronParser.parseExpression(cron, { tz: 'Asia/Ho_Chi_Minh' });
+    return interval.next().toISOString();
+  } catch { return undefined; }
+}
+
+// ─── In-memory scheduler ──────────────────────────────────────────────────────
+
+const timers = new Map<string, NodeJS.Timeout>();
+
+function execBackupSilent(cmd: string): Promise<boolean> {
+  return new Promise(resolve => {
+    if (!fs.existsSync(BACKUP_SCRIPT)) return resolve(false);
+    const proc = spawn('bash', [BACKUP_SCRIPT, cmd], {
+      cwd: BACKUP_DIR,
+      env: { ...process.env, ENV_FILE: BACKUP_ENV },
+    });
+    proc.on('close', code => resolve(code === 0));
+    proc.on('error', () => resolve(false));
+  });
+}
+
+function scheduleNext(s: BackupSchedule) {
+  if (timers.has(s.id)) { clearTimeout(timers.get(s.id)!); timers.delete(s.id); }
+  if (!s.enabled) return;
+  const next = nextRun(s.cron);
+  if (!next) return;
+  const delay = new Date(next).getTime() - Date.now();
+  if (delay < 0) return;
+  const t = setTimeout(async () => {
+    const ok = await execBackupSilent(s.cmd);
+    const list = readSchedules();
+    const idx = list.findIndex(x => x.id === s.id);
+    if (idx >= 0) {
+      list[idx].lastRunAt = new Date().toISOString();
+      list[idx].lastRunOk = ok;
+      list[idx].nextRunAt = nextRun(s.cron);
+      writeSchedules(list);
+      scheduleNext(list[idx]);
+    }
+  }, delay);
+  timers.set(s.id, t);
+}
+
+function initScheduler() {
+  for (const s of readSchedules()) {
+    s.nextRunAt = nextRun(s.cron);
+    scheduleNext(s);
+  }
+}
 
 function readEnvFile(): Record<string, string> {
   const config: Record<string, string> = {};
@@ -48,6 +127,58 @@ function getMaskedConfig(): Record<string, string> {
 }
 
 export async function backupRoutes(app: FastifyInstance) {
+  initScheduler();
+
+  // ─── GET /admin/backup/schedules ──────────────────────────────────────────────
+  app.get('/backup/schedules', { preHandler: requireAdmin }, async (_req, reply) => {
+    const list = readSchedules().map(s => ({ ...s, nextRunAt: nextRun(s.cron) }));
+    return reply.send(list);
+  });
+
+  // ─── POST /admin/backup/schedules ─────────────────────────────────────────────
+  app.post('/backup/schedules', { preHandler: requireAdmin }, async (req, reply) => {
+    const { label, cron, cmd = 'run' } = req.body as any;
+    if (!label || !cron) return reply.status(400).send({ error: 'label và cron là bắt buộc' });
+    try { cronParser.parseExpression(cron); } catch {
+      return reply.status(400).send({ error: 'Cron expression không hợp lệ' });
+    }
+    const s: BackupSchedule = {
+      id: randomUUID(), label, cron, cmd,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      nextRunAt: nextRun(cron),
+    };
+    const list = readSchedules();
+    list.push(s);
+    writeSchedules(list);
+    scheduleNext(s);
+    return reply.status(201).send(s);
+  });
+
+  // ─── PUT /admin/backup/schedules/:id ──────────────────────────────────────────
+  app.put('/backup/schedules/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as any;
+    const patch = req.body as Partial<BackupSchedule>;
+    const list = readSchedules();
+    const idx = list.findIndex(s => s.id === id);
+    if (idx < 0) return reply.status(404).send({ error: 'Không tìm thấy' });
+    list[idx] = { ...list[idx], ...patch, id };
+    list[idx].nextRunAt = nextRun(list[idx].cron);
+    writeSchedules(list);
+    scheduleNext(list[idx]);
+    return reply.send(list[idx]);
+  });
+
+  // ─── DELETE /admin/backup/schedules/:id ───────────────────────────────────────
+  app.delete('/backup/schedules/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as any;
+    const list = readSchedules();
+    if (!list.find(s => s.id === id)) return reply.status(404).send({ error: 'Không tìm thấy' });
+    if (timers.has(id)) { clearTimeout(timers.get(id)!); timers.delete(id); }
+    writeSchedules(list.filter(s => s.id !== id));
+    return reply.send({ ok: true });
+  });
+
   // ─── GET /admin/backup/status ─────────────────────────────────────────────────
   app.get('/backup/status', { preHandler: requireAdmin }, async (_req, reply) => {
     const config = getMaskedConfig();
