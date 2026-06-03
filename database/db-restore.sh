@@ -7,6 +7,24 @@ DUMP_DIR="$SCRIPT_DIR/dumps"
 RCLONE_BIN="$(dirname "$SCRIPT_DIR")/codebackup/rclone_bin"
 [[ ! -f "$RCLONE_BIN" ]] && RCLONE_BIN="$(which rclone 2>/dev/null || echo '')"
 
+# Parse --disk argument
+_DISK_OVERRIDE=""
+_POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --disk) _DISK_OVERRIDE="${2:-}"; shift 2 ;;
+    *) _POSITIONAL+=("$1"); shift ;;
+  esac
+done
+set -- "${_POSITIONAL[@]+"${_POSITIONAL[@]}"}"
+
+if [[ -n "$_DISK_OVERRIDE" ]]; then
+  if [[ ! -d "$_DISK_OVERRIDE" ]]; then
+    echo -e "\033[0;31m✗\033[0m Đường dẫn không tồn tại: $_DISK_OVERRIDE" >&2; exit 1
+  fi
+  DUMP_DIR="$_DISK_OVERRIDE"
+fi
+
 # ── Màu ──────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -16,7 +34,53 @@ info()    { echo -e "${YELLOW}→${NC} $*"; }
 heading() { echo -e "\n${BOLD}${CYAN}$*${NC}"; }
 warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
 
+# ── Chọn nguồn restore ───────────────────────────────────────────────────────
+select_source() {
+  echo ""
+  echo -e "  ${BOLD}Chọn nguồn restore:${NC}"
+  echo -e "  ${CYAN}[1]${NC} Từ thư mục dumps cục bộ  (${DUMP_DIR})"
+  echo -e "  ${CYAN}[2]${NC} Từ ổ cứng ngoài"
+  echo -e "  ${CYAN}[0]${NC} Thoát"
+  echo ""
+  read -rp "  Chọn [0-2]: " src_choice
+  case "$src_choice" in
+    1) ;;
+    2)
+      read -rp "  Nhập đường dẫn ổ cứng: " disk_path
+      disk_path="${disk_path%/}"
+      if [[ ! -d "$disk_path" ]]; then
+        err "Đường dẫn không tồn tại: $disk_path"; exit 1
+      fi
+      local sessions=()
+      while IFS= read -r d; do sessions+=("$d"); done \
+        < <(ls -dt "$disk_path"/lms_backup_* 2>/dev/null || true)
+      if [[ ${#sessions[@]} -gt 0 ]]; then
+        echo ""
+        echo -e "  Các phiên backup có sẵn:"
+        for i in "${!sessions[@]}"; do
+          local size; size=$(du -sh "${sessions[$i]}" 2>/dev/null | cut -f1)
+          printf "  ${CYAN}[%d]${NC} %-45s %s\n" "$((i+1))" "$(basename "${sessions[$i]}")" "$size"
+        done
+        echo -e "  ${CYAN}[0]${NC} Dùng thư mục này trực tiếp"
+        echo ""
+        read -rp "  Chọn phiên [0-${#sessions[@]}]: " sess_choice
+        if [[ "$sess_choice" =~ ^[0-9]+$ ]] && (( sess_choice >= 1 && sess_choice <= ${#sessions[@]} )); then
+          DUMP_DIR="${sessions[$((sess_choice-1))]}"
+        else
+          DUMP_DIR="$disk_path"
+        fi
+      else
+        DUMP_DIR="$disk_path"
+      fi
+      ok "Nguồn restore: $DUMP_DIR"
+      ;;
+    0) echo "Thoát."; exit 0 ;;
+    *) err "Lựa chọn không hợp lệ"; exit 1 ;;
+  esac
+}
+
 # ── Chọn file từ danh sách ───────────────────────────────────────────────────
+# Tất cả display output → >&2 để không bị capture khi gọi qua $()
 pick_file() {
   local dir="$1" pattern="$2" label="$3"
   local files=()
@@ -25,21 +89,21 @@ pick_file() {
     err "Không tìm thấy bản dump nào trong $dir"
     return 1
   fi
-  echo ""
-  echo -e "  Các bản $label có sẵn:"
+  echo "" >&2
+  echo -e "  Các bản $label có sẵn:" >&2
   for i in "${!files[@]}"; do
-    local ts
-    ts=$(basename "${files[$i]}" | grep -oP '\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}' || echo "")
     local size
     size=$(du -sh "${files[$i]}" 2>/dev/null | cut -f1)
-    printf "  ${CYAN}[%d]${NC} %s  ${GREEN}%s${NC}\n" "$((i+1))" "$(basename "${files[$i]}")" "$size"
+    printf "  ${CYAN}[%d]${NC} %s  ${GREEN}%s${NC}\n" \
+      "$((i+1))" "$(basename "${files[$i]}")" "$size" >&2
   done
-  echo -e "  ${CYAN}[0]${NC} Hủy"
-  echo ""
-  read -rp "  Chọn [0-${#files[@]}]: " choice
+  echo -e "  ${CYAN}[0]${NC} Hủy" >&2
+  echo "" >&2
+  local choice
+  read -rp "  Chọn [0-${#files[@]}]: " choice || true
   if [[ "$choice" == "0" || -z "$choice" ]]; then return 1; fi
   if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#files[@]} )); then
-    err "Lựa chọn không hợp lệ"; return 1
+    err "Lựa chọn không hợp lệ" >&2; return 1
   fi
   echo "${files[$((choice-1))]}"
 }
@@ -169,7 +233,8 @@ restore_minio() {
   printf "  ${CYAN}[%d]${NC} Tất cả buckets\n" "$((${#buckets[@]}+1))"
   echo -e "  ${CYAN}[0]${NC} Hủy"
   echo ""
-  read -rp "  Chọn [0-$((${#buckets[@]}+1))]: " choice
+  local choice
+  read -rp "  Chọn [0-$((${#buckets[@]}+1))]: " choice || true
 
   [[ "$choice" == "0" || -z "$choice" ]] && { info "Đã hủy."; return 0; }
 
@@ -208,6 +273,7 @@ main_menu() {
   echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
   echo -e "${BOLD}║         LMS — DB RESTORE TOOL        ║${NC}"
   echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
+  echo -e "  Nguồn: ${CYAN}${DUMP_DIR}${NC}"
   echo ""
   echo -e "  ${CYAN}[1]${NC} Restore PostgreSQL"
   echo -e "  ${CYAN}[2]${NC} Restore MongoDB"
@@ -250,5 +316,8 @@ case "${1:-menu}" in
     restore_redis
     restore_minio
     ;;
-  menu|*) main_menu ;;
+  menu|*)
+    [[ -z "$_DISK_OVERRIDE" ]] && select_source
+    main_menu
+    ;;
 esac
