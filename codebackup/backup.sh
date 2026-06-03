@@ -60,6 +60,19 @@ ts() { date "+%Y-%m-%d %H:%M:%S"; }
 # ---- Xử lý lệnh ----
 case "$CMD" in
     run)
+        echo "[$(ts)] Dump database trước khi backup..."
+        DB_SCRIPT="$(dirname "$BACKUP_SOURCE")/lms/database/db-backup.sh"
+        # Thử đường dẫn tương đối từ BACKUP_SOURCE
+        if [[ -f "$BACKUP_SOURCE/database/db-backup.sh" ]]; then
+            if bash "$BACKUP_SOURCE/database/db-backup.sh"; then
+                echo "[$(ts)] Database dump OK"
+            else
+                [[ "$NOTIFY_ERR" == "true" ]] && echo "[$(ts)] CẢNH BÁO: database dump có lỗi, tiếp tục backup file..." >&2
+            fi
+        else
+            echo "[$(ts)] Không tìm thấy db-backup.sh, bỏ qua dump" >&2
+        fi
+
         echo "[$(ts)] Bắt đầu backup: $BACKUP_SOURCE → $DEST"
         if rclone_run "$MODE" "$BACKUP_SOURCE" "$DEST" ${BACKUP_FLAGS:-}; then
             [[ "$NOTIFY_OK" == "true" ]] && echo "[$(ts)] BACKUP OK: $BACKUP_SOURCE → $DEST"
