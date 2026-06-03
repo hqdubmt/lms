@@ -81,8 +81,10 @@ if docker exec redis_du redis-cli \
       --no-auth-warning LASTSAVE 2>/dev/null)
     [[ "$AFTER" != "$STATUS" ]] && break
   done
-  # Copy dump.rdb từ container
-  docker cp redis_du:/data/dump.rdb - 2>/dev/null | gzip > "$REDIS_FILE" && {
+  # Copy dump.rdb từ container (dùng path, không dùng - để tránh tar wrapping)
+  tmp_rdb="/tmp/redis_dump_$$.rdb"
+  docker cp redis_du:/data/dump.rdb "$tmp_rdb" 2>/dev/null && \
+  gzip -c "$tmp_rdb" > "$REDIS_FILE" && rm -f "$tmp_rdb" && {
     SIZE=$(du -sh "$REDIS_FILE" | cut -f1)
     ok "Redis → $REDIS_FILE ($SIZE)"
   } || {
