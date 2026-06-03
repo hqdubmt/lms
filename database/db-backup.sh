@@ -95,6 +95,35 @@ else
   ERRORS=$((ERRORS+1))
 fi
 
+# ── MinIO ─────────────────────────────────────────────────────────────────────
+info "Sync MinIO buckets..."
+MINIO_DEST="$DUMP_DIR/minio"
+mkdir -p "$MINIO_DEST"
+RCLONE_BIN="$(dirname "$SCRIPT_DIR")/codebackup/rclone_bin"
+[[ ! -f "$RCLONE_BIN" ]] && RCLONE_BIN="$(which rclone 2>/dev/null || echo '')"
+
+if [[ -z "$RCLONE_BIN" || ! -f "$RCLONE_BIN" ]]; then
+  err "Không tìm thấy rclone binary — bỏ qua MinIO"
+  ERRORS=$((ERRORS+1))
+else
+  MINIO_OK=0; MINIO_FAIL=0
+  for BUCKET in lms-videos lms-attachments lms-avatars lms-math-docs lms-media; do
+    BUCKET_DEST="$MINIO_DEST/$BUCKET"
+    mkdir -p "$BUCKET_DEST"
+    if "$RCLONE_BIN" sync "minio:$BUCKET" "$BUCKET_DEST" \
+        --transfers 4 --checkers 8 -q 2>/dev/null; then
+      COUNT=$(find "$BUCKET_DEST" -type f | wc -l)
+      ok "MinIO $BUCKET → $BUCKET_DEST ($COUNT files)"
+      MINIO_OK=$((MINIO_OK+1))
+    else
+      err "MinIO $BUCKET sync thất bại"
+      MINIO_FAIL=$((MINIO_FAIL+1))
+      ERRORS=$((ERRORS+1))
+    fi
+  done
+  [[ $MINIO_FAIL -eq 0 ]] && ok "MinIO: tất cả $MINIO_OK buckets OK"
+fi
+
 # ── Xoay vòng: giữ $KEEP_DAYS ngày gần nhất ─────────────────────────────────
 info "Xóa dump cũ hơn ${KEEP_DAYS} ngày..."
 find "$DUMP_DIR" -type f \( -name "*.gz" -o -name "*.rdb" \) -mtime +${KEEP_DAYS} -delete 2>/dev/null && ok "Xoay vòng xong"
