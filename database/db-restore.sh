@@ -34,46 +34,91 @@ info()    { echo -e "${YELLOW}→${NC} $*"; }
 heading() { echo -e "\n${BOLD}${CYAN}$*${NC}"; }
 warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
 
+# ── Liệt kê ổ/phân vùng để chọn ─────────────────────────────────────────────
+_pick_drive_restore() {
+  # df -hT: $1=filesystem $2=type $3=size $4=used $5=avail $6=use% $7=mountpoint
+  local mounts=() sizes=() avails=() fstypes=()
+  while IFS= read -r line; do
+    local fstype size avail mp
+    fstype=$(echo "$line" | awk '{print $2}')
+    size=$(echo  "$line" | awk '{print $3}')
+    avail=$(echo "$line" | awk '{print $5}')
+    mp=$(echo   "$line" | awk '{print $7}')
+    mounts+=("$mp"); sizes+=("$size"); avails+=("$avail"); fstypes+=("$fstype")
+  done < <(df -hT 2>/dev/null | awk 'NR>1' \
+    | grep -vE '^(tmpfs|devtmpfs|overlay|squashfs|none|udev)|/dev/loop' \
+    | grep -vE '/proc|/sys|/run/user|/snap' \
+    | sort -k7)
+
+  local disk_path=""
+  if [[ ${#mounts[@]} -eq 0 ]]; then
+    read -rp "  Nhập đường dẫn ổ cứng: " disk_path
+  else
+    echo ""
+    echo -e "  ${BOLD}Chọn ổ/phân vùng nguồn:${NC}"
+    for i in "${!mounts[@]}"; do
+      local label=""
+      [[ "${mounts[$i]}" == "/" ]] && label=" ${YELLOW}(hệ thống)${NC}"
+      printf "  ${CYAN}[%d]${NC} %-28s  %s  %s còn trống%b\n" \
+        "$((i+1))" "${mounts[$i]}" "${fstypes[$i]}" "${avails[$i]}" "$label"
+    done
+    echo -e "  ${CYAN}[m]${NC} Nhập đường dẫn thủ công"
+    echo -e "  ${CYAN}[0]${NC} Hủy"
+    echo ""
+    read -rp "  Chọn [0-${#mounts[@]}/m]: " drive_choice || true
+
+    if [[ "$drive_choice" == "0" || -z "$drive_choice" ]]; then
+      info "Đã hủy — dùng dumps cục bộ."; return
+    elif [[ "$drive_choice" == "m" || "$drive_choice" == "M" ]]; then
+      read -rp "  Nhập đường dẫn: " disk_path
+    elif [[ "$drive_choice" =~ ^[0-9]+$ ]] && (( drive_choice >= 1 && drive_choice <= ${#mounts[@]} )); then
+      disk_path="${mounts[$((drive_choice-1))]}"
+    else
+      err "Lựa chọn không hợp lệ"; exit 1
+    fi
+  fi
+
+  disk_path="${disk_path%/}"
+  [[ -d "$disk_path" ]] || { err "Đường dẫn không tồn tại: $disk_path"; exit 1; }
+
+  # Tìm các phiên lms_backup_* trong thư mục đã chọn
+  local sessions=()
+  while IFS= read -r d; do sessions+=("$d"); done \
+    < <(ls -dt "$disk_path"/lms_backup_* 2>/dev/null || true)
+
+  if [[ ${#sessions[@]} -gt 0 ]]; then
+    echo ""
+    echo -e "  Các phiên backup có sẵn:"
+    for i in "${!sessions[@]}"; do
+      local size; size=$(du -sh "${sessions[$i]}" 2>/dev/null | cut -f1)
+      printf "  ${CYAN}[%d]${NC} %-45s %s\n" "$((i+1))" "$(basename "${sessions[$i]}")" "$size"
+    done
+    echo -e "  ${CYAN}[0]${NC} Dùng thư mục gốc trực tiếp"
+    echo ""
+    read -rp "  Chọn phiên [0-${#sessions[@]}]: " sess_choice || true
+    if [[ "$sess_choice" =~ ^[0-9]+$ ]] && (( sess_choice >= 1 && sess_choice <= ${#sessions[@]} )); then
+      DUMP_DIR="${sessions[$((sess_choice-1))]}"
+    else
+      DUMP_DIR="$disk_path"
+    fi
+  else
+    DUMP_DIR="$disk_path"
+  fi
+  ok "Nguồn restore: $DUMP_DIR"
+}
+
 # ── Chọn nguồn restore ───────────────────────────────────────────────────────
 select_source() {
   echo ""
   echo -e "  ${BOLD}Chọn nguồn restore:${NC}"
   echo -e "  ${CYAN}[1]${NC} Từ thư mục dumps cục bộ  (${DUMP_DIR})"
-  echo -e "  ${CYAN}[2]${NC} Từ ổ cứng ngoài"
+  echo -e "  ${CYAN}[2]${NC} Từ ổ/drive ngoài"
   echo -e "  ${CYAN}[0]${NC} Thoát"
   echo ""
   read -rp "  Chọn [0-2]: " src_choice
   case "$src_choice" in
     1) ;;
-    2)
-      read -rp "  Nhập đường dẫn ổ cứng: " disk_path
-      disk_path="${disk_path%/}"
-      if [[ ! -d "$disk_path" ]]; then
-        err "Đường dẫn không tồn tại: $disk_path"; exit 1
-      fi
-      local sessions=()
-      while IFS= read -r d; do sessions+=("$d"); done \
-        < <(ls -dt "$disk_path"/lms_backup_* 2>/dev/null || true)
-      if [[ ${#sessions[@]} -gt 0 ]]; then
-        echo ""
-        echo -e "  Các phiên backup có sẵn:"
-        for i in "${!sessions[@]}"; do
-          local size; size=$(du -sh "${sessions[$i]}" 2>/dev/null | cut -f1)
-          printf "  ${CYAN}[%d]${NC} %-45s %s\n" "$((i+1))" "$(basename "${sessions[$i]}")" "$size"
-        done
-        echo -e "  ${CYAN}[0]${NC} Dùng thư mục này trực tiếp"
-        echo ""
-        read -rp "  Chọn phiên [0-${#sessions[@]}]: " sess_choice
-        if [[ "$sess_choice" =~ ^[0-9]+$ ]] && (( sess_choice >= 1 && sess_choice <= ${#sessions[@]} )); then
-          DUMP_DIR="${sessions[$((sess_choice-1))]}"
-        else
-          DUMP_DIR="$disk_path"
-        fi
-      else
-        DUMP_DIR="$disk_path"
-      fi
-      ok "Nguồn restore: $DUMP_DIR"
-      ;;
+    2) _pick_drive_restore ;;
     0) echo "Thoát."; exit 0 ;;
     *) err "Lựa chọn không hợp lệ"; exit 1 ;;
   esac

@@ -31,29 +31,90 @@ heading() { echo -e "\n${BOLD}${CYAN}$*${NC}"; }
 ERRORS=0
 PG_FILE=""; MONGO_FILE=""; REDIS_FILE=""; MINIO_DEST=""
 
+# ── Liệt kê các ổ/phân vùng đang mount ──────────────────────────────────────
+list_drives() {
+  # Lấy danh sách mount points thực (bỏ qua tmpfs, devtmpfs, overlay, loop, sysfs...)
+  local drives=()
+  while IFS= read -r line; do
+    local mp size avail fstype
+    mp=$(echo "$line" | awk '{print $6}')
+    size=$(echo "$line" | awk '{print $2}')
+    avail=$(echo "$line" | awk '{print $4}')
+    fstype=$(echo "$line" | awk '{print $1}')
+    drives+=("$mp|$size|$avail|$fstype")
+  done < <(df -hT 2>/dev/null | awk 'NR>1' \
+    | grep -vE '^(tmpfs|devtmpfs|overlay|squashfs|nsfs|cgroupfs|none|udev|sysfs|proc|devpts|hugetlbfs|mqueue|pstore|cgroup|bpf|tracefs|debugfs|fusectl|efivarfs)|/dev/loop|/proc|/sys|/run/user' \
+    | sort -k6)
+  echo "${drives[@]}"
+}
+
 # ── Chọn đích backup ─────────────────────────────────────────────────────────
 select_dest() {
   echo ""
   echo -e "  ${BOLD}Chọn đích lưu backup:${NC}"
   echo -e "  ${CYAN}[1]${NC} Chỉ lưu cục bộ  (${DUMP_DIR})"
-  echo -e "  ${CYAN}[2]${NC} Lưu cục bộ + sao chép ra ổ cứng ngoài"
+  echo -e "  ${CYAN}[2]${NC} Lưu cục bộ + sao chép ra ổ/drive ngoài"
   echo -e "  ${CYAN}[0]${NC} Thoát"
   echo ""
   read -rp "  Chọn [0-2]: " dest_choice
   case "$dest_choice" in
     1) ;;
-    2)
-      read -rp "  Nhập đường dẫn ổ cứng: " disk_path
-      disk_path="${disk_path%/}"
-      if [[ ! -d "$disk_path" ]]; then
-        err "Đường dẫn không tồn tại: $disk_path"; exit 1
-      fi
-      DISK_DEST="$disk_path"
-      ok "Sẽ sao chép sang: $DISK_DEST"
-      ;;
+    2) _pick_drive ;;
     0) echo "Thoát."; exit 0 ;;
     *) err "Lựa chọn không hợp lệ"; exit 1 ;;
   esac
+}
+
+_pick_drive() {
+  # Thu thập danh sách ổ  (df -hT: $1=fs $2=type $3=size $4=used $5=avail $6=use% $7=mountpoint)
+  local mounts=() sizes=() avails=() fstypes=()
+  while IFS= read -r line; do
+    local mp size avail fstype
+    fstype=$(echo "$line" | awk '{print $2}')
+    size=$(echo  "$line" | awk '{print $3}')
+    avail=$(echo "$line" | awk '{print $5}')
+    mp=$(echo   "$line" | awk '{print $7}')
+    mounts+=("$mp"); sizes+=("$size"); avails+=("$avail"); fstypes+=("$fstype")
+  done < <(df -hT 2>/dev/null | awk 'NR>1' \
+    | grep -vE '^(tmpfs|devtmpfs|overlay|squashfs|nsfs|none|udev)|/dev/loop' \
+    | grep -vE '/proc|/sys|/run/user|/snap' \
+    | sort -k7)
+
+  if [[ ${#mounts[@]} -eq 0 ]]; then
+    warn "Không tìm thấy ổ nào. Nhập đường dẫn thủ công:"
+    read -rp "  Đường dẫn: " disk_path
+    disk_path="${disk_path%/}"
+    [[ -d "$disk_path" ]] || { err "Đường dẫn không tồn tại: $disk_path"; exit 1; }
+    DISK_DEST="$disk_path"; ok "Sẽ sao chép sang: $DISK_DEST"; return
+  fi
+
+  echo ""
+  echo -e "  ${BOLD}Chọn ổ/phân vùng đích:${NC}"
+  for i in "${!mounts[@]}"; do
+    local label=""
+    [[ "${mounts[$i]}" == "/" ]]      && label=" ${YELLOW}(hệ thống)${NC}"
+    [[ "${mounts[$i]}" == "$SCRIPT_DIR"* ]] && label=" ${YELLOW}(thư mục hiện tại)${NC}"
+    printf "  ${CYAN}[%d]${NC} %-28s  %s  %s còn trống  %s%b\n" \
+      "$((i+1))" "${mounts[$i]}" "${fstypes[$i]}" "${avails[$i]}" "${sizes[$i]}" "$label"
+  done
+  echo -e "  ${CYAN}[m]${NC} Nhập đường dẫn thủ công"
+  echo -e "  ${CYAN}[0]${NC} Hủy"
+  echo ""
+  read -rp "  Chọn [0-${#mounts[@]}/m]: " drive_choice
+
+  if [[ "$drive_choice" == "0" || -z "$drive_choice" ]]; then
+    info "Đã hủy chọn ổ — chỉ lưu cục bộ."; return
+  elif [[ "$drive_choice" == "m" || "$drive_choice" == "M" ]]; then
+    read -rp "  Nhập đường dẫn: " disk_path
+    disk_path="${disk_path%/}"
+    [[ -d "$disk_path" ]] || { err "Đường dẫn không tồn tại: $disk_path"; exit 1; }
+    DISK_DEST="$disk_path"
+  elif [[ "$drive_choice" =~ ^[0-9]+$ ]] && (( drive_choice >= 1 && drive_choice <= ${#mounts[@]} )); then
+    DISK_DEST="${mounts[$((drive_choice-1))]}"
+  else
+    err "Lựa chọn không hợp lệ"; exit 1
+  fi
+  ok "Sẽ sao chép sang: $DISK_DEST"
 }
 
 # ── BACKUP POSTGRESQL ─────────────────────────────────────────────────────────
