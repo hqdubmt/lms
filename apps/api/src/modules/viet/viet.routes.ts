@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
-import { extractText, generateVietQuestionsWithAI } from '../../services/file-import';
+import { extractText, extractMarkdown, generateVietQuestionsWithAI } from '../../services/file-import';
 import {
   processVietDocument, detectVietCurriculum, vietClean, vietUnicodeNormalize,
   generateVietVariations, computeVietProfileUpdate,
@@ -755,7 +755,7 @@ export async function vietRoutes(app: FastifyInstance) {
     if (!data) throw { statusCode: 400, message: 'Không có file' };
     const buffer = await data.toBuffer();
     let text: string;
-    try { text = await extractText(buffer, data.mimetype, data.filename); }
+    try { text = await extractMarkdown(buffer, data.mimetype, data.filename); }
     catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
     if (!text?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
     const normalized = vietUnicodeNormalize(vietClean(text));
@@ -772,7 +772,7 @@ export async function vietRoutes(app: FastifyInstance) {
     const q = req.query as { grade?: string; category?: string; generateExercises?: string };
     const buffer = await data.toBuffer();
     let rawText: string;
-    try { rawText = await extractText(buffer, data.mimetype, data.filename); }
+    try { rawText = await extractMarkdown(buffer, data.mimetype, data.filename); }
     catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
     if (!rawText?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
 
@@ -885,7 +885,7 @@ export async function vietRoutes(app: FastifyInstance) {
 
     let extractedText: string | null = null;
     try {
-      const text = await extractText(buffer, data.mimetype, data.filename);
+      const text = await extractMarkdown(buffer, data.mimetype, data.filename);
       extractedText = text?.trim() || null;
     } catch { /* image or unsupported */ }
 

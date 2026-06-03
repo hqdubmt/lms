@@ -5,12 +5,19 @@ import {
   HardDrive, Play, Eye, ShieldCheck, RefreshCw, FileText,
   CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp,
   Terminal, Settings, Clock, CalendarClock, Plus, Trash2,
-  ToggleLeft, ToggleRight,
+  ToggleLeft, ToggleRight, RotateCcw, AlertTriangle, Cloud,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface DriveInfo {
+  filesystem: string; fstype: string; size: string;
+  used: string; avail: string; usePct: string; mountpoint: string;
+}
+
+interface RcloneRemote { name: string; type: string; }
 
 interface BackupStatus {
   config: Record<string, string>;
@@ -34,8 +41,510 @@ type RunState = 'idle' | 'running' | 'success' | 'error';
 
 interface BackupSchedule {
   id: string; label: string; cron: string; cmd: 'run' | 'check';
+  diskDest?: string; gdriveDest?: string;
   enabled: boolean; createdAt: string;
   lastRunAt?: string; lastRunOk?: boolean; nextRunAt?: string;
+}
+
+// strip ANSI escape codes for display
+function stripAnsi(s: string) {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
+}
+
+const DB_SERVICES = [
+  { value: 'all',      label: 'Tất cả' },
+  { value: 'postgres', label: 'PostgreSQL' },
+  { value: 'mongo',    label: 'MongoDB' },
+  { value: 'redis',    label: 'Redis' },
+  { value: 'minio',    label: 'MinIO' },
+];
+
+function DbBackupSection() {
+  const [drives, setDrives] = useState<DriveInfo[]>([]);
+  const [loadingDrives, setLoadingDrives] = useState(true);
+  const [selectedDrive, setSelectedDrive] = useState<string>('');
+  const [useNoDisk, setUseNoDisk] = useState(false);
+  const [remotes, setRemotes] = useState<RcloneRemote[]>([]);
+  const [gdriveDest, setGdriveDest] = useState<string>('');
+  const [service, setService] = useState('all');
+  const [runState, setRunState] = useState<RunState>('idle');
+  const [output, setOutput] = useState<LogLine[]>([]);
+  const [showOutput, setShowOutput] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const loadDrives = () => {
+    setLoadingDrives(true);
+    Promise.all([
+      api.get<DriveInfo[]>('/admin/backup/drives'),
+      api.get<RcloneRemote[]>('/admin/backup/remotes'),
+    ]).then(([d, r]) => {
+      setDrives(d);
+      if (d.length > 0 && !selectedDrive) setSelectedDrive(d[0].mountpoint);
+      setRemotes(r);
+    }).catch(() => {}).finally(() => setLoadingDrives(false));
+  };
+
+  useEffect(() => { loadDrives(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const diskDest = useNoDisk ? undefined : selectedDrive;
+
+  const runDbBackup = async () => {
+    if (runState === 'running') { abortRef.current?.abort(); return; }
+    setOutput([]); setShowOutput(true); setRunState('running');
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = api.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/admin/backup/exec-db', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ service, diskDest: diskDest || undefined, gdriveDest: gdriveDest || undefined }),
+        signal: ctrl.signal,
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let success = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed: LogLine = JSON.parse(line.slice(6));
+            if (parsed.line) parsed.line = stripAnsi(parsed.line);
+            setOutput(prev => [...prev, parsed]);
+            if (parsed.type === 'done') success = parsed.ok ?? false;
+          } catch { /* skip */ }
+        }
+      }
+
+      setRunState(success ? 'success' : 'error');
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setOutput(prev => [...prev, { type: 'error', message: err.message }]);
+        setRunState('error');
+      } else {
+        setRunState('idle');
+      }
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <HardDrive className="h-4 w-4 text-muted-foreground" />
+          Backup cơ sở dữ liệu
+        </div>
+        <button onClick={loadDrives} disabled={loadingDrives}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <RefreshCw className={cn('h-3.5 w-3.5', loadingDrives && 'animate-spin')} />
+          Làm mới
+        </button>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {/* Service selector */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Dịch vụ cần backup</p>
+          <div className="flex flex-wrap gap-2">
+            {DB_SERVICES.map(s => (
+              <button key={s.value} onClick={() => setService(s.value)}
+                className={cn(
+                  'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                  service === s.value
+                    ? 'bg-primary text-white border-primary'
+                    : 'border-gray-200 text-gray-600 hover:border-primary/40 hover:text-primary',
+                )}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Drive / destination selector */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Đích lưu backup</p>
+          <div className="space-y-2">
+            {/* Local only */}
+            <label className={cn(
+              'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+              useNoDisk ? 'border-primary/40 bg-primary/5' : 'border-gray-100 hover:border-gray-200',
+            )}>
+              <input type="radio" className="accent-primary" checked={useNoDisk} onChange={() => setUseNoDisk(true)} />
+              <div>
+                <p className="text-sm font-medium">Chỉ lưu cục bộ</p>
+                <p className="text-xs text-muted-foreground">Lưu vào thư mục dumps/ trên server</p>
+              </div>
+            </label>
+
+            {/* Detected external drives */}
+            {loadingDrives ? (
+              <div className="h-14 rounded-xl bg-muted animate-pulse" />
+            ) : drives.length === 0 ? (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-gray-200 text-xs text-muted-foreground">
+                <HardDrive className="h-4 w-4 shrink-0" />
+                Chưa phát hiện ổ cứng ngoài — hãy cắm USB/HDD rồi nhấn Làm mới
+              </div>
+            ) : drives.map(d => (
+              <label key={d.mountpoint} className={cn(
+                'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+                !useNoDisk && selectedDrive === d.mountpoint
+                  ? 'border-primary/40 bg-primary/5'
+                  : 'border-gray-100 hover:border-gray-200',
+              )}>
+                <input type="radio" className="accent-primary"
+                  checked={!useNoDisk && selectedDrive === d.mountpoint}
+                  onChange={() => { setSelectedDrive(d.mountpoint); setUseNoDisk(false); }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium font-mono truncate">{d.mountpoint}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {d.fstype} · {d.avail} còn trống / {d.size}
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">{d.usePct}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Google Drive */}
+        {remotes.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2 flex items-center gap-1.5">
+              <Cloud className="h-3.5 w-3.5" />Google Drive (tùy chọn)
+            </p>
+            <select value={gdriveDest} onChange={e => setGdriveDest(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+              <option value="">Không lưu lên Drive</option>
+              {remotes.map(r => (
+                <option key={r.name} value={r.name}>{r.name} ({r.type})</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Run button */}
+        <div className="flex items-center gap-3">
+          <button onClick={runDbBackup}
+            className={cn(
+              'flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-xl text-white transition-colors',
+              runState === 'running' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700',
+            )}>
+            {runState === 'running'
+              ? <><Loader2 className="h-4 w-4 animate-spin" />Dừng</>
+              : <><Play className="h-4 w-4" />Chạy backup DB</>}
+          </button>
+          {runState === 'success' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+          {runState === 'error' && <XCircle className="h-5 w-5 text-red-500" />}
+        </div>
+
+        {/* Output */}
+        {showOutput && output.length > 0 && (
+          <TerminalOutput lines={output} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const RESTORE_SERVICES = [
+  { value: 'all',      label: 'Tất cả' },
+  { value: 'postgres', label: 'PostgreSQL' },
+  { value: 'mongo',    label: 'MongoDB' },
+  { value: 'redis',    label: 'Redis' },
+  { value: 'minio',    label: 'MinIO' },
+];
+
+interface DumpFile { name: string; size: number; mtime: string; }
+type DumpMap = Record<string, DumpFile[]>;
+
+function fmtBytes(b: number) {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
+
+type RestoreSource = 'local' | 'disk' | 'gdrive';
+
+function DbRestoreSection() {
+  const [drives, setDrives] = useState<DriveInfo[]>([]);
+  const [remotes, setRemotes] = useState<RcloneRemote[]>([]);
+  const [loadingDrives, setLoadingDrives] = useState(true);
+  const [selectedDrive, setSelectedDrive] = useState<string>('');
+  const [selectedRemote, setSelectedRemote] = useState<string>('');
+  const [source, setSource] = useState<RestoreSource>('local');
+  const [service, setService] = useState('all');
+  const [dumps, setDumps] = useState<DumpMap>({});
+  const [loadingDumps, setLoadingDumps] = useState(true);
+  const [runState, setRunState] = useState<RunState>('idle');
+  const [output, setOutput] = useState<LogLine[]>([]);
+  const [showOutput, setShowOutput] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const loadAll = () => {
+    setLoadingDrives(true);
+    setLoadingDumps(true);
+    Promise.all([
+      api.get<DriveInfo[]>('/admin/backup/drives'),
+      api.get<RcloneRemote[]>('/admin/backup/remotes'),
+      api.get<DumpMap>('/admin/backup/dumps'),
+    ]).then(([d, r, dumps]) => {
+      setDrives(d);
+      if (d.length > 0 && !selectedDrive) setSelectedDrive(d[0].mountpoint);
+      setRemotes(r);
+      if (r.length > 0 && !selectedRemote) setSelectedRemote(r[0].name);
+      setDumps(dumps);
+    }).catch(() => {})
+      .finally(() => { setLoadingDrives(false); setLoadingDumps(false); });
+  };
+
+  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const diskDest = source === 'disk' ? selectedDrive : undefined;
+  const gdriveDest = source === 'gdrive' ? selectedRemote : undefined;
+
+  const totalDumps = Object.values(dumps).reduce((s, arr) => s + arr.length, 0);
+
+  const runRestore = async () => {
+    if (runState === 'running') { abortRef.current?.abort(); return; }
+    setOutput([]); setShowOutput(true); setRunState('running'); setConfirmed(false);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = api.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/admin/backup/exec-restore', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ service, diskDest: diskDest || undefined, gdriveDest: gdriveDest || undefined }),
+        signal: ctrl.signal,
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let success = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed: LogLine = JSON.parse(line.slice(6));
+            if (parsed.line) parsed.line = stripAnsi(parsed.line);
+            setOutput(prev => [...prev, parsed]);
+            if (parsed.type === 'done') success = parsed.ok ?? false;
+          } catch { /* skip */ }
+        }
+      }
+      setRunState(success ? 'success' : 'error');
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setOutput(prev => [...prev, { type: 'error', message: err.message }]);
+        setRunState('error');
+      } else {
+        setRunState('idle');
+      }
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
+  const serviceLabel = RESTORE_SERVICES.find(s => s.value === service)?.label ?? service;
+  const relevantDumps = service === 'all'
+    ? Object.entries(dumps).flatMap(([svc, files]) => files.slice(0, 1).map(f => ({ svc, ...f })))
+    : (dumps[service] ?? []).slice(0, 3).map(f => ({ svc: service, ...f }));
+
+  return (
+    <div className="bg-white rounded-2xl border border-orange-100 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-orange-50 bg-orange-50/40">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <RotateCcw className="h-4 w-4 text-orange-600" />
+          Restore cơ sở dữ liệu
+        </div>
+        <button onClick={loadAll} disabled={loadingDrives || loadingDumps}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <RefreshCw className={cn('h-3.5 w-3.5', (loadingDrives || loadingDumps) && 'animate-spin')} />
+          Làm mới
+        </button>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {/* Cảnh báo */}
+        <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-700">
+            <strong>Cảnh báo:</strong> Restore sẽ XÓA toàn bộ dữ liệu hiện tại và thay bằng bản backup.
+            Hành động này không thể hoàn tác.
+          </p>
+        </div>
+
+        {/* Service selector */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Dịch vụ cần restore</p>
+          <div className="flex flex-wrap gap-2">
+            {RESTORE_SERVICES.map(s => (
+              <button key={s.value} onClick={() => { setService(s.value); setConfirmed(false); }}
+                className={cn(
+                  'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                  service === s.value
+                    ? 'bg-orange-600 text-white border-orange-600'
+                    : 'border-gray-200 text-gray-600 hover:border-orange-400/60 hover:text-orange-600',
+                )}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Danh sách dump có sẵn */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">
+            Bản dump có sẵn (cục bộ)
+            {!loadingDumps && <span className="ml-1 text-muted-foreground">— {totalDumps} file</span>}
+          </p>
+          {loadingDumps ? (
+            <div className="h-12 rounded-xl bg-muted animate-pulse" />
+          ) : relevantDumps.length === 0 ? (
+            <p className="text-xs text-muted-foreground bg-gray-50 rounded-xl px-4 py-3">
+              Không có dump nào cho <strong>{serviceLabel}</strong>. Hãy chạy backup trước.
+            </p>
+          ) : (
+            <div className="rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
+              {relevantDumps.map((f, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 bg-gray-50/30 text-xs">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 uppercase shrink-0">{f.svc}</span>
+                  <span className="font-mono text-gray-700 flex-1 truncate">{f.name}</span>
+                  <span className="text-muted-foreground shrink-0">{fmtBytes(f.size)}</span>
+                  <span className="text-muted-foreground shrink-0">{new Date(f.mtime).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Nguồn restore */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 mb-2">Nguồn restore</p>
+          <div className="space-y-2">
+            {/* Cục bộ */}
+            <label className={cn(
+              'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+              source === 'local' ? 'border-orange-400/40 bg-orange-50/30' : 'border-gray-100 hover:border-gray-200',
+            )}>
+              <input type="radio" className="accent-orange-600" checked={source === 'local'} onChange={() => setSource('local')} />
+              <div>
+                <p className="text-sm font-medium">Từ dumps cục bộ</p>
+                <p className="text-xs text-muted-foreground">Dùng file trong thư mục database/dumps/ trên server</p>
+              </div>
+            </label>
+
+            {/* Ổ cứng ngoài */}
+            {loadingDrives ? (
+              <div className="h-14 rounded-xl bg-muted animate-pulse" />
+            ) : drives.length === 0 ? (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-gray-200 text-xs text-muted-foreground">
+                <HardDrive className="h-4 w-4 shrink-0" />
+                Chưa phát hiện ổ cứng ngoài — hãy cắm USB/HDD rồi nhấn Làm mới
+              </div>
+            ) : drives.map(d => (
+              <label key={d.mountpoint} className={cn(
+                'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+                source === 'disk' && selectedDrive === d.mountpoint
+                  ? 'border-orange-400/40 bg-orange-50/30'
+                  : 'border-gray-100 hover:border-gray-200',
+              )}>
+                <input type="radio" className="accent-orange-600"
+                  checked={source === 'disk' && selectedDrive === d.mountpoint}
+                  onChange={() => { setSelectedDrive(d.mountpoint); setSource('disk'); }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium font-mono truncate">{d.mountpoint}</p>
+                  <p className="text-xs text-muted-foreground">{d.fstype} · {d.avail} còn trống / {d.size}</p>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0">{d.usePct}</span>
+              </label>
+            ))}
+
+            {/* Google Drive */}
+            {remotes.length > 0 && remotes.map(r => (
+              <label key={r.name} className={cn(
+                'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+                source === 'gdrive' && selectedRemote === r.name
+                  ? 'border-orange-400/40 bg-orange-50/30'
+                  : 'border-gray-100 hover:border-gray-200',
+              )}>
+                <input type="radio" className="accent-orange-600"
+                  checked={source === 'gdrive' && selectedRemote === r.name}
+                  onChange={() => { setSelectedRemote(r.name); setSource('gdrive'); }} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <Cloud className="h-4 w-4 text-blue-500 shrink-0" />
+                    <p className="text-sm font-medium">{r.name}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{r.type}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-5.5">Tải session mới nhất từ Google Drive về rồi restore</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Xác nhận */}
+        <label className={cn(
+          'flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+          confirmed ? 'border-red-200 bg-red-50/40' : 'border-gray-100 hover:border-gray-200',
+        )}>
+          <input type="checkbox" className="accent-red-600 h-4 w-4"
+            checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
+          <p className="text-sm text-gray-700">
+            Tôi hiểu rằng toàn bộ dữ liệu <strong>{serviceLabel}</strong> hiện tại sẽ bị xóa và không thể hoàn tác.
+          </p>
+        </label>
+
+        {/* Run button */}
+        <div className="flex items-center gap-3">
+          <button onClick={runRestore} disabled={!confirmed && runState !== 'running'}
+            className={cn(
+              'flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-xl text-white transition-colors',
+              runState === 'running'
+                ? 'bg-red-500 hover:bg-red-600'
+                : 'bg-orange-600 hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed',
+            )}>
+            {runState === 'running'
+              ? <><Loader2 className="h-4 w-4 animate-spin" />Dừng</>
+              : <><RotateCcw className="h-4 w-4" />Chạy restore {serviceLabel}</>}
+          </button>
+          {runState === 'success' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+          {runState === 'error' && <XCircle className="h-5 w-5 text-red-500" />}
+        </div>
+
+        {/* Output */}
+        {showOutput && output.length > 0 && <TerminalOutput lines={output} />}
+      </div>
+    </div>
+  );
 }
 
 const CRON_PRESETS = [
@@ -66,6 +575,11 @@ function ScheduleSection() {
   const [preset, setPreset] = useState(CRON_PRESETS[1].cron);
   const [customCron, setCustomCron] = useState('');
   const [cmd, setCmd] = useState<'run' | 'check'>('run');
+  const [drives, setDrives] = useState<DriveInfo[]>([]);
+  const [remotes, setRemotes] = useState<RcloneRemote[]>([]);
+  const [loadingDrives, setLoadingDrives] = useState(false);
+  const [diskDest, setDiskDest] = useState<string>('local');
+  const [gdriveDest, setGdriveDest] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState('');
 
@@ -79,16 +593,33 @@ function ScheduleSection() {
       .finally(() => setLoading(false));
   };
 
+  const loadDrives = () => {
+    setLoadingDrives(true);
+    Promise.all([
+      api.get<DriveInfo[]>('/admin/backup/drives'),
+      api.get<RcloneRemote[]>('/admin/backup/remotes'),
+    ]).then(([d, r]) => { setDrives(d); setRemotes(r); })
+      .catch(() => {})
+      .finally(() => setLoadingDrives(false));
+  };
+
   useEffect(() => { load(); }, []);
+
+  const openForm = () => { setShowForm(true); loadDrives(); };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!label.trim() || !cron.trim()) { setFormErr('Vui lòng điền đầy đủ thông tin'); return; }
     setSaving(true); setFormErr('');
     try {
-      const s = await api.post<BackupSchedule>('/admin/backup/schedules', { label: label.trim(), cron: cron.trim(), cmd });
+      const s = await api.post<BackupSchedule>('/admin/backup/schedules', {
+        label: label.trim(), cron: cron.trim(), cmd,
+        diskDest: diskDest === 'local' ? undefined : diskDest,
+        gdriveDest: gdriveDest || undefined,
+      });
       setSchedules(prev => [...prev, s]);
-      setLabel(''); setPreset(CRON_PRESETS[1].cron); setCustomCron(''); setShowForm(false);
+      setLabel(''); setPreset(CRON_PRESETS[1].cron); setCustomCron('');
+      setDiskDest('local'); setGdriveDest(''); setShowForm(false);
     } catch (err: any) { setFormErr(err.message || 'Tạo thất bại'); }
     setSaving(false);
   };
@@ -122,7 +653,7 @@ function ScheduleSection() {
             <span className="text-xs font-normal text-muted-foreground">({schedules.length})</span>
           )}
         </div>
-        <button onClick={() => setShowForm(v => !v)}
+        <button onClick={() => showForm ? setShowForm(false) : openForm()}
           className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
           <Plus className="h-3.5 w-3.5" />Thêm lịch
         </button>
@@ -156,6 +687,38 @@ function ScheduleSection() {
                   <option value="run">Backup thật (run)</option>
                   <option value="check">Dry-run (check)</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Ổ cứng ngoài</label>
+                {loadingDrives ? (
+                  <div className="h-9 rounded-lg bg-muted animate-pulse" />
+                ) : (
+                  <select value={diskDest} onChange={e => setDiskDest(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                    <option value="local">Chỉ lưu cục bộ</option>
+                    {drives.map(d => (
+                      <option key={d.mountpoint} value={d.mountpoint}>
+                        {d.mountpoint} ({d.avail} trống)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1 flex items-center gap-1">
+                  <Cloud className="h-3 w-3" />Google Drive (tùy chọn)
+                </label>
+                {loadingDrives ? (
+                  <div className="h-9 rounded-lg bg-muted animate-pulse" />
+                ) : (
+                  <select value={gdriveDest} onChange={e => setGdriveDest(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                    <option value="">Không lưu lên Drive</option>
+                    {remotes.map(r => (
+                      <option key={r.name} value={r.name}>{r.name} ({r.type})</option>
+                    ))}
+                  </select>
+                )}
               </div>
               {isCustom && (
                 <div className="sm:col-span-2">
@@ -218,6 +781,16 @@ function ScheduleSection() {
                   </div>
                   <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                     <span className="text-xs font-mono text-gray-500">{s.cron}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <HardDrive className="h-3 w-3" />
+                      {s.diskDest ? <span className="font-mono">{s.diskDest}</span> : 'Cục bộ'}
+                    </span>
+                    {s.gdriveDest && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Cloud className="h-3 w-3" />
+                        <span className="font-mono">{s.gdriveDest}</span>
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" />Tiếp theo: {fmtDate(s.nextRunAt)}
                     </span>
@@ -548,6 +1121,12 @@ export default function BackupPage() {
           <TerminalOutput lines={output} />
         </div>
       )}
+
+      {/* DB backup section */}
+      <DbBackupSection />
+
+      {/* DB restore section */}
+      <DbRestoreSection />
 
       {/* Schedule section */}
       <ScheduleSection />

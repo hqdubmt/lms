@@ -7,23 +7,63 @@ DUMP_DIR="$SCRIPT_DIR/dumps"
 RCLONE_BIN="$(dirname "$SCRIPT_DIR")/codebackup/rclone_bin"
 [[ ! -f "$RCLONE_BIN" ]] && RCLONE_BIN="$(which rclone 2>/dev/null || echo '')"
 
-# Parse --disk argument
+# Parse --disk / --gdrive arguments
 _DISK_OVERRIDE=""
+_GDRIVE_REMOTE=""
+_GDRIVE_TMP=""
 _POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --disk) _DISK_OVERRIDE="${2:-}"; shift 2 ;;
+    --disk)   _DISK_OVERRIDE="${2:-}";   shift 2 ;;
+    --gdrive) _GDRIVE_REMOTE="${2:-}";   shift 2 ;;
     *) _POSITIONAL+=("$1"); shift ;;
   esac
 done
 set -- "${_POSITIONAL[@]+"${_POSITIONAL[@]}"}"
 
-if [[ -n "$_DISK_OVERRIDE" ]]; then
+# Ưu tiên: gdrive > disk > local
+if [[ -n "$_GDRIVE_REMOTE" ]]; then
+  if [[ -z "$RCLONE_BIN" ]] || ! command -v "$RCLONE_BIN" &>/dev/null && [[ ! -f "$RCLONE_BIN" ]]; then
+    echo -e "\033[0;31m✗\033[0m Không tìm thấy rclone — không thể restore từ Drive" >&2; exit 1
+  fi
+  # Tìm session backup mới nhất trên Drive
+  echo -e "\033[1;33m→\033[0m Tìm kiếm backup trên Drive: ${_GDRIVE_REMOTE}:"
+  _LATEST_SESSION=""
+  while IFS= read -r line; do
+    local_name=$(echo "$line" | awk '{print $NF}')
+    if [[ "$local_name" == lms_backup_* ]]; then
+      _LATEST_SESSION="$local_name"
+      break
+    fi
+  done < <("$RCLONE_BIN" lsd "${_GDRIVE_REMOTE}:" 2>/dev/null | sort -rk5)
+
+  if [[ -z "$_LATEST_SESSION" ]]; then
+    echo -e "\033[0;31m✗\033[0m Không tìm thấy backup nào trên Drive ${_GDRIVE_REMOTE}:" >&2; exit 1
+  fi
+
+  _GDRIVE_TMP="/tmp/lms_gdrive_restore_$$"
+  mkdir -p "$_GDRIVE_TMP"
+  echo -e "\033[1;33m→\033[0m Tải xuống: ${_GDRIVE_REMOTE}:${_LATEST_SESSION}/ → ${_GDRIVE_TMP}"
+  "$RCLONE_BIN" copy "${_GDRIVE_REMOTE}:${_LATEST_SESSION}/" "$_GDRIVE_TMP/" 2>&1 || {
+    echo -e "\033[0;31m✗\033[0m Tải xuống từ Drive thất bại" >&2
+    rm -rf "$_GDRIVE_TMP"; exit 1
+  }
+  echo -e "\033[0;32m✓\033[0m Đã tải từ Drive: ${_LATEST_SESSION}"
+  DUMP_DIR="$_GDRIVE_TMP"
+
+elif [[ -n "$_DISK_OVERRIDE" ]]; then
   if [[ ! -d "$_DISK_OVERRIDE" ]]; then
     echo -e "\033[0;31m✗\033[0m Đường dẫn không tồn tại: $_DISK_OVERRIDE" >&2; exit 1
   fi
   DUMP_DIR="$_DISK_OVERRIDE"
+
+  # Tự chọn session mới nhất nếu có
+  _LATEST=$(ls -dt "$DUMP_DIR"/lms_backup_* 2>/dev/null | head -1 || true)
+  [[ -n "$_LATEST" ]] && DUMP_DIR="$_LATEST" && echo -e "\033[1;33m→\033[0m Dùng session: $(basename "$DUMP_DIR")"
 fi
+
+# Dọn thư mục tạm khi thoát
+[[ -n "$_GDRIVE_TMP" ]] && trap 'rm -rf "$_GDRIVE_TMP"' EXIT
 
 # ── Màu ──────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'

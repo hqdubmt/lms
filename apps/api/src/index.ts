@@ -25,6 +25,8 @@ import { adminRoutes } from './modules/admin/admin.routes';
 import { classRoutes } from './modules/admin/class.routes';
 import { liveSessionsRoutes } from './modules/admin/live-sessions.routes';
 import { backupRoutes } from './modules/admin/backup.routes';
+import { markitdownRoutes } from './modules/admin/markitdown.routes';
+import { documentRoutes } from './modules/documents/document.routes';
 import { uploadRoutes } from './modules/upload/upload.routes';
 import { todoRoutes } from './modules/todo/todo.routes';
 import { languageRoutes } from './modules/language/language.routes';
@@ -36,6 +38,11 @@ import { siteSettingsRoutes } from './modules/site-settings/site-settings.routes
 import { announcementRoutes } from './modules/announcements/announcement.routes';
 import { forumRoutes } from './modules/forum/forum.routes';
 import { quizRoutes } from './modules/quiz/quiz.routes';
+import { learningRoutes } from './modules/ai/learning.routes';
+import { analyticsRoutes } from './modules/ai/analytics.routes';
+import { knowledgeGraphRoutes } from './modules/ai/knowledge-graph.routes';
+import { instructorToolsRoutes } from './modules/instructor/instructor-tools.routes';
+import { adminStatsRoutes } from './modules/ai/admin-stats.routes';
 
 const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
@@ -117,6 +124,9 @@ if (cluster.isPrimary) {
     await app.register(mathRoutes, { prefix: '/math' });
     await app.register(vietRoutes, { prefix: '/viet' });
     await app.register(aiRoutes, { prefix: '/ai' });
+    await app.register(learningRoutes, { prefix: '/ai' });
+    await app.register(analyticsRoutes, { prefix: '/ai/analytics' });
+    await app.register(knowledgeGraphRoutes, { prefix: '/ai' });
     await app.register(mediaRoutes, { prefix: '/media' });
     await app.register(siteSettingsRoutes, { prefix: '/site-settings' });
     await app.register(announcementRoutes, { prefix: '/announcements' });
@@ -126,6 +136,10 @@ if (cluster.isPrimary) {
     await app.register(classRoutes, { prefix: '/admin' });
     await app.register(liveSessionsRoutes, { prefix: '/admin' });
     await app.register(backupRoutes, { prefix: '/admin' });
+    await app.register(markitdownRoutes, { prefix: '/admin' });
+    await app.register(documentRoutes, { prefix: '/admin/documents' });
+    await app.register(instructorToolsRoutes, { prefix: '/instructor' });
+    await app.register(adminStatsRoutes, { prefix: '/ai' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

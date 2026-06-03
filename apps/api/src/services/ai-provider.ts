@@ -70,13 +70,13 @@ async function groqChat(messages: ChatMessage[]): Promise<string> {
   return res.choices[0]?.message?.content ?? '';
 }
 
-async function* groqStream(messages: ChatMessage[]): AsyncGenerator<string> {
+async function* groqStream(messages: ChatMessage[], maxTokens = 768): AsyncGenerator<string> {
   const client = getGroqClient();
   if (!client) throw new Error('Groq không khả dụng');
   const stream = await client.chat.completions.create({
     model: GROQ_MODEL,
     messages: messages as any,
-    max_tokens: 512,
+    max_tokens: maxTokens,
     temperature: 0.7,
     stream: true,
   });
@@ -156,7 +156,7 @@ async function geminiChat(messages: ChatMessage[]): Promise<string> {
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
-async function* geminiStream(messages: ChatMessage[]): AsyncGenerator<string> {
+async function* geminiStream(messages: ChatMessage[], maxTokens = 768): AsyncGenerator<string> {
   const key = getGeminiKey();
   if (!key) throw new Error('Gemini không khả dụng');
 
@@ -174,7 +174,7 @@ async function* geminiStream(messages: ChatMessage[]): AsyncGenerator<string> {
       body: JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
         contents: convo,
-        generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
       }),
       signal: AbortSignal.timeout(30_000),
     },
@@ -384,12 +384,13 @@ export async function aiChatOnce(
 
 export async function* aiChatStream(
   messages: ChatMessage[],
-  opts?: { prefer?: ProviderPref },
+  opts?: { prefer?: ProviderPref; maxTokens?: number },
 ): AsyncGenerator<string> {
+  const maxTokens = opts?.maxTokens ?? 768;
   for (const provider of buildProviderOrder(opts?.prefer)) {
     try {
-      if (provider === 'groq' && getGroqClient()) { yield* groqStream(messages); return; }
-      if (provider === 'gemini' && getGeminiKey()) { yield* geminiStream(messages); return; }
+      if (provider === 'groq' && getGroqClient()) { yield* groqStream(messages, maxTokens); return; }
+      if (provider === 'gemini' && getGeminiKey()) { yield* geminiStream(messages, maxTokens); return; }
       if (provider === 'ollama') { yield* ollamaStream(messages); return; } // luôn thử
     } catch { /* thử provider tiếp theo */ }
   }

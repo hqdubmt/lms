@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
-import { extractText, generateMathQuestionsWithAI } from '../../services/file-import';
+import { extractText, extractMarkdown, generateMathQuestionsWithAI } from '../../services/file-import';
 import {
   detectCurriculum, mathClean, unicodeNormalize,
   processMathDocument, generateQuestionVariations,
@@ -792,7 +792,7 @@ export async function mathRoutes(app: FastifyInstance) {
     if (!data) throw { statusCode: 400, message: 'Không có file' };
     const buffer = await data.toBuffer();
     let text: string;
-    try { text = await extractText(buffer, data.mimetype, data.filename); }
+    try { text = await extractMarkdown(buffer, data.mimetype, data.filename); }
     catch (e: any) { throw { statusCode: 400, message: `Không đọc được file: ${e.message}` }; }
     if (!text?.trim()) throw { statusCode: 400, message: 'File không có nội dung văn bản' };
     // Auto-detect curriculum on preview so UI can pre-fill grade/textbook
@@ -812,7 +812,7 @@ export async function mathRoutes(app: FastifyInstance) {
     const buffer = await data.toBuffer();
     let rawText: string;
     try {
-      rawText = await extractText(buffer, data.mimetype, data.filename);
+      rawText = await extractMarkdown(buffer, data.mimetype, data.filename);
     } catch (e: any) {
       throw { statusCode: 400, message: `Không đọc được file: ${e.message}` };
     }
@@ -938,7 +938,7 @@ export async function mathRoutes(app: FastifyInstance) {
 
     let extractedText: string | null = null;
     try {
-      const text = await extractText(buffer, data.mimetype, data.filename);
+      const text = await extractMarkdown(buffer, data.mimetype, data.filename);
       extractedText = text?.trim() || null;
     } catch { /* image or unsupported — text stays null */ }
 

@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
     Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
-    Image as ImageIcon, Gamepad2,
+    Image as ImageIcon, Gamepad2, Brain, Bot, FileType2,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -37,6 +37,7 @@ const BASE_NAV_GROUPS = [
             { href: '/math',           label: 'Toán học',   icon: Calculator },
             { href: '/viet',           label: 'Tiếng Việt', icon: BookType },
             { href: '/quiz',           label: 'Quiz Game',  icon: Gamepad2 },
+            { href: '/learning',       label: 'Tiến độ AI', icon: Brain },
             { href: '/announcements',  label: 'Thông báo',  icon: Bell },
             { href: '/schedule',       label: 'Phòng học',  icon: MonitorPlay },
         ],
@@ -58,15 +59,24 @@ const INSTRUCTOR_HREF_MAP: Record<string, string> = {
     '/announcements':'/instructor/announcements',
 };
 
+const INSTRUCTOR_EXTRA_GROUP = {
+    label: 'SOẠN BÀI',
+    items: [
+        { href: '/instructor/copilot', label: 'Copilot AI', icon: Bot,      exact: false as const },
+        { href: '/instructor/convert', label: 'Convert MD', icon: FileType2, exact: false as const },
+    ],
+};
+
 function getNavGroups(role?: string) {
     if (role === 'INSTRUCTOR' || role === 'ADMIN') {
-        return BASE_NAV_GROUPS.map((group) => ({
+        const remapped = BASE_NAV_GROUPS.map((group) => ({
             ...group,
             items: group.items.map((item) => ({
                 ...item,
                 href: INSTRUCTOR_HREF_MAP[item.href] ?? item.href,
             })),
         }));
+        return [...remapped, INSTRUCTOR_EXTRA_GROUP];
     }
     return BASE_NAV_GROUPS;
 }

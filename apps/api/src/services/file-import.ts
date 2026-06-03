@@ -3,6 +3,17 @@ import { env } from '../config/env';
 import { callAIForJSON, isAnyAIAvailable } from './ai-provider';
 import { processMathDocument, type ProcessOpts } from './math-pipeline';
 import { processVietDocument, type VietProcessOpts } from './viet-pipeline';
+import { convertToMarkdown, cleanMarkdown } from './document-ingestion';
+
+/**
+ * Extract file content as clean Markdown (PHASE K Document Ingestion Layer).
+ * Replaces plain extractText() for AI pipeline input — structured markdown
+ * gives better results than flat text.
+ */
+export async function extractMarkdown(buffer: Buffer, mimetype: string, filename: string): Promise<string> {
+  const { markdown } = await convertToMarkdown(buffer, filename, mimetype);
+  return cleanMarkdown(markdown);
+}
 
 function chunkText(text: string, size = 2000): string[] {
   const chunks: string[] = [];

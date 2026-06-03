@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Loader2, Sparkles, ChevronDown, ChevronUp, ExternalLink,
   FileText, Trash2, FileSearch, RefreshCw, X,
-  FileImage, File, CheckCircle2, AlertCircle, Clock, FileUp,
+  FileImage, File, CheckCircle2, AlertCircle, Clock, FileUp, Bot,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { CATEGORY_OPTIONS } from '@/constants/viet';
 import Link from 'next/link';
+import { CopilotPanel } from '@/components/import/CopilotPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,6 +247,7 @@ export function VietImportPanel({ onDone }: { onDone: (count: number) => void })
   const [selectedDoc, setSelectedDoc] = useState<VietDoc | null>(null);
   const [analyzeDoc, setAnalyzeDoc] = useState<VietDoc | null>(null);
   const [analyzeResult, setAnalyzeResult] = useState<VietImportResult | null>(null);
+  const [viewMode, setViewMode] = useState<'view' | 'copilot'>('view');
 
   const loadDocs = useCallback(async () => {
     try {
@@ -400,12 +402,24 @@ export function VietImportPanel({ onDone }: { onDone: (count: number) => void })
               <span className="text-xs text-gray-400 shrink-0">{fmtSize(selectedDoc.size)}</span>
               <StatusBadge status={selectedDoc.status} />
               {!selectedDoc.mimetype.startsWith('image/') && (
-                <button
-                  onClick={() => setAnalyzeDoc(selectedDoc)}
-                  disabled={selectedDoc.status === 'analyzing'}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50 shrink-0">
-                  <Sparkles className="h-3 w-3" />AI phân tích
-                </button>
+                <>
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs shrink-0">
+                    <button onClick={() => setViewMode('view')}
+                      className={cn('px-2.5 py-1 transition-colors', viewMode === 'view' ? 'bg-gray-100 text-gray-700 font-medium' : 'text-gray-500 hover:bg-gray-50')}>
+                      Xem
+                    </button>
+                    <button onClick={() => setViewMode('copilot')}
+                      className={cn('flex items-center gap-1 px-2.5 py-1 transition-colors', viewMode === 'copilot' ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-500 hover:bg-gray-50')}>
+                      <Bot className="h-3 w-3" />Copilot
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setAnalyzeDoc(selectedDoc)}
+                    disabled={selectedDoc.status === 'analyzing'}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50 shrink-0">
+                    <Sparkles className="h-3 w-3" />AI phân tích
+                  </button>
+                </>
               )}
               <button onClick={() => setSelectedDoc(null)} className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 shrink-0">
                 <X className="h-3.5 w-3.5" />
@@ -413,8 +427,17 @@ export function VietImportPanel({ onDone }: { onDone: (count: number) => void })
             </div>
 
             {/* Viewer body */}
-            <div className="flex-1 overflow-hidden p-2">
-              <InlineViewer doc={selectedDoc} />
+            <div className="flex-1 overflow-hidden">
+              {viewMode === 'view' ? (
+                <div className="h-full p-2"><InlineViewer doc={selectedDoc} /></div>
+              ) : (
+                <CopilotPanel
+                  textEndpoint={`/viet/docs/${selectedDoc.id}/text`}
+                  defaultGrade={selectedDoc.grade}
+                  defaultSubject="Tiếng Việt"
+                  accentClass="bg-red-600"
+                />
+              )}
             </div>
 
             {/* Analysis result */}

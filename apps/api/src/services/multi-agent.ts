@@ -1,0 +1,212 @@
+/**
+ * Multi-Agent System — Phase 3
+ *
+ * Nhiều agent xử lý song song, mỗi agent bổ sung context chuyên biệt
+ * vào system prompt của main LLM.
+ * Không thay đổi luồng chat hiện tại — chỉ mở rộng qua Orchestrator.
+ */
+
+import type { BrainState } from './conversation-brain';
+import { getTopConcepts } from './knowledge-graph';
+
+export type AgentType = 'tutor' | 'math' | 'quiz' | 'homework' | 'language' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach';
+
+export interface AgentResult {
+  agent: AgentType;
+  hint: string;
+}
+
+type Subject = 'math' | 'language' | 'viet' | 'general';
+
+// ─── Individual Agents ────────────────────────────────────────────────────────
+
+function tutorAgent(brain: BrainState): AgentResult | null {
+  const parts: string[] = [];
+
+  if (brain.level) {
+    const levelMap: Record<string, string> = {
+      beginner:     'cơ bản — giải thích đơn giản, nhiều ví dụ cụ thể',
+      intermediate: 'trung bình — cân bằng lý thuyết và thực hành',
+      advanced:     'nâng cao — ngắn gọn, tập trung vào điểm mấu chốt',
+    };
+    parts.push(`Mức độ học sinh: ${levelMap[brain.level] ?? brain.level}.`);
+  }
+
+  if (brain.mistakes.length > 0) {
+    const recent = brain.mistakes.slice(-2).map(m => m.type);
+    parts.push(`Lỗi thường gặp: ${recent.join(', ')} — cần chú ý giải thích để tránh nhầm lẫn.`);
+  }
+
+  const mastered = Object.entries(brain.mastery)
+    .filter(([, v]) => v >= 0.8)
+    .map(([k]) => k)
+    .slice(0, 3);
+  if (mastered.length > 0) {
+    parts.push(`Đã thành thạo: ${mastered.join(', ')} — không cần giải thích lại kiến thức cơ bản này.`);
+  }
+
+  if (!parts.length) return null;
+  return { agent: 'tutor', hint: `[Tutor Agent] ${parts.join(' ')}` };
+}
+
+function mathAgent(message: string): AgentResult | null {
+  const MATH_KEYWORDS =
+    /phương trình|đạo hàm|tích phân|hàm số|xác suất|hình học|đại số|lượng giác|số học|tổ hợp|ma trận|vector|giới hạn|chuỗi số|bất đẳng thức|căn thức|logarit|mũ/i;
+  if (!MATH_KEYWORDS.test(message)) return null;
+  return {
+    agent: 'math',
+    hint: '[Math Agent] Dùng LaTeX ($..$ inline, $$...$$ block) cho mọi công thức toán. Trình bày: Phân tích đề → Phương pháp giải → Giải chi tiết từng bước → Kiểm tra / kết luận.',
+  };
+}
+
+function quizAgent(brain: BrainState): AgentResult {
+  const weak = Object.entries(brain.mastery)
+    .filter(([, v]) => v < 0.5)
+    .map(([k]) => k);
+  const numQ = weak.length > 0 ? 5 : 4;
+  const topicHint = weak.length > 0
+    ? `Ưu tiên kiểm tra chủ đề yếu: ${weak.slice(0, 2).join(', ')}.`
+    : 'Bao phủ đều các chủ đề đã học.';
+  return {
+    agent: 'quiz',
+    hint: `[Quiz Agent] Tạo ${numQ} câu trắc nghiệm. Format bắt buộc:\n**Câu N:** [nội dung câu hỏi]\nA. ... B. ... C. ... D. ...\n**Đáp án: X**\n${topicHint}`,
+  };
+}
+
+function homeworkAgent(subject: Subject): AgentResult {
+  const rubrics: Record<Subject, string> = {
+    math:     'Tiêu chí: Đặt vấn đề 30% + Tính toán đúng 40% + Kết quả chính xác 20% + Trình bày 10%.',
+    viet:     'Tiêu chí: Chính tả 25% + Ngữ pháp 25% + Diễn đạt 25% + Nội dung phù hợp 25%.',
+    language: 'Criteria: Grammar 30% + Vocabulary 30% + Coherence 20% + Accuracy 20%.',
+    general:  'Tiêu chí: Hiểu đúng yêu cầu 30% + Nội dung đầy đủ 40% + Trình bày rõ ràng 30%.',
+  };
+  return {
+    agent: 'homework',
+    hint: `[Homework Agent] ${rubrics[subject] ?? rubrics.general} Bắt buộc có **Điểm: X/10** ở cuối phản hồi.`,
+  };
+}
+
+function reviewAgent(brain: BrainState): AgentResult | null {
+  if (brain.mistakes.length < 3) return null;
+  const types = [...new Set(brain.mistakes.slice(-4).map(m => m.type))];
+  return {
+    agent: 'review',
+    hint: `[Review Agent] Học sinh hay mắc lỗi: ${types.join(', ')}. Chủ động nhắc nhở và giải thích để tránh tái phạm trong phản hồi này.`,
+  };
+}
+
+function researchAgent(ragSize: number, topic: string | undefined | null): AgentResult | null {
+  if (ragSize === 0) return null;
+  const topicPart = topic ? ` (chủ đề: ${topic})` : '';
+  return {
+    agent: 'research',
+    hint: `[Research Agent] Có ${ragSize} tài liệu giáo trình liên quan${topicPart}. Ưu tiên dựa vào nội dung giáo trình đã cung cấp; chỉ dùng kiến thức chung khi không có trong tài liệu.`,
+  };
+}
+
+// ─── Knowledge Graph Agent ────────────────────────────────────────────────────
+
+async function knowledgeGraphAgent(
+  userId: string,
+  subject: Subject,
+  message: string,
+): Promise<AgentResult | null> {
+  try {
+    const topConcepts = await getTopConcepts(userId, subject, 5);
+    if (topConcepts.length === 0) return null;
+
+    const relevant = topConcepts.filter(c => {
+      const pattern = new RegExp(c.label.replace(/\s+/g, '.?'), 'i');
+      return pattern.test(message);
+    });
+
+    if (relevant.length === 0) return null;
+
+    const conceptList = relevant.map(c => {
+      const childNames = c.children.slice(0, 3).join(', ');
+      return childNames ? `${c.label} (liên quan: ${childNames})` : c.label;
+    }).join('; ');
+
+    return {
+      agent: 'knowledge_graph',
+      hint: `[Knowledge Graph Agent] Chủ đề liên quan trong knowledge graph: ${conceptList}. Kết nối khái niệm này với những gì học sinh đã biết.`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Learning Coach Agent ─────────────────────────────────────────────────────
+
+function learningCoachAgent(brain: BrainState, subject: Subject): AgentResult | null {
+  const masteryEntries = Object.entries(brain.mastery) as [string, number][];
+  if (masteryEntries.length === 0) return null;
+
+  const weak = masteryEntries.filter(([, v]) => v < 0.4).map(([k]) => k);
+  const near = masteryEntries.filter(([, v]) => v >= 0.4 && v < 0.7).map(([k]) => k);
+
+  const parts: string[] = [];
+
+  if (weak.length > 0) {
+    parts.push(`Cần củng cố: ${weak.slice(0, 2).join(', ')}`);
+  }
+  if (near.length > 0) {
+    parts.push(`Gần thành thạo: ${near.slice(0, 2).join(', ')} — chỉ cần thêm luyện tập`);
+  }
+  if (brain.messageCount > 0 && brain.messageCount % 5 === 0) {
+    parts.push(`Học sinh đã chat ${brain.messageCount} lần — nên tổng kết kiến thức đã học`);
+  }
+
+  if (parts.length === 0) return null;
+
+  return {
+    agent: 'learning_coach',
+    hint: `[Learning Coach] ${parts.join('. ')}. Khuyến khích và động viên học sinh tiếp tục cố gắng.`,
+  };
+}
+
+// ─── Multi-Agent Runner ───────────────────────────────────────────────────────
+
+export interface MultiAgentParams {
+  subject: string;
+  mode: string;
+  brain: BrainState;
+  message: string;
+  ragHits?: number;
+  userId?: string;
+}
+
+export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResult[]> {
+  const { subject, mode, brain, message, ragHits = 0, userId } = params;
+  const s = subject as Subject;
+
+  // Chạy song song tất cả agents liên quan
+  const tasks: Array<Promise<AgentResult | null>> = [
+    Promise.resolve(reviewAgent(brain)),
+    Promise.resolve(researchAgent(ragHits, brain.topic)),
+    Promise.resolve(learningCoachAgent(brain, s)),
+  ];
+
+  if (userId) {
+    tasks.push(knowledgeGraphAgent(userId, s, message));
+  }
+
+  if (mode === 'tutor' || mode === 'exercise') {
+    tasks.push(Promise.resolve(tutorAgent(brain)));
+  }
+
+  if (s === 'math') {
+    tasks.push(Promise.resolve(mathAgent(message)));
+  }
+
+  if (mode === 'quiz') {
+    tasks.push(Promise.resolve(quizAgent(brain)));
+  }
+
+  if (mode === 'homework') {
+    tasks.push(Promise.resolve(homeworkAgent(s)));
+  }
+
+  const results = await Promise.all(tasks);
+  return results.filter((r): r is AgentResult => r !== null);
+}

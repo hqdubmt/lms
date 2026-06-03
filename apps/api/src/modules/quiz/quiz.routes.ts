@@ -2,6 +2,16 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
 import { ollamaChat } from '../../services/ollama';
+import { getBrain, updateBrain, updateMastery } from '../../services/conversation-brain';
+import { syncLearningStateFromBrain } from '../../services/learning-state';
+
+function topicToSubject(topic: string): string {
+  const t = topic.toLowerCase();
+  if (/toán|math|số|đại số|hình học|tích phân|lượng giác/.test(t)) return 'math';
+  if (/tiếng việt|viet|văn|ngữ|chính tả|từ vựng tiếng việt/.test(t)) return 'viet';
+  if (/english|tiếng anh|language|grammar|vocabulary/.test(t)) return 'language';
+  return 'general';
+}
 
 export async function quizRoutes(app: FastifyInstance) {
   // List quiz sets
@@ -187,6 +197,21 @@ export async function quizRoutes(app: FastifyInstance) {
     const attempt = await prisma.quizAttempt.create({
       data: { quizSetId: id, userId: sub, score, answers: graded as any, timeTaken },
     });
+
+    // Async: sync quiz result → AI brain → learning state
+    const subject = topicToSubject(quiz.topic);
+    (async () => {
+      try {
+        await updateMastery(sub, subject, quiz.topic, score / 100);
+        if (score < 60) {
+          await updateBrain(sub, subject, {
+            mistakes: [{ type: `Quiz "${quiz.title}": điểm thấp (${score}%)`, count: 1, lastSeen: Date.now() }],
+          });
+        }
+        const brain = await getBrain(sub, subject);
+        await syncLearningStateFromBrain(sub, subject, brain);
+      } catch { /* fire-and-forget */ }
+    })();
 
     return { attemptId: attempt.id, score, correct, total: quiz.questions.length, graded };
   });
@@ -423,5 +448,44 @@ export async function quizRoutes(app: FastifyInstance) {
     });
 
     return quiz;
+  });
+
+  // ── Analytics for current user ────────────────────────────────────────────────
+  app.get('/analytics', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+
+    const attempts = await prisma.quizAttempt.findMany({
+      where: { userId: sub },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { quizSet: { select: { title: true, topic: true } } },
+    });
+
+    const total = attempts.length;
+    const avgScore = total > 0 ? Math.round(attempts.reduce((s, a) => s + a.score, 0) / total) : 0;
+    const bestScore = total > 0 ? Math.max(...attempts.map(a => a.score)) : 0;
+
+    const topicMap: Record<string, { topic: string; count: number; totalScore: number; best: number }> = {};
+    for (const a of attempts) {
+      const t = a.quizSet.topic || 'general';
+      if (!topicMap[t]) topicMap[t] = { topic: t, count: 0, totalScore: 0, best: 0 };
+      topicMap[t].count++;
+      topicMap[t].totalScore += a.score;
+      topicMap[t].best = Math.max(topicMap[t].best, a.score);
+    }
+
+    return {
+      totalQuizzes: total,
+      avgScore,
+      bestScore,
+      byTopic: Object.values(topicMap)
+        .map(t => ({ topic: t.topic, attempts: t.count, avgScore: Math.round(t.totalScore / t.count), bestScore: t.best }))
+        .sort((a, b) => b.attempts - a.attempts)
+        .slice(0, 8),
+      recentAttempts: attempts.slice(0, 5).map(a => ({
+        id: a.id, title: a.quizSet.title, topic: a.quizSet.topic,
+        score: a.score, timeTaken: a.timeTaken, createdAt: a.createdAt.toISOString(),
+      })),
+    };
   });
 }

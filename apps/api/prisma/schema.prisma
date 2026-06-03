@@ -67,6 +67,7 @@ model User {
   forumLikes          ForumLike[]          @relation("ForumLikeUser")
   quizSets            QuizSet[]            @relation("QuizSetAuthor")
   quizAttempts        QuizAttempt[]        @relation("QuizAttemptUser")
+  documents           Document[]           @relation("DocumentImporter")
   @@index([email])
   @@index([role])
 }
@@ -1399,4 +1400,31 @@ model QuizAttempt {
   @@index([quizSetId])
   @@index([userId])
   @@index([quizSetId, score])
+}
+
+// ─── Document Ingestion Layer ─────────────────────────────────────────────────
+
+model Document {
+  id              String   @id @default(uuid())
+  filename        String
+  subject         String   @default("general")
+  grade           Int?
+  sourceType      String
+  markdownContent String?  @db.Text
+  rawText         String?  @db.Text
+  minioKey        String?
+  chunkCount      Int      @default(0)
+  embeddingStatus String   @default("pending")
+  qualityScore    Float?
+  importedBy      String
+  metadata        Json?
+  importedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  importer        User     @relation("DocumentImporter", fields: [importedBy], references: [id], onDelete: Cascade)
+
+  @@index([importedBy])
+  @@index([subject])
+  @@index([embeddingStatus])
+  @@index([subject, grade])
+  @@map("documents")
 }

@@ -7,14 +7,16 @@ DUMP_DIR="$SCRIPT_DIR/dumps"
 KEEP_DAYS="${KEEP_DAYS:-7}"
 TS="$(date '+%Y-%m-%d_%H-%M-%S')"
 DISK_DEST="${DISK_DEST:-}"
+GDRIVE_REMOTE="${GDRIVE_REMOTE:-}"
 RCLONE_BIN="$(dirname "$SCRIPT_DIR")/codebackup/rclone_bin"
 [[ ! -f "$RCLONE_BIN" ]] && RCLONE_BIN="$(which rclone 2>/dev/null || echo '')"
 
-# Parse --disk argument
+# Parse --disk / --gdrive arguments
 _POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --disk) DISK_DEST="${2:-}"; shift 2 ;;
+    --disk)   DISK_DEST="${2:-}";    shift 2 ;;
+    --gdrive) GDRIVE_REMOTE="${2:-}"; shift 2 ;;
     *) _POSITIONAL+=("$1"); shift ;;
   esac
 done
@@ -238,6 +240,39 @@ copy_to_disk() {
   ok "Ổ cứng → $disk_session ($size)"
 }
 
+# ── Sao chép lên Google Drive ────────────────────────────────────────────────
+copy_to_gdrive() {
+  [[ -z "$GDRIVE_REMOTE" ]] && return
+  if [[ -z "$RCLONE_BIN" || ! -x "$(command -v "$RCLONE_BIN" 2>/dev/null || echo "$RCLONE_BIN")" ]]; then
+    err "Không tìm thấy rclone — bỏ qua Google Drive"
+    ERRORS=$((ERRORS+1)); return
+  fi
+  local remote_path="${GDRIVE_REMOTE}lms_backup_${TS}/"
+  info "Sao chép lên Google Drive: ${remote_path}"
+  local gdrive_ok=0
+  if [[ -n "${PG_FILE:-}" && -f "$PG_FILE" ]]; then
+    "$RCLONE_BIN" copy "$PG_FILE" "${remote_path}postgres/" --quiet \
+      && { ok "PostgreSQL → Drive OK"; gdrive_ok=$((gdrive_ok+1)); } \
+      || { err "PostgreSQL → Drive THẤT BẠI"; ERRORS=$((ERRORS+1)); }
+  fi
+  if [[ -n "${MONGO_FILE:-}" && -f "$MONGO_FILE" ]]; then
+    "$RCLONE_BIN" copy "$MONGO_FILE" "${remote_path}mongo/" --quiet \
+      && { ok "MongoDB → Drive OK"; gdrive_ok=$((gdrive_ok+1)); } \
+      || { err "MongoDB → Drive THẤT BẠI"; ERRORS=$((ERRORS+1)); }
+  fi
+  if [[ -n "${REDIS_FILE:-}" && -f "$REDIS_FILE" ]]; then
+    "$RCLONE_BIN" copy "$REDIS_FILE" "${remote_path}redis/" --quiet \
+      && { ok "Redis → Drive OK"; gdrive_ok=$((gdrive_ok+1)); } \
+      || { err "Redis → Drive THẤT BẠI"; ERRORS=$((ERRORS+1)); }
+  fi
+  if [[ -n "${MINIO_DEST:-}" && -d "$MINIO_DEST" ]]; then
+    "$RCLONE_BIN" copy "$MINIO_DEST" "${remote_path}minio/" --quiet \
+      && { ok "MinIO → Drive OK"; gdrive_ok=$((gdrive_ok+1)); } \
+      || { err "MinIO → Drive THẤT BẠI"; ERRORS=$((ERRORS+1)); }
+  fi
+  [[ $gdrive_ok -gt 0 ]] && ok "Google Drive → ${remote_path} (${gdrive_ok} dịch vụ)"
+}
+
 # ── Xoay vòng dump cũ ────────────────────────────────────────────────────────
 rotate_dumps() {
   info "Xóa dump cũ hơn ${KEEP_DAYS} ngày..."
@@ -303,10 +338,10 @@ main_menu() {
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 case "${1:-menu}" in
-  postgres) backup_postgres; copy_to_disk; rotate_dumps; summary ;;
-  mongo)    backup_mongo;    copy_to_disk; rotate_dumps; summary ;;
-  redis)    backup_redis;    copy_to_disk; rotate_dumps; summary ;;
-  minio)    backup_minio;    copy_to_disk; summary ;;
+  postgres) backup_postgres; copy_to_disk; copy_to_gdrive; rotate_dumps; summary ;;
+  mongo)    backup_mongo;    copy_to_disk; copy_to_gdrive; rotate_dumps; summary ;;
+  redis)    backup_redis;    copy_to_disk; copy_to_gdrive; rotate_dumps; summary ;;
+  minio)    backup_minio;    copy_to_disk; copy_to_gdrive; summary ;;
   all)
     backup_postgres
     backup_mongo
@@ -314,6 +349,7 @@ case "${1:-menu}" in
     backup_minio
     rotate_dumps
     copy_to_disk
+    copy_to_gdrive
     summary
     ;;
   menu|*)
