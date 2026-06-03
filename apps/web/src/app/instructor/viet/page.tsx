@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   Plus, Loader2, X, Sparkles,
   Search, Brain, FileUp, Bot, WifiOff, BarChart2,
+  Folder, FolderOpen, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,82 @@ import { SetForm } from './_components/SetForm';
 import { GenExerciseForm } from './_components/GenExerciseForm';
 import { SetCard } from './_components/SetCard';
 import { ExerciseCard } from './_components/ExerciseCard';
+import { cn } from '@/lib/utils';
+
+function groupByGrade<T extends { grade: number }>(items: T[]): Record<number, T[]> {
+  return items.reduce<Record<number, T[]>>((acc, item) => {
+    (acc[item.grade] ??= []).push(item);
+    return acc;
+  }, {});
+}
+
+function GradeSetAccordion({ grade, sets, busy, onDelete, onGenerateAll, onGenerateQuiz, onGenerateVariations }: {
+  grade: number; sets: VietSet[];
+  busy: Record<string, boolean>;
+  onDelete: (id: string) => void;
+  onGenerateAll: (id: string, title: string) => void;
+  onGenerateQuiz: (id: string, title: string) => void;
+  onGenerateVariations: (id: string, title: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className={cn('rounded-2xl border transition-all', open ? 'border-red-200 bg-red-50/20' : 'border-gray-200 bg-white')}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
+        {open ? <FolderOpen className="h-5 w-5 text-red-500 shrink-0" /> : <Folder className="h-5 w-5 text-red-400 shrink-0" />}
+        <span className="font-semibold text-sm text-gray-900 flex-1">Lớp {grade}</span>
+        <span className="text-xs text-gray-400 mr-2">{sets.length} bộ bài</span>
+        {open ? <ChevronUp className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {sets.map((set) => (
+            <SetCard
+              key={set.id}
+              set={set}
+              busy={busy[set.id]}
+              genBusy={busy[`gen-${set.id}`]}
+              quizBusy={busy[`quiz-${set.id}`]}
+              varBusy={busy[`var-${set.id}`]}
+              onDelete={() => onDelete(set.id)}
+              onGenerateAll={() => onGenerateAll(set.id, set.title)}
+              onGenerateQuiz={() => onGenerateQuiz(set.id, set.title)}
+              onGenerateVariations={() => onGenerateVariations(set.id, set.title)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GradeExerciseAccordion({ grade, exercises, busy, onDelete }: {
+  grade: number; exercises: VietExercise[];
+  busy: Record<string, boolean>; onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className={cn('rounded-2xl border transition-all', open ? 'border-orange-200 bg-orange-50/20' : 'border-gray-200 bg-white')}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
+        {open ? <FolderOpen className="h-5 w-5 text-orange-500 shrink-0" /> : <Folder className="h-5 w-5 text-orange-400 shrink-0" />}
+        <span className="font-semibold text-sm text-gray-900 flex-1">Lớp {grade}</span>
+        <span className="text-xs text-gray-400 mr-2">{exercises.length} bài tập</span>
+        {open ? <ChevronUp className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {exercises.map((ex) => (
+            <ExerciseCard
+              key={ex.id}
+              exercise={ex}
+              busy={busy[ex.id]}
+              onDelete={() => onDelete(ex.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function InstructorVietPage() {
   const { ready } = useRequireAuth('INSTRUCTOR');
@@ -205,52 +282,59 @@ export default function InstructorVietPage() {
         <Input placeholder="Tìm kiếm bộ bài hoặc bài tập..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
-      {/* Sets */}
+      {/* Sets grouped by grade */}
       <div>
-        <h2 className="font-bold text-gray-900 mb-3">Bộ bài ({filteredSets.length})</h2>
+        <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <Folder className="h-5 w-5 text-red-500" />Bộ bài ({filteredSets.length})
+        </h2>
         {filteredSets.length === 0 ? (
           <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-10 text-center">
             <span className="text-4xl block mb-2">🇻🇳</span>
             <p className="text-sm text-muted-foreground">Chưa có bộ bài nào</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredSets.map((set) => (
-              <SetCard
-                key={set.id}
-                set={set}
-                busy={busy[set.id]}
-                genBusy={busy[`gen-${set.id}`]}
-                quizBusy={busy[`quiz-${set.id}`]}
-                varBusy={busy[`var-${set.id}`]}
-                onDelete={() => deleteSet(set.id)}
-                onGenerateAll={() => generateAll(set.id, set.title)}
-                onGenerateQuiz={() => generateQuiz(set.id, set.title)}
-                onGenerateVariations={() => generateVariations(set.id, set.title)}
-              />
-            ))}
+          <div className="space-y-3">
+            {Object.entries(groupByGrade(filteredSets))
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([grade, gradeSets]) => (
+                <GradeSetAccordion
+                  key={grade}
+                  grade={Number(grade)}
+                  sets={gradeSets}
+                  busy={busy}
+                  onDelete={deleteSet}
+                  onGenerateAll={generateAll}
+                  onGenerateQuiz={generateQuiz}
+                  onGenerateVariations={generateVariations}
+                />
+              ))}
           </div>
         )}
       </div>
 
-      {/* Exercises */}
+      {/* Exercises grouped by grade */}
       <div>
-        <h2 className="font-bold text-gray-900 mb-3">Bài tập ({filteredExercises.length})</h2>
+        <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <Folder className="h-5 w-5 text-orange-500" />Bài tập ({filteredExercises.length})
+        </h2>
         {filteredExercises.length === 0 ? (
           <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-10 text-center">
             <Brain className="h-8 w-8 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">Chưa có bài tập nào</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {filteredExercises.map((ex) => (
-              <ExerciseCard
-                key={ex.id}
-                exercise={ex}
-                busy={busy[ex.id]}
-                onDelete={() => deleteExercise(ex.id)}
-              />
-            ))}
+          <div className="space-y-3">
+            {Object.entries(groupByGrade(filteredExercises))
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([grade, gradeExercises]) => (
+                <GradeExerciseAccordion
+                  key={grade}
+                  grade={Number(grade)}
+                  exercises={gradeExercises}
+                  busy={busy}
+                  onDelete={deleteExercise}
+                />
+              ))}
           </div>
         )}
       </div>
