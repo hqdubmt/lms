@@ -349,10 +349,10 @@ model Todo {
   priority     Int        @default(0)
   dueDate      DateTime?
   attachments       Json       @default("[]")
-  links             String[]
+  links             String[]   @default([])
   resultNote        String?
   resultAttachments Json       @default("[]")
-  resultLinks       String[]
+  resultLinks       String[]   @default([])
   completedAt       DateTime?
   creatorConfirmed  Boolean    @default(false)
   assigneeConfirmed Boolean    @default(false)
