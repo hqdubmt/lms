@@ -201,7 +201,7 @@ export async function documentRoutes(app: FastifyInstance) {
 
     const body = req.body as {
       docId?: string; markdown?: string;
-      type: 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet';
+      type: 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet' | 'study-guide';
       grade?: number; subject?: string; count?: number; language?: string;
     };
 
@@ -259,6 +259,13 @@ Chỉ trả JSON thuần.`,
         system: `Bạn là giáo viên. ${langNote}
 Tạo phiếu bài tập thực hành dạng JSON gồm ${count} bài tập từ nội dung tài liệu.
 Schema: { "title": string, "instructions": string, "exercises": [{ "id": number, "type": "fill-blank"|"matching"|"true-false"|"short-answer", "question": string, "blanks"?: string[], "answer": string }] }
+Chỉ trả JSON thuần.`,
+        user: `Môn: ${subject}${grade ? `, Lớp ${grade}` : ''}\n\nNội dung:\n${content}`,
+      },
+      'study-guide': {
+        system: `Bạn là giáo viên chuyên tạo tài liệu ôn tập. ${langNote}
+Tạo hướng dẫn học tập toàn diện dạng JSON từ nội dung tài liệu.
+Schema: { "title": string, "summary": string, "keyConcepts": [{ "term": string, "definition": string, "example": string }], "mainPoints": string[], "formulasOrRules": [{ "name": string, "formula": string, "whenToUse": string }], "reviewQuestions": [{ "question": string, "answer": string }], "studyTips": string[], "commonMistakes": string[] }
 Chỉ trả JSON thuần.`,
         user: `Môn: ${subject}${grade ? `, Lớp ${grade}` : ''}\n\nNội dung:\n${content}`,
       },

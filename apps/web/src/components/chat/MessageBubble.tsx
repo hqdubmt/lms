@@ -1,19 +1,11 @@
-import { Bot, RefreshCw, AlertTriangle, Users } from 'lucide-react';
+import { Bot, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TypingDots } from './TypingDots';
 import { MessageContent } from './MessageContent';
 import { CopyButton } from './CopyButton';
 import { TtsButton } from './TtsButton';
+import { StreamActivityStrip } from './StreamActivityStrip';
 import type { Message } from './types';
-
-const LANG_INTENT_LABELS: Record<string, string> = {
-  LANGUAGE_TRANSLATE:  'Dịch thuật',
-  LANGUAGE_GRAMMAR:    'Ngữ pháp',
-  LANGUAGE_VOCABULARY: 'Từ vựng',
-  LANGUAGE_SPEAKING:   'Phát âm',
-  LANGUAGE_WRITING:    'Viết',
-  LANGUAGE_LISTENING:  'Luyện nghe',
-};
 
 interface MessageBubbleProps {
   msg: Message;
@@ -25,18 +17,29 @@ interface MessageBubbleProps {
   onRetry: () => void;
 }
 
+function fmtTime(ts: number) {
+  return new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
 export function MessageBubble({
   msg, isLast, streaming, avatarColor, ttsLang, onSendMessage, onRetry,
 }: MessageBubbleProps) {
+  const isCurrentlyStreaming = isLast && streaming && msg.role === 'assistant' && !msg.error;
+  const streamDone = msg.role === 'assistant' && !msg.loading && !streaming && !!msg.content && !msg.error;
+  // Show activity strip as soon as metadata is available (during or after streaming)
+  const hasActivityData = msg.role === 'assistant' && !msg.error &&
+    (!!msg.provider || (msg.activeAgents?.length ?? 0) > 0 || (msg.sources?.length ?? 0) > 0 || !!msg.langIntent);
+
   return (
     <div className={cn('flex gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
       {msg.role === 'assistant' && (
         <div className={cn('h-7 w-7 rounded-lg shrink-0 flex items-center justify-center bg-gradient-to-br mt-0.5', avatarColor)}>
-          <Bot className="h-4 w-4 text-white" />
+          <Bot className={cn('h-4 w-4 text-white', isCurrentlyStreaming && 'animate-pulse')} />
         </div>
       )}
 
-      <div className="flex flex-col gap-1.5 max-w-[82%]">
+      <div className="flex flex-col gap-1 max-w-[82%]">
+        {/* Main bubble */}
         <div className={cn(
           'px-3 py-2 rounded-2xl text-sm leading-relaxed',
           msg.role === 'user'
@@ -48,27 +51,61 @@ export function MessageBubble({
           {msg.loading && !msg.content ? (
             <TypingDots />
           ) : msg.role === 'assistant' ? (
-            <MessageContent content={msg.content} />
+            <>
+              <MessageContent content={msg.content} />
+              {/* Blinking cursor while streaming */}
+              {isCurrentlyStreaming && (
+                <span className="inline-block h-[1em] w-[2px] bg-gray-500 ml-0.5 align-middle animate-pulse" />
+              )}
+            </>
           ) : (
             <span className="whitespace-pre-wrap">{msg.content}</span>
           )}
         </div>
 
-        {msg.role === 'assistant' && msg.langIntent && (
-          <div className="px-1">
-            <span className="text-xs bg-blue-50 text-blue-500 border border-blue-100 rounded-full px-2 py-0.5">
-              {LANG_INTENT_LABELS[msg.langIntent] ?? msg.langIntent}
+        {/* Streaming indicator — only show if no metadata yet */}
+        {isCurrentlyStreaming && !hasActivityData && (
+          <div className="flex items-center gap-1 px-1">
+            <span className="flex gap-0.5">
+              {[0, 1, 2].map(i => (
+                <span key={i} className="h-1 w-1 rounded-full bg-gray-400 animate-bounce"
+                  style={{ animationDelay: `${i * 0.12}s` }} />
+              ))}
             </span>
+            <span className="text-[10px] text-muted-foreground">Đang soạn...</span>
           </div>
         )}
 
-        {msg.role === 'assistant' && !msg.loading && msg.content && !msg.error && (
+        {/* ── Stream Activity Strip — live during stream + after done ── */}
+        {hasActivityData && (
+          <StreamActivityStrip
+            provider={msg.provider}
+            activeAgents={msg.activeAgents}
+            sources={msg.sources}
+            langIntent={msg.langIntent}
+            validationWarnings={msg.validationWarnings}
+            latencyMs={msg.latencyMs}
+            timestamp={msg.timestamp}
+            isStreaming={isCurrentlyStreaming}
+          />
+        )}
+
+        {/* Copy + TTS actions */}
+        {streamDone && (
           <div className="flex items-center gap-0.5 px-1">
             <CopyButton text={msg.content} />
             <TtsButton text={msg.content} lang={ttsLang} />
           </div>
         )}
 
+        {/* User message timestamp */}
+        {msg.role === 'user' && msg.timestamp && (
+          <div className="flex justify-end px-1">
+            <span className="text-[10px] text-gray-400">{fmtTime(msg.timestamp)}</span>
+          </div>
+        )}
+
+        {/* Retry on error */}
         {msg.error && isLast && (
           <button
             onClick={onRetry}
@@ -78,37 +115,9 @@ export function MessageBubble({
           </button>
         )}
 
-        {msg.role === 'assistant' && msg.activeAgents && msg.activeAgents.length > 0 && !msg.loading && (
-          <div className="px-1 flex items-center gap-1 flex-wrap">
-            <Users className="h-3 w-3 text-gray-300 shrink-0" />
-            {msg.activeAgents.map(a => (
-              <span key={a} className="text-[10px] text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-1.5 py-0.5">{a}</span>
-            ))}
-          </div>
-        )}
-
-        {msg.validationWarnings && msg.validationWarnings.length > 0 && (
-          <div className="px-1 flex items-center gap-1 text-xs text-amber-600">
-            <AlertTriangle className="h-3 w-3 shrink-0" />
-            <span>{msg.validationWarnings.includes('NO_STEPS') ? 'AI chưa trình bày đầy đủ các bước' : msg.validationWarnings.includes('ANSWER_MISSING') ? 'Chưa có điểm chấm' : 'Phản hồi ngắn'}</span>
-          </div>
-        )}
-
-        {msg.sources && msg.sources.length > 0 && (
-          <div className="px-1">
-            <p className="text-xs text-gray-400 mb-1 font-medium">Nguồn tham khảo:</p>
-            <div className="flex flex-wrap gap-1">
-              {msg.sources.map((s, si) => (
-                <span key={si} className="text-xs bg-blue-50 text-blue-600 border border-blue-100 rounded-full px-2 py-0.5">
-                  ✓ {s.lesson}{s.topic ? ` · ${s.topic}` : ''}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
+        {/* Suggestion pills */}
         {msg.suggestions && msg.suggestions.length > 0 && !streaming && (
-          <div className="px-1 flex flex-wrap gap-1">
+          <div className="px-1 flex flex-wrap gap-1 mt-0.5">
             {msg.suggestions.map((s, si) => (
               <button
                 key={si}

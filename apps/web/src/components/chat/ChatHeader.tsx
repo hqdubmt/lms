@@ -8,25 +8,41 @@ interface ChatHeaderProps {
   showBrain: boolean;
   aiOk: boolean | null;
   aiLabel: string;
+  streaming?: boolean;
   onToggleMinimize: () => void;
   onToggleBrain: (e: React.MouseEvent) => void;
   onClose: (e: React.MouseEvent) => void;
 }
 
 export function ChatHeader({
-  label, color, minimized, showBrain, aiOk, aiLabel,
+  label, color, minimized, showBrain, aiOk, aiLabel, streaming = false,
   onToggleMinimize, onToggleBrain, onClose,
 }: ChatHeaderProps) {
   return (
+    <div className="shrink-0">
     <div
-      className={cn('flex items-center gap-2 px-4 py-3 rounded-t-2xl shrink-0 cursor-pointer bg-gradient-to-r', color)}
+      className={cn('flex items-center gap-2 px-4 py-3 rounded-t-2xl cursor-pointer bg-gradient-to-r', color, minimized && 'rounded-b-2xl')}
       onClick={onToggleMinimize}
     >
-      <Bot className="h-5 w-5 text-white shrink-0" />
+      <Bot className={cn('h-5 w-5 text-white shrink-0', streaming && 'animate-pulse')} />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-white">AI Trợ lý · {label}</div>
-        {!minimized && aiOk !== null && (
-          <div className="text-xs text-white/70">{aiOk ? `${aiLabel} · Sẵn sàng` : 'AI không khả dụng'}</div>
+        {!minimized && (
+          <div className="text-xs text-white/70">
+            {streaming
+              ? <span className="flex items-center gap-1.5">
+                  <span className="flex gap-0.5">
+                    {[0,1,2].map(i => (
+                      <span key={i} className="h-1 w-1 rounded-full bg-white/80 animate-bounce"
+                        style={{ animationDelay: `${i * 0.12}s` }} />
+                    ))}
+                  </span>
+                  Đang soạn câu trả lời...
+                </span>
+              : aiOk !== null
+                ? aiOk ? `${aiLabel} · Sẵn sàng` : 'AI không khả dụng'
+                : null}
+          </div>
         )}
       </div>
       <div className="flex items-center gap-1">
@@ -55,6 +71,17 @@ export function ChatHeader({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+    </div>
+
+    {/* Streaming progress bar — indeterminate shimmer */}
+    {streaming && !minimized && (
+      <div className="h-[2px] w-full bg-white/20 overflow-hidden relative">
+        <div
+          className="absolute h-full bg-white/80 rounded-full"
+          style={{ width: '35%', animation: 'streambar 1.3s ease-in-out infinite' }}
+        />
+      </div>
+    )}
     </div>
   );
 }

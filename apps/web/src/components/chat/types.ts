@@ -32,6 +32,9 @@ export interface Message {
   langIntent?: string | null;
   validationWarnings?: string[] | null;
   activeAgents?: string[];
+  timestamp?: number;
+  latencyMs?: number;
+  provider?: string;
 }
 
 export type Subject = 'math' | 'language' | 'viet' | 'general';

@@ -94,3 +94,8 @@ body {
   border: 1px solid #d1d5db;
   padding: 4px 8px;
 }
+
+@keyframes streambar {
+  0%   { left: -40%; }
+  100% { left: 110%; }
+}

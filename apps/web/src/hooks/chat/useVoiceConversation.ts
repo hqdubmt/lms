@@ -10,13 +10,18 @@ interface Options {
   subject: Subject;
   onTranscript: (text: string) => void;
   messages: Message[];
+  autoConversation?: boolean;
 }
 
-export function useVoiceConversation({ subject, onTranscript, messages }: Options) {
+export function useVoiceConversation({ subject, onTranscript, messages, autoConversation = false }: Options) {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [lastTranscript, setLastTranscript] = useState('');
   const sttRef = useRef<STTHandle | null>(null);
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const autoRef = useRef(autoConversation);
+  autoRef.current = autoConversation;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startListeningRef = useRef<(() => Promise<void>) | null>(null);
   const available = isSTTAvailable();
 
   const lang = subject === 'language' ? 'en-US' : 'vi-VN';
@@ -44,14 +49,21 @@ export function useVoiceConversation({ subject, onTranscript, messages }: Option
     const utt = new SpeechSynthesisUtterance(cleaned);
     utt.lang = lang;
     utt.rate = 0.95;
-    utt.onend = () => { setVoiceState('idle'); onDone?.(); };
+    utt.onend = () => {
+      setVoiceState('idle');
+      onDone?.();
+      // Auto-continue: start listening again after AI finishes speaking
+      if (autoRef.current) {
+        setTimeout(() => startListeningRef.current?.(), 400);
+      }
+    };
     utt.onerror = () => { setVoiceState('idle'); onDone?.(); };
     synthRef.current = utt;
     setVoiceState('speaking');
     window.speechSynthesis.speak(utt);
   }, [lang]);
 
-  const startListening = useCallback(async () => {
+  const startListening: () => Promise<void> = useCallback(async () => {
     if (voiceState !== 'idle') { stopAll(); return; }
     setVoiceState('listening');
 
@@ -73,6 +85,9 @@ export function useVoiceConversation({ subject, onTranscript, messages }: Option
     });
     sttRef.current = handle;
   }, [voiceState, lang, onTranscript, stopAll]);
+
+  // Keep ref current so speakText callback can reference latest startListening
+  startListeningRef.current = startListening;
 
   // Called by parent when AI response arrives → auto-speak
   const onAiResponse = useCallback((text: string) => {

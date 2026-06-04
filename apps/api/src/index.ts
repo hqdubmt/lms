@@ -29,6 +29,7 @@ import { markitdownRoutes } from './modules/admin/markitdown.routes';
 import { documentRoutes } from './modules/documents/document.routes';
 import { uploadRoutes } from './modules/upload/upload.routes';
 import { todoRoutes } from './modules/todo/todo.routes';
+import { notificationRoutes } from './modules/notifications/notification.routes';
 import { languageRoutes } from './modules/language/language.routes';
 import { mathRoutes } from './modules/math/math.routes';
 import { vietRoutes } from './modules/viet/viet.routes';
@@ -43,6 +44,13 @@ import { analyticsRoutes } from './modules/ai/analytics.routes';
 import { knowledgeGraphRoutes } from './modules/ai/knowledge-graph.routes';
 import { instructorToolsRoutes } from './modules/instructor/instructor-tools.routes';
 import { adminStatsRoutes } from './modules/ai/admin-stats.routes';
+import { gamificationRoutes } from './modules/ai/gamification.routes';
+import { studyPlanRoutes } from './modules/ai/study-plan.routes';
+import { languageCoachRoutes } from './modules/ai/language-coach.routes';
+import { revisionRoutes } from './modules/ai/revision.routes';
+import { timelineRoutes } from './modules/ai/timeline.routes';
+import { reportCardRoutes } from './modules/ai/report-card.routes';
+import { xpGamificationRoutes } from './modules/ai/xp-gamification.routes';
 
 const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
@@ -97,7 +105,10 @@ if (cluster.isPrimary) {
 
     await app.register(compress, { global: true, threshold: 1024 });
     await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024 } });
-    await app.register(jwt, { secret: env.JWT_ACCESS_SECRET });
+    await app.register(jwt, {
+      secret: env.JWT_ACCESS_SECRET,
+      cookie: { cookieName: 'auth_token', signed: false },
+    });
 
     app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
       if (!body || (body as string).trim() === '') { done(null, {}); return; }
@@ -120,6 +131,7 @@ if (cluster.isPrimary) {
     await app.register(lessonsRoutes, { prefix: '/lessons' });
     await app.register(uploadRoutes, { prefix: '/upload' });
     await app.register(todoRoutes, { prefix: '/todos' });
+    await app.register(notificationRoutes, { prefix: '/notifications' });
     await app.register(languageRoutes, { prefix: '/language' });
     await app.register(mathRoutes, { prefix: '/math' });
     await app.register(vietRoutes, { prefix: '/viet' });
@@ -140,6 +152,13 @@ if (cluster.isPrimary) {
     await app.register(documentRoutes, { prefix: '/admin/documents' });
     await app.register(instructorToolsRoutes, { prefix: '/instructor' });
     await app.register(adminStatsRoutes, { prefix: '/ai' });
+    await app.register(gamificationRoutes, { prefix: '/ai' });
+    await app.register(studyPlanRoutes, { prefix: '/ai' });
+    await app.register(languageCoachRoutes, { prefix: '/ai' });
+    await app.register(revisionRoutes, { prefix: '/ai' });
+    await app.register(timelineRoutes, { prefix: '/ai' });
+    await app.register(reportCardRoutes, { prefix: '/ai' });
+    await app.register(xpGamificationRoutes, { prefix: '/ai' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

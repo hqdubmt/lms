@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, BookOpen, Users, GraduationCap,
   LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
-  Image as ImageIcon, Palette, HardDrive, FileType2, Bot, Library, ChevronDown,
+  Image as ImageIcon, Palette, HardDrive, FileType2, Bot, Library, ChevronDown, BarChart2, Bell,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,8 @@ const navItems: NavEntry[] = [
   { href: '/admin/media', label: 'Thư viện', icon: ImageIcon },
   { href: '/admin/branding', label: 'Thương hiệu', icon: Palette },
   { href: '/admin/backup', label: 'Backup', icon: HardDrive },
+  { href: '/admin/ai-analytics', label: 'AI Analytics', icon: BarChart2 },
+  { href: '/instructor/announcements', label: 'Thông báo', icon: Bell },
   {
     type: 'group',
     label: 'Tài liệu',

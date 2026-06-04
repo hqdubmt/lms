@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight,
-  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen, TrendingUp,
+  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen, TrendingUp, GraduationCap,
 } from 'lucide-react';
 import { EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL, LANG_NAMES } from '@/constants/language';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -230,6 +230,20 @@ export default function LanguagePage() {
           </div>
         )}
       </section>
+
+      {/* Language Coach */}
+      <Link href="/language/coach">
+        <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200 hover:shadow-md transition-shadow cursor-pointer">
+          <CardContent className="p-4 flex items-center gap-4">
+            <GraduationCap className="h-8 w-8 text-emerald-600 shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold">Language Coach AI</div>
+              <div className="text-sm text-muted-foreground">Writing · Listening · Conversation — AI chấm và hướng dẫn</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-emerald-500 shrink-0" />
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Analytics + Leaderboard */}
       <div className="grid sm:grid-cols-2 gap-3">

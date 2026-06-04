@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react';
 import {
   Check, AlertCircle, Lightbulb, HelpCircle,
   BookOpen, Map, ChevronRight, Clock, Zap, Network,
+  CalendarDays, RotateCcw, Dumbbell, Gamepad2, Star, Trophy,
 } from 'lucide-react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { getStudyPlan, getXPData, type DayTask, type XPData } from '@/services/gamification';
 import type { Subject, KnowledgeGap, Recommendation } from './types';
 
 interface LearningStep {
@@ -42,7 +45,20 @@ interface BrainPanelProps {
   onSendMessage: (text: string) => void;
 }
 
-type Tab = 'analysis' | 'path' | 'difficulty';
+type Tab = 'analysis' | 'path' | 'difficulty' | 'plan' | 'xp';
+
+const TASK_ICON: Record<DayTask['type'], React.ElementType> = {
+  review:   RotateCcw,
+  practice: Dumbbell,
+  quiz:     Gamepad2,
+  new:      Star,
+};
+const TASK_COLOR: Record<DayTask['type'], string> = {
+  review:   'text-orange-600 bg-orange-50 border-orange-200',
+  practice: 'text-blue-600 bg-blue-50 border-blue-200',
+  quiz:     'text-indigo-600 bg-indigo-50 border-indigo-200',
+  new:      'text-green-600 bg-green-50 border-green-200',
+};
 
 const STEP_ICON: Record<string, React.ElementType> = {
   review:    AlertCircle,
@@ -72,6 +88,8 @@ export function BrainPanel({ subject, onSendMessage }: BrainPanelProps) {
   const [path, setPath] = useState<LearningPath | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyResult | null>(null);
   const [kgConcepts, setKgConcepts] = useState<KGConcept[]>([]);
+  const [todayPlan, setTodayPlan] = useState<DayTask[]>([]);
+  const [xpData, setXpData] = useState<XPData | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -85,12 +103,21 @@ export function BrainPanel({ subject, onSendMessage }: BrainPanelProps) {
       api.get<LearningPath>(`/ai/learning-path?subject=${subject}`).catch(() => null),
       api.get<DifficultyResult>(`/ai/difficulty?subject=${subject}`).catch(() => null),
       api.get<{ concepts: KGConcept[] }>(`/ai/knowledge-graph/topic?subject=${subject}`).catch(() => null),
-    ]).then(([g, r, p, d, kg]) => {
+      getStudyPlan(subject, 7).catch(() => null),
+      getXPData().catch(() => null),
+    ]).then(([g, r, p, d, kg, plan, xp]) => {
       setGap(g);
       setRec(r);
       setPath(p);
       setDifficulty(d);
       setKgConcepts(kg?.concepts ?? []);
+      setXpData(xp);
+      if (plan?.plan) {
+        const today = new Date().toISOString().slice(0, 10);
+        const todayIdx = plan.plan.findIndex(t => t.date === today);
+        // Show today + next 2 days
+        setTodayPlan(plan.plan.slice(todayIdx >= 0 ? todayIdx : 0, (todayIdx >= 0 ? todayIdx : 0) + 3));
+      }
     }).catch(() => {}).finally(() => setLoading(false));
   }, [subject, loaded]);
 
@@ -131,6 +158,24 @@ export function BrainPanel({ subject, onSendMessage }: BrainPanelProps) {
           )}
         >
           <Zap className="h-3 w-3" />Độ khó
+        </button>
+        <button
+          onClick={() => setTab('plan')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-medium transition-colors',
+            tab === 'plan' ? 'text-primary border-b-2 border-primary' : 'text-gray-400 hover:text-gray-600',
+          )}
+        >
+          <CalendarDays className="h-3 w-3" />Kế hoạch
+        </button>
+        <button
+          onClick={() => setTab('xp')}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-medium transition-colors',
+            tab === 'xp' ? 'text-primary border-b-2 border-primary' : 'text-gray-400 hover:text-gray-600',
+          )}
+        >
+          <Star className="h-3 w-3" />XP
         </button>
       </div>
 
@@ -323,6 +368,156 @@ export function BrainPanel({ subject, onSendMessage }: BrainPanelProps) {
           )}
         </div>
       )}
+      {/* Study Plan tab */}
+      {tab === 'plan' && (
+        <div className="px-3 py-2 space-y-2">
+          {todayPlan.length === 0 ? (
+            <div className="text-xs text-gray-400 text-center py-3">
+              Chưa có kế hoạch học. Hãy mở trang{' '}
+              <span className="text-primary font-medium">Tiến độ AI</span> để tạo.
+            </div>
+          ) : (
+            todayPlan.map((task, i) => {
+              const Icon = TASK_ICON[task.type];
+              const isToday = task.date === new Date().toISOString().slice(0, 10);
+              return (
+                <div key={i} className={cn('rounded-xl border px-2.5 py-2', TASK_COLOR[task.type], isToday && 'ring-2 ring-offset-1 ring-current/30')}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="text-[10px] font-bold uppercase tracking-wide">
+                      {isToday ? 'HÔM NAY' : `Ngày ${task.day}`}
+                    </span>
+                    <span className="text-[10px] ml-auto opacity-60">{task.date.slice(5)}</span>
+                  </div>
+                  <p className="text-xs font-semibold truncate mb-1.5">{task.focus}</p>
+                  <div className="space-y-1">
+                    {task.activities.map((act, j) => (
+                      <button
+                        key={j}
+                        onClick={() => onSendMessage(`${act} về chủ đề: ${task.focus}`)}
+                        className="w-full text-left text-[10px] opacity-80 hover:opacity-100 flex items-center gap-1 hover:underline transition-opacity"
+                      >
+                        <span className="h-1 w-1 rounded-full bg-current shrink-0" />
+                        {act}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* XP / Gamification tab */}
+      {tab === 'xp' && (
+        <div className="px-3 py-2 space-y-2">
+          {!xpData ? (
+            <div className="text-xs text-gray-400 text-center py-3">Chưa có dữ liệu XP.</div>
+          ) : (
+            <>
+              {/* Level + XP bar */}
+              <div className="bg-gradient-to-r from-violet-50 to-primary/5 rounded-xl border border-primary/20 p-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-5 w-5 rounded-lg bg-primary/15 flex items-center justify-center">
+                      <Star className="h-3 w-3 text-primary" />
+                    </div>
+                    <span className="text-xs font-bold">Lv.{xpData.level}</span>
+                    <span className="text-xs font-semibold text-primary">{xpData.totalXP} XP</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ color: xpData.rankColor || '#7c3aed', background: `${xpData.rankColor || '#7c3aed'}20` }}>
+                    {xpData.rank}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-primary to-violet-500 rounded-full transition-all"
+                    style={{ width: `${Math.round(xpData.xpProgress * 100)}%` }} />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-0.5 text-right">
+                  Còn {xpData.xpToNextLevel} XP → Lv.{xpData.level + 1}
+                </p>
+              </div>
+
+              {/* Daily quests */}
+              {xpData.dailyQuests.filter(q => !q.completed).length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground mb-1">NHIỆM VỤ HÔM NAY</p>
+                  <div className="space-y-1.5">
+                    {xpData.dailyQuests.filter(q => !q.completed).slice(0, 2).map(q => {
+                      const pct = Math.min(100, Math.round((q.progress / q.target) * 100));
+                      return (
+                        <div key={q.id} className="rounded-lg border border-gray-100 bg-white p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium truncate">{q.title}</span>
+                            <span className="text-[10px] font-bold text-amber-600 shrink-0 ml-1">+{q.xpReward} XP</span>
+                          </div>
+                          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{q.progress}/{q.target} {q.description}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Weekly quests */}
+              {xpData.weeklyQuests.filter(q => !q.completed).length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground mb-1">NHIỆM VỤ TUẦN</p>
+                  <div className="space-y-1.5">
+                    {xpData.weeklyQuests.filter(q => !q.completed).slice(0, 2).map(q => {
+                      const pct = Math.min(100, Math.round((q.progress / q.target) * 100));
+                      return (
+                        <div key={q.id} className="rounded-lg border border-gray-100 bg-white p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium truncate">{q.title}</span>
+                            <span className="text-[10px] font-bold text-violet-600 shrink-0 ml-1">+{q.xpReward} XP</span>
+                          </div>
+                          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-violet-400 rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{q.progress}/{q.target} {q.description}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {xpData.dailyQuests.filter(q => !q.completed).length === 0 &&
+               xpData.weeklyQuests.filter(q => !q.completed).length === 0 && (
+                <div className="text-center py-2">
+                  <Trophy className="h-6 w-6 text-yellow-400 mx-auto mb-1" />
+                  <p className="text-xs text-muted-foreground">Tất cả nhiệm vụ đã hoàn thành!</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Quick nav footer */}
+      <div className="sticky bottom-0 border-t border-gray-100 bg-gray-50 px-2 py-1 flex items-center">
+        <Link href="/learning/coach" className="flex-1 text-center text-[10px] text-muted-foreground hover:text-primary transition-colors py-0.5">
+          Study Coach
+        </Link>
+        <span className="text-gray-200 text-[10px]">|</span>
+        <Link href="/learning/revision" className="flex-1 text-center text-[10px] text-muted-foreground hover:text-primary transition-colors py-0.5">
+          Ôn tập
+        </Link>
+        <span className="text-gray-200 text-[10px]">|</span>
+        <Link href="/learning/report-card" className="flex-1 text-center text-[10px] text-muted-foreground hover:text-primary transition-colors py-0.5">
+          Bảng điểm
+        </Link>
+        <span className="text-gray-200 text-[10px]">|</span>
+        <Link href="/learning/timeline" className="flex-1 text-center text-[10px] text-muted-foreground hover:text-primary transition-colors py-0.5">
+          Timeline
+        </Link>
+      </div>
     </div>
   );
 }

@@ -7,10 +7,13 @@ import {
   Gamepad2, BookOpen, Target, HelpCircle, RefreshCw, Loader2,
   Trophy, BarChart2, Zap, ChevronRight, Map, Clock,
   BookMarked, Star, PlayCircle, Flame, MessageSquare, Mic,
+  Award, Lock, CalendarCheck, TrendingDown, Network, User,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { getAnalyticsSummary, type AnalyticsSummary } from '@/services/analytics';
+import { getStreak, getAchievements, getAdaptiveV2, type StreakData, type Achievement, type AdaptiveResult } from '@/services/gamification';
+import { StudyPlanCard } from '@/components/learning/StudyPlanCard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,24 +112,33 @@ export default function LearningPage() {
   const [analytics, setAnalytics] = useState<QuizAnalytics | null>(null);
   const [path, setPath] = useState<LearningPath | null>(null);
   const [aiAnalytics, setAiAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [streak, setStreak] = useState<StreakData | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [adaptive, setAdaptive] = useState<AdaptiveResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   const load = async (sub: string, win: DaysWindow = analyticsWindow) => {
     setLoading(true);
     try {
-      const [g, r, a, p, ai] = await Promise.all([
+      const [g, r, a, p, ai, sk, ach, adv] = await Promise.all([
         api.get<KnowledgeGap>(`/ai/knowledge-gap?subject=${sub}`).catch(() => null),
         api.get<Recommendation>(`/ai/recommendations?subject=${sub}`).catch(() => null),
         api.get<QuizAnalytics>('/quiz/analytics').catch(() => null),
         api.get<LearningPath>(`/ai/learning-path?subject=${sub}`).catch(() => null),
         getAnalyticsSummary(sub, win),
+        getStreak(),
+        getAchievements(),
+        getAdaptiveV2(sub),
       ]);
       setGap(g);
       setRec(r);
       setAnalytics(a);
       setPath(p);
       setAiAnalytics(ai);
+      setStreak(sk);
+      setAchievements(ach);
+      setAdaptive(adv);
     } finally {
       setLoading(false);
     }
@@ -146,7 +158,8 @@ export default function LearningPage() {
   useEffect(() => { load(subject); }, [subject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const subjectMeta = SUBJECTS.find(s => s.key === subject)!;
-  const hasData = (analytics?.totalQuizzes ?? 0) > 0 || (gap?.weak.length ?? 0) > 0 || (gap?.strong.length ?? 0) > 0;
+  const hasData = (analytics?.totalQuizzes ?? 0) > 0 || (gap?.weak.length ?? 0) > 0 || (gap?.strong.length ?? 0) > 0
+    || (streak?.totalActiveDays ?? 0) > 0 || achievements.some(a => a.unlockedAt !== null);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -168,6 +181,30 @@ export default function LearningPage() {
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           Cập nhật
         </button>
+      </div>
+
+      {/* Quick links */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/learning/profile" className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:border-primary/30 transition-all group">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <User className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold truncate">Hồ sơ học tập</p>
+            <p className="text-[10px] text-muted-foreground">Năng lực & thành tích</p>
+          </div>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
+        </Link>
+        <Link href="/learning/knowledge-graph" className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:border-indigo-300 transition-all group">
+          <div className="h-9 w-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <Network className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold truncate">Knowledge Graph</p>
+            <p className="text-[10px] text-muted-foreground">Biểu đồ kiến thức</p>
+          </div>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
+        </Link>
       </div>
 
       {/* Subject selector */}
@@ -201,13 +238,106 @@ export default function LearningPage() {
         </div>
       ) : (
         <>
+          {/* Streak + Stats row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard
+              label="Chuỗi ngày học"
+              value={streak ? `${streak.currentStreak} ngày` : `${aiAnalytics?.currentStreak ?? 0} ngày`}
+              icon={Flame}
+              color="bg-orange-100 text-orange-600"
+            />
+            <StatCard
+              label="Kỷ lục chuỗi"
+              value={streak ? `${streak.bestStreak} ngày` : '-'}
+              icon={Trophy}
+              color="bg-yellow-100 text-yellow-600"
+            />
+            <StatCard
+              label="Ngày hoạt động"
+              value={streak ? `${streak.totalActiveDays} ngày` : '-'}
+              icon={CalendarCheck}
+              color="bg-green-100 text-green-600"
+            />
+            <StatCard
+              label="Phút học tuần này"
+              value={aiAnalytics?.weeklyStudyMinutes ?? 0}
+              icon={Clock}
+              color="bg-blue-100 text-blue-600"
+            />
+          </div>
+
           {/* AI Learning Analytics */}
           {aiAnalytics && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <StatCard label="Phút học tuần này" value={aiAnalytics.weeklyStudyMinutes} icon={Clock} color="bg-blue-100 text-blue-600" />
-              <StatCard label="Chuỗi ngày học" value={`${aiAnalytics.currentStreak} ngày`} icon={Flame} color="bg-orange-100 text-orange-600" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <StatCard label="Chat với AI" value={aiAnalytics.dailyData.reduce((s, d) => s + d.chatCount, 0)} icon={MessageSquare} color="bg-violet-100 text-violet-600" />
               <StatCard label="Luyện giọng nói" value={aiAnalytics.dailyData.reduce((s, d) => s + d.voiceCount, 0)} icon={Mic} color="bg-cyan-100 text-cyan-600" />
+              <StatCard label="Phút học tổng" value={aiAnalytics.totalStudyMinutes} icon={TrendingUp} color="bg-emerald-100 text-emerald-600" />
+            </div>
+          )}
+
+          {/* Adaptive Difficulty */}
+          {adaptive && (
+            <div className={cn(
+              'rounded-2xl border p-5',
+              adaptive.level === 'hard' ? 'bg-red-50 border-red-100' :
+              adaptive.level === 'medium' ? 'bg-amber-50 border-amber-100' :
+              'bg-green-50 border-green-100',
+            )}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <TrendingDown className={cn('h-4 w-4',
+                    adaptive.level === 'hard' ? 'text-red-500' :
+                    adaptive.level === 'medium' ? 'text-amber-500' : 'text-green-500',
+                  )} />
+                  Độ khó phù hợp — <span className={cn('font-bold',
+                    adaptive.level === 'hard' ? 'text-red-600' :
+                    adaptive.level === 'medium' ? 'text-amber-600' : 'text-green-600',
+                  )}>{adaptive.level === 'hard' ? 'Nâng cao' : adaptive.level === 'medium' ? 'Trung bình' : 'Cơ bản'}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">Thành thạo {Math.round(adaptive.adjustedMastery * 100)}%</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-1">{adaptive.reason}</p>
+              <p className="text-xs font-medium">{adaptive.nextChallenge}</p>
+            </div>
+          )}
+
+          {/* Study Plan */}
+          <StudyPlanCard subject={subject} />
+
+          {/* Achievements */}
+          {achievements.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-50">
+                <h2 className="text-sm font-semibold flex items-center gap-2">
+                  <Award className="h-4 w-4 text-muted-foreground" />Thành tích
+                  <span className="ml-auto text-xs font-normal text-muted-foreground">
+                    {achievements.filter(a => a.unlockedAt !== null).length}/{achievements.length} đã mở
+                  </span>
+                </h2>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+                {achievements.map(a => (
+                  <div key={a.id} className={cn(
+                    'rounded-xl border p-3 flex flex-col gap-1 transition-all',
+                    a.unlockedAt ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-100 opacity-60',
+                  )}>
+                    <div className="flex items-center gap-2">
+                      {a.unlockedAt
+                        ? <Trophy className="h-4 w-4 text-yellow-500 shrink-0" />
+                        : <Lock className="h-4 w-4 text-gray-400 shrink-0" />}
+                      <span className={cn('text-xs font-semibold truncate', a.unlockedAt ? 'text-yellow-700' : 'text-gray-500')}>
+                        {a.label}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{a.description}</p>
+                    {a.unlockedAt && (
+                      <p className="text-[10px] text-yellow-600 font-medium">
+                        {new Date(a.unlockedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: 'short' })}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -4,14 +4,14 @@ import { useCallback, useRef, useState } from 'react';
 import {
   Bot, Upload, Loader2, CheckCircle2, XCircle, Copy, Download,
   RefreshCw, FileText, ClipboardList, BookOpen, FileSearch, PenLine,
-  ChevronRight, Settings2,
+  ChevronRight, Settings2, GraduationCap,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type GenType = 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet';
+type GenType = 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet' | 'study-guide';
 type RunState = 'idle' | 'converting' | 'generating' | 'done' | 'error';
 
 interface StreamLine {
@@ -27,7 +27,8 @@ const GEN_TYPES: { id: GenType; label: string; desc: string; icon: React.Element
   { id: 'lesson-plan', label: 'Giáo án',      desc: 'Mục tiêu, hoạt động dạy học chi tiết',  icon: BookOpen,      color: 'text-green-600 bg-green-50 border-green-200' },
   { id: 'exam',        label: 'Đề kiểm tra',  desc: 'Đề thi nhiều dạng câu, phân điểm rõ',   icon: FileSearch,    color: 'text-red-600 bg-red-50 border-red-200' },
   { id: 'answer-key',  label: 'Đáp án',       desc: 'Đáp án + giải thích chi tiết từng câu', icon: CheckCircle2,  color: 'text-violet-600 bg-violet-50 border-violet-200' },
-  { id: 'worksheet',   label: 'Phiếu bài tập', desc: 'Bài tập thực hành điền khuyết, ghép đôi', icon: PenLine,    color: 'text-orange-600 bg-orange-50 border-orange-200' },
+  { id: 'worksheet',   label: 'Phiếu bài tập', desc: 'Bài tập thực hành điền khuyết, ghép đôi', icon: PenLine,       color: 'text-orange-600 bg-orange-50 border-orange-200' },
+  { id: 'study-guide', label: 'Ôn tập',        desc: 'Tài liệu ôn tập, khái niệm, mẹo học',    icon: GraduationCap, color: 'text-teal-600 bg-teal-50 border-teal-200' },
 ];
 
 const SUBJECTS = ['Toán', 'Tiếng Việt', 'Tiếng Anh', 'Lý', 'Hóa', 'Sinh', 'Sử', 'Địa', 'Chung'];

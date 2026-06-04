@@ -18,6 +18,13 @@ import { syncLearningStateFromBrain } from '../../services/learning-state';
 import { runMultiAgent } from '../../services/multi-agent';
 import { validateResponse } from '../../services/response-validator';
 import { buildKnowledgeGraph } from '../../services/knowledge-graph';
+import { trackLearningEvent, getLearningAnalytics } from '../../services/learning-analytics';
+import { recordActiveDay } from '../../services/streak';
+import { checkAndUnlockAchievements } from '../../services/achievement';
+import { recordProviderCall, type Provider } from '../../services/provider-monitor';
+import { recordAgentCall, type MonitoredAgent } from '../../services/agent-monitor';
+import { awardXP } from '../../services/xp-gamification';
+import { recordTimelineEvent } from '../../services/timeline';
 
 const CHAT_SESSION_TTL = 7 * 24 * 3600;
 const MAX_HISTORY_MESSAGES = 20;
@@ -216,6 +223,7 @@ export async function aiRoutes(app: FastifyInstance) {
     });
 
     let aiFullContent = '';
+    const streamBeginAt = Date.now();
     try {
       // ── LLM Router — dùng preferred provider từ Orchestrator ─────────────
       // Language agent cần nhiều tokens hơn để trả về IPA + dịch + ngữ pháp + ví dụ
@@ -283,6 +291,59 @@ export async function aiRoutes(app: FastifyInstance) {
           if (scoreMatch) {
             const score01 = parseFloat(scoreMatch[1]) / 10;
             updateMastery(sub, subject, brain.topic, score01).catch(() => {});
+          }
+        }
+
+        // ── Module 1/2/3: Analytics + Streak + Achievements (async) ──────────
+        const masteryAvg = Object.keys(brain.mastery).length > 0
+          ? Object.values(brain.mastery).reduce((s: number, v) => s + (v as number), 0) / Object.keys(brain.mastery).length
+          : undefined;
+
+        ;(async () => {
+          try {
+            const modeStr = effectiveMode as string;
+            const eventType = modeStr === 'homework' ? 'homework'
+              : modeStr === 'quiz' ? 'quiz'
+              : modeStr === 'voice' ? 'voice'
+              : 'chat';
+            await trackLearningEvent(sub, eventType, { masteryAvg });
+            const streak = await recordActiveDay(sub);
+            const la = await getLearningAnalytics(sub);
+            await checkAndUnlockAchievements(sub, {
+              chatCount: la.chatCount,
+              quizCount: la.quizCount,
+              homeworkCount: la.homeworkCount,
+              currentStreak: streak.currentStreak,
+              topMastery: masteryAvg,
+            });
+            // XP + Timeline (fire-and-forget)
+            await awardXP(sub, eventType).catch(() => {});
+            await recordTimelineEvent(sub, {
+              type: eventType as 'chat' | 'quiz' | 'homework' | 'voice',
+              title: eventType === 'chat' ? 'Chat với AI Tutor'
+                : eventType === 'quiz' ? 'Làm quiz AI'
+                : eventType === 'homework' ? 'Nộp bài tập'
+                : 'Phiên Voice AI',
+              description: `Chủ đề: ${topic ?? subject}`,
+              subject: subject as string,
+              time: Date.now(),
+            }).catch(() => {});
+          } catch { /* fire-and-forget */ }
+        })();
+
+        // ── Module 7: Provider Monitor (async) ───────────────────────────────
+        const usedProvider: Provider = (orch.preferredProvider ?? 'groq') as Provider;
+        const approxTokens = Math.round((aiFullContent.length + lastUserMsg.length) / 4);
+        recordProviderCall(usedProvider, { latencyMs: Date.now() - streamBeginAt, tokens: approxTokens, success: true }).catch(() => {});
+
+        // ── Module 8: Agent Monitor (async) ──────────────────────────────────
+        if (agentResults.length > 0) {
+          for (const r of agentResults) {
+            const agentName = r.agent.toLowerCase().replace(/ /g, '_') as MonitoredAgent;
+            const knownAgents: MonitoredAgent[] = ['tutor', 'math', 'quiz', 'homework', 'knowledge_graph'];
+            if (knownAgents.includes(agentName)) {
+              recordAgentCall(agentName, 0, true).catch(() => {});
+            }
           }
         }
       }
@@ -438,6 +499,28 @@ Trả về JSON theo đúng định dạng sau (không có markdown):
           } catch { /* fire-and-forget */ }
         })();
       }
+
+      // Module 1/2/3: track homework event async
+      ;(async () => {
+        try {
+          await trackLearningEvent(sub, 'homework');
+          const sk = await recordActiveDay(sub);
+          const la = await getLearningAnalytics(sub);
+          await checkAndUnlockAchievements(sub, {
+            homeworkCount: la.homeworkCount,
+            currentStreak: sk.currentStreak,
+          });
+          await awardXP(sub, 'homework').catch(() => {});
+          await recordTimelineEvent(sub, {
+            type: 'homework',
+            title: 'Nộp bài tập',
+            description: `Điểm: ${score !== null ? score + '/10' : 'chưa chấm'} · ${topic ?? subject}`,
+            subject: subject as string,
+            score: score ?? undefined,
+            time: Date.now(),
+          }).catch(() => {});
+        } catch { /* fire-and-forget */ }
+      })();
 
       return reply.send({
         feedback: parsed?.summary ?? raw,

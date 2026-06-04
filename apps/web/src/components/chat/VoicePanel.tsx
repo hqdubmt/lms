@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, Loader2, Bot } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Mic, MicOff, Volume2, Loader2, Bot, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Message, Subject } from './types';
 import { useVoiceConversation } from '@/hooks/chat/useVoiceConversation';
@@ -26,8 +26,9 @@ const STATE_LABEL: Record<string, string> = {
 export function VoicePanel({
   subject, color, messages, streaming, onTranscript, onAiResponseRef,
 }: VoicePanelProps) {
+  const [autoConversation, setAutoConversation] = useState(false);
   const { voiceState, lastTranscript, available, startListening, stopAll, onAiResponse } =
-    useVoiceConversation({ subject, onTranscript, messages });
+    useVoiceConversation({ subject, onTranscript, messages, autoConversation });
   const historyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -168,6 +169,23 @@ export function VoicePanel({
           }
         </button>
         <span className="text-xs font-medium text-gray-500">{STATE_LABEL[voiceState]}</span>
+
+        {/* Auto-conversation toggle */}
+        <button
+          onClick={() => setAutoConversation(v => !v)}
+          disabled={!available}
+          className={cn(
+            'flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-full border transition-all',
+            autoConversation
+              ? 'bg-green-50 border-green-300 text-green-700'
+              : 'border-gray-200 text-gray-400 hover:text-gray-600',
+          )}
+          title="Chế độ hội thoại tự động — AI nói xong sẽ tự bắt đầu nghe lại"
+        >
+          <RefreshCw className={cn('h-3 w-3', autoConversation && 'animate-spin')} />
+          Tự động {autoConversation ? 'BẬT' : 'TẮT'}
+        </button>
+
         {hasHistory && (
           <span className="text-[10px] text-gray-400">{visibleMessages.length} tin nhắn</span>
         )}

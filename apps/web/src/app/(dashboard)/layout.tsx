@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ElementType } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
     Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
-    Image as ImageIcon, Gamepad2, Brain, Bot, FileType2,
+    Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
+    Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -18,12 +19,14 @@ import { AiChat } from '@/components/ai/AiChat';
 
 interface Notif {
     id: string;
-    type: 'SESSION_LIVE' | 'SESSION_UPCOMING' | 'COURSE_UPDATE' | 'ENROLLMENT';
+    type: string;
     title: string;
     body: string;
+    isRead?: boolean;
     readAt?: string | null;
     createdAt: string;
     link?: string;
+    data?: { todoId?: string } | null;
 }
 
 const BASE_NAV_GROUPS = [
@@ -37,15 +40,21 @@ const BASE_NAV_GROUPS = [
             { href: '/math',           label: 'Toán học',   icon: Calculator },
             { href: '/viet',           label: 'Tiếng Việt', icon: BookType },
             { href: '/quiz',           label: 'Quiz Game',  icon: Gamepad2 },
-            { href: '/learning',       label: 'Tiến độ AI', icon: Brain },
-            { href: '/announcements',  label: 'Thông báo',  icon: Bell },
             { href: '/schedule',       label: 'Phòng học',  icon: MonitorPlay },
+            { href: '/todo',           label: 'Công việc',  icon: ClipboardList },
         ],
     },
     {
-        label: 'CÁ NHÂN',
+        label: 'AI',
+        collapsible: true,
+        groupIcon: Zap,
         items: [
-            { href: '/settings', label: 'Cài đặt', icon: Settings },
+            { href: '/learning',                   label: 'Tiến độ AI',    icon: Brain,     exact: true },
+            { href: '/learning/coach',             label: 'Study Coach',   icon: Target },
+            { href: '/learning/revision',          label: 'Ôn tập',        icon: RotateCcw },
+            { href: '/learning/timeline',          label: 'Timeline',      icon: Calendar },
+            { href: '/learning/report-card',       label: 'Bảng điểm AI',  icon: Award },
+            { href: '/learning/knowledge-graph',   label: 'Knowledge Map', icon: Brain },
         ],
     },
 ];
@@ -56,14 +65,16 @@ const INSTRUCTOR_HREF_MAP: Record<string, string> = {
     '/viet':         '/instructor/viet',
     '/media':        '/instructor/media',
     '/quiz':         '/instructor/quiz',
-    '/announcements':'/instructor/announcements',
 };
 
 const INSTRUCTOR_EXTRA_GROUP = {
     label: 'SOẠN BÀI',
+    collapsible: true,
+    groupIcon: Bot,
     items: [
-        { href: '/instructor/copilot', label: 'Copilot AI', icon: Bot,      exact: false as const },
-        { href: '/instructor/convert', label: 'Convert MD', icon: FileType2, exact: false as const },
+        { href: '/instructor/copilot',        label: 'Copilot AI',   icon: Bot,      exact: false as const },
+        { href: '/instructor/convert',        label: 'Convert MD',   icon: FileType2, exact: false as const },
+        { href: '/instructor/announcements',  label: 'Thông báo',    icon: Bell,      exact: false as const },
     ],
 };
 
@@ -81,10 +92,41 @@ function getNavGroups(role?: string) {
     return BASE_NAV_GROUPS;
 }
 
+interface Announcement {
+    id: string; title: string; content: string;
+    topic: 'SYSTEM' | 'COURSE' | 'CLASS' | 'EVENT' | 'GENERAL';
+    isPinned: boolean; isRead: boolean; createdAt: string;
+}
+
 function NotifIcon(type: string) {
+    if (type === 'ANN_SYSTEM') return Megaphone;
+    if (type === 'ANN_COURSE') return BookOpen;
+    if (type === 'ANN_CLASS') return Users;
+    if (type === 'ANN_EVENT') return Calendar;
+    if (type === 'ANN_GENERAL') return Globe;
     if (type === 'SESSION_LIVE' || type === 'SESSION_UPCOMING') return Video;
     if (type === 'ENROLLMENT') return GraduationCap;
+    if (type === 'TODO_ASSIGNED') return SendHorizonal;
+    if (type === 'TODO_ACCEPTED') return UserCheck;
+    if (type === 'TODO_RESULT_READY') return SendHorizonal;
+    if (type === 'TODO_CONFIRMED') return CheckCircle2;
+    if (type === 'TODO_COMPLETED') return CheckCircle2;
     return BookMarked;
+}
+
+function notifColor(type: string) {
+    if (type === 'ANN_SYSTEM') return { bg: 'bg-red-100', icon: 'text-red-600', text: 'text-red-700' };
+    if (type === 'ANN_COURSE') return { bg: 'bg-blue-100', icon: 'text-blue-600', text: 'text-blue-700' };
+    if (type === 'ANN_CLASS') return { bg: 'bg-purple-100', icon: 'text-purple-600', text: 'text-purple-700' };
+    if (type === 'ANN_EVENT') return { bg: 'bg-amber-100', icon: 'text-amber-600', text: 'text-amber-700' };
+    if (type === 'ANN_GENERAL') return { bg: 'bg-gray-100', icon: 'text-gray-600', text: 'text-gray-700' };
+    if (type === 'SESSION_LIVE') return { bg: 'bg-red-100', icon: 'text-red-500', text: 'text-red-600' };
+    if (type === 'TODO_ASSIGNED') return { bg: 'bg-yellow-100', icon: 'text-yellow-600', text: 'text-yellow-700' };
+    if (type === 'TODO_ACCEPTED') return { bg: 'bg-blue-100', icon: 'text-blue-600', text: 'text-blue-700' };
+    if (type === 'TODO_RESULT_READY') return { bg: 'bg-indigo-100', icon: 'text-indigo-600', text: 'text-indigo-700' };
+    if (type === 'TODO_CONFIRMED') return { bg: 'bg-emerald-100', icon: 'text-emerald-600', text: 'text-emerald-700' };
+    if (type === 'TODO_COMPLETED') return { bg: 'bg-emerald-100', icon: 'text-emerald-600', text: 'text-emerald-700' };
+    return { bg: 'bg-indigo-50', icon: 'text-indigo-600', text: 'text-indigo-600' };
 }
 
 function fmtRelative(iso: string) {
@@ -97,49 +139,99 @@ function fmtRelative(iso: string) {
     return `${Math.floor(h / 24)} ngày trước`;
 }
 
-function NotificationDropdown({ onClose, collapsed }: { onClose: () => void; collapsed: boolean }) {
+function NotificationDropdown({ onClose, collapsed, onUnreadChange }: {
+    onClose: () => void; collapsed: boolean; onUnreadChange?: (n: number) => void;
+}) {
     const [notifs, setNotifs] = useState<Notif[]>([]);
+    const [unread, setUnread] = useState(0);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        api.get<any[]>('/users/schedule').then((data) => {
-            const list = Array.isArray(data) ? data : [];
-            const mapped: Notif[] = list
+    const load = useCallback(async () => {
+        try {
+            const [dbRes, sessions, annItems] = await Promise.all([
+                api.get<{ items: Notif[]; unread: number }>('/notifications'),
+                api.get<any[]>('/users/schedule').catch(() => [] as any[]),
+                api.get<Announcement[]>('/announcements').catch(() => [] as Announcement[]),
+            ]);
+
+            const sessionNotifs: Notif[] = (Array.isArray(sessions) ? sessions : [])
                 .filter((s) => s.status !== 'ENDED')
-                .slice(0, 8)
+                .slice(0, 4)
                 .map((s) => ({
-                    id: s.id,
+                    id: `session-${s.id}`,
                     type: s.status === 'LIVE' ? 'SESSION_LIVE' : 'SESSION_UPCOMING',
-                    title: s.status === 'LIVE' ? '🔴 Đang diễn ra' : '📅 Buổi học sắp tới',
+                    title: s.status === 'LIVE' ? 'Đang diễn ra' : 'Buổi học sắp tới',
                     body: s.title + (s.class?.name ? ` · ${s.class.name}` : s.course?.title ? ` · ${s.course.title}` : ''),
                     createdAt: s.startTime,
+                    isRead: true,
                     link: '/schedule',
                 }));
-            setNotifs(mapped);
-        }).catch(() => setNotifs([])).finally(() => setLoading(false));
-    }, []);
+
+            const annNotifs: Notif[] = (Array.isArray(annItems) ? annItems : []).map((a) => ({
+                id: `ann-${a.id}`,
+                type: `ANN_${a.topic}`,
+                title: a.title,
+                body: a.content,
+                createdAt: a.createdAt,
+                isRead: a.isRead,
+                link: '/announcements',
+            }));
+
+            const merged = [...sessionNotifs, ...annNotifs, ...(dbRes.items ?? [])]
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .slice(0, 30);
+
+            setNotifs(merged);
+            const annUnread = annNotifs.filter((a) => !a.isRead).length;
+            const total = (dbRes.unread ?? 0) + annUnread;
+            setUnread(total);
+            onUnreadChange?.(total);
+        } catch {
+            setNotifs([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [onUnreadChange]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const markAllRead = async () => {
+        await Promise.all([
+            api.patch('/notifications/read-all', {}).catch(() => {}),
+            api.post('/announcements/read-all', {}).catch(() => {}),
+        ]);
+        setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
+        setUnread(0);
+        onUnreadChange?.(0);
+    };
 
     return (
         <div className={cn(
-            'absolute bottom-0 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden',
-            collapsed ? 'left-full ml-2' : 'left-full ml-2',
-            'sm:left-full sm:ml-2',
-            // on mobile fall back to fixed bottom sheet
+            'absolute bottom-0 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col',
+            'left-full ml-2 sm:left-full sm:ml-2',
             'max-sm:fixed max-sm:inset-x-3 max-sm:bottom-16 max-sm:left-3 max-sm:w-auto',
+            'max-h-[min(480px,80vh)]',
         )}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
                 <div className="flex items-center gap-2">
                     <Bell className="h-4 w-4 text-indigo-600" />
                     <span className="font-semibold text-sm">Thông báo</span>
-                    {notifs.length > 0 && (
-                        <span className="text-xs bg-indigo-600 text-white px-1.5 py-0.5 rounded-full font-bold">{notifs.length}</span>
+                    {unread > 0 && (
+                        <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold">{unread}</span>
                     )}
                 </div>
-                <button onClick={onClose} className="h-6 w-6 rounded-lg hover:bg-gray-100 flex items-center justify-center">
-                    <X className="h-3.5 w-3.5 text-gray-500" />
-                </button>
+                <div className="flex items-center gap-2">
+                    {unread > 0 && (
+                        <button onClick={markAllRead} className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold">
+                            Đọc tất cả
+                        </button>
+                    )}
+                    <button onClick={onClose} className="h-6 w-6 rounded-lg hover:bg-gray-100 flex items-center justify-center">
+                        <X className="h-3.5 w-3.5 text-gray-500" />
+                    </button>
+                </div>
             </div>
-            <div className="max-h-72 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto min-h-0">
                 {loading ? (
                     <div className="py-10 flex justify-center">
                         <div className="h-5 w-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
@@ -151,30 +243,123 @@ function NotificationDropdown({ onClose, collapsed }: { onClose: () => void; col
                     </div>
                 ) : notifs.map((n) => {
                     const Icon = NotifIcon(n.type);
-                    const isLive = n.type === 'SESSION_LIVE';
+                    const c = notifColor(n.type);
+                    const href = n.link ?? (n.data?.todoId ? '/todo' : n.type.startsWith('SESSION') ? '/schedule' : '/todo');
+                    const isUnread = n.isRead === false;
+                    const isAnn = n.id.startsWith('ann-');
+                    const isSystem = n.type === 'ANN_SYSTEM';
                     return (
-                        <Link key={n.id} href={n.link || '/schedule'} onClick={onClose}
+                        <Link
+                            key={n.id}
+                            href={href}
+                            onClick={async () => {
+                                if (isUnread) {
+                                    if (isAnn) {
+                                        await api.post(`/announcements/${n.id.replace('ann-', '')}/read`, {}).catch(() => {});
+                                    } else if (!n.id.startsWith('session-')) {
+                                        await api.patch(`/notifications/${n.id}/read`, {}).catch(() => {});
+                                    }
+                                }
+                                onClose();
+                            }}
                             className={cn(
                                 'flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors',
-                                isLive && 'bg-red-50 hover:bg-red-100',
-                            )}>
-                            <div className={cn('h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5', isLive ? 'bg-red-100' : 'bg-indigo-50')}>
-                                <Icon className={cn('h-4 w-4', isLive ? 'text-red-500' : 'text-indigo-600')} />
+                                isUnread && (isSystem ? 'bg-red-50/60' : 'bg-indigo-50/50'),
+                            )}
+                        >
+                            <div className={cn('h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5', c.bg)}>
+                                <Icon className={cn('h-4 w-4', c.icon)} />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className={cn('text-xs font-semibold', isLive ? 'text-red-600' : 'text-indigo-600')}>{n.title}</p>
+                                <p className={cn('text-xs font-semibold', c.text)}>{n.title}</p>
                                 <p className="text-xs text-gray-700 mt-0.5 line-clamp-2">{n.body}</p>
                                 <p className="text-[10px] text-gray-400 mt-1">{fmtRelative(n.createdAt)}</p>
                             </div>
-                            {isLive && <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0 mt-2" />}
+                            {isUnread && <span className="h-2 w-2 rounded-full bg-red-500 shrink-0 mt-2 animate-pulse" />}
                         </Link>
                     );
                 })}
             </div>
-            <Link href="/schedule" onClick={onClose}
-                className="block px-4 py-3 text-center text-xs font-semibold text-indigo-600 hover:bg-indigo-50 border-t border-gray-100 transition-colors">
-                Xem tất cả →
+            <Link
+                href="/announcements"
+                onClick={onClose}
+                className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 border-t border-gray-100 hover:bg-indigo-50/50 transition-colors shrink-0"
+            >
+                Xem tất cả thông báo
+                <ChevronRight className="h-3.5 w-3.5" />
             </Link>
+        </div>
+    );
+}
+
+// ─── Collapsible Nav Group ────────────────────────────────────────────────────
+
+type NavItem = { href: string; label: string; icon: ElementType; exact?: boolean };
+type NavGroup = { label: string; items: NavItem[]; collapsible?: boolean; groupIcon?: ElementType };
+
+function CollapsibleNavGroup({ group, pathname, sidebarCollapsed, onNavClick }: {
+    group: NavGroup; pathname: string; sidebarCollapsed?: boolean; onNavClick?: () => void;
+}) {
+    const isAnyActive = group.items.some(item =>
+        item.exact ? pathname === item.href : pathname.startsWith(item.href)
+    );
+    const [open, setOpen] = useState(isAnyActive);
+
+    useEffect(() => { if (isAnyActive) setOpen(true); }, [isAnyActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const GroupIcon = group.groupIcon ?? Zap;
+
+    if (sidebarCollapsed) {
+        return (
+            <div className="space-y-0.5">
+                {group.items.map((item) => {
+                    const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                    const linkEl = (
+                        <Link href={item.href} className={cn(
+                            'flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all',
+                            active ? 'bg-primary text-white shadow-sm' : 'text-white/55 hover:bg-white/8 hover:text-white',
+                        )}>
+                            <item.icon className="h-4 w-4" />
+                        </Link>
+                    );
+                    return <Tooltip key={item.href} label={item.label}>{linkEl}</Tooltip>;
+                })}
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <button
+                onClick={() => setOpen(v => !v)}
+                className={cn(
+                    'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                    isAnyActive ? 'text-white' : 'text-white/55 hover:bg-white/8 hover:text-white',
+                    open && 'bg-white/5',
+                )}
+            >
+                <GroupIcon className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left truncate">{group.label}</span>
+                <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform duration-200', open && 'rotate-90')} />
+            </button>
+            {open && (
+                <div className="ml-3 pl-2.5 border-l border-white/10 mt-0.5 space-y-0.5">
+                    {group.items.map((item) => {
+                        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                        return (
+                            <Link key={item.href} href={item.href} onClick={onNavClick}
+                                className={cn(
+                                    'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
+                                    active ? 'bg-primary text-white shadow-sm' : 'text-white/50 hover:bg-white/8 hover:text-white',
+                                )}>
+                                <item.icon className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{item.label}</span>
+                                {active && <ChevronRight className="h-3 w-3 ml-auto shrink-0 opacity-70" />}
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -198,16 +383,16 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 // ─── Desktop Sidebar ──────────────────────────────────────────────────────────
 
 function DesktopSidebar({
-    user, pathname, liveCount, showNotif, setShowNotif,
-    notifRef, onLogout, collapsed, onToggle, navGroups, logoBg, logoBgHeight, badges,
+    user, pathname, liveCount, unreadNotifs, showNotif, setShowNotif,
+    notifRef, onLogout, collapsed, onToggle, navGroups, logoBg, logoBgHeight, onUnreadChange,
 }: {
-    user: any; pathname: string; liveCount: number;
+    user: any; pathname: string; liveCount: number; unreadNotifs: number;
     showNotif: boolean; setShowNotif: (v: boolean) => void;
     notifRef: React.RefObject<HTMLDivElement>;
     onLogout: () => void; collapsed: boolean; onToggle: () => void;
     navGroups: ReturnType<typeof getNavGroups>;
     logoBg: string; logoBgHeight: number;
-    badges: Record<string, number>;
+    onUnreadChange: (n: number) => void;
 }) {
     return (
         <aside
@@ -266,54 +451,56 @@ function DesktopSidebar({
             <nav className="flex-1 overflow-y-auto py-4 space-y-5 px-2">
                 {navGroups.map((group) => (
                     <div key={group.label}>
-                        {!collapsed && (
-                            <div className="text-[10px] font-semibold text-white/25 uppercase tracking-widest px-2 mb-1.5">
-                                {group.label}
-                            </div>
+                        {(group as NavGroup).collapsible ? (
+                            <CollapsibleNavGroup
+                                group={group as NavGroup}
+                                pathname={pathname}
+                                sidebarCollapsed={collapsed}
+                            />
+                        ) : (
+                            <>
+                                {!collapsed && (
+                                    <div className="text-[10px] font-semibold text-white/25 uppercase tracking-widest px-2 mb-1.5">
+                                        {group.label}
+                                    </div>
+                                )}
+                                {collapsed && <div className="h-px bg-white/10 mx-1 mb-2" />}
+                                <div className="space-y-0.5">
+                                    {group.items.map((item) => {
+                                        const active = item.exact
+                                            ? pathname === item.href
+                                            : pathname.startsWith(item.href);
+
+                                        const linkEl = (
+                                            <Link
+                                                href={item.href}
+                                                className={cn(
+                                                    'flex items-center gap-2.5 rounded-lg text-sm font-medium transition-all',
+                                                    collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-3 py-2 w-full',
+                                                    active
+                                                        ? 'bg-primary text-white shadow-sm'
+                                                        : 'text-white/55 hover:bg-white/8 hover:text-white',
+                                                )}
+                                            >
+                                                <item.icon className="h-4 w-4 shrink-0" />
+                                                {!collapsed && (
+                                                    <>
+                                                        <span className="truncate">{item.label}</span>
+                                                        {active ? (
+                                                            <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />
+                                                        ) : null}
+                                                    </>
+                                                )}
+                                            </Link>
+                                        );
+
+                                        return collapsed
+                                            ? <Tooltip key={item.href} label={item.label}>{linkEl}</Tooltip>
+                                            : <div key={item.href}>{linkEl}</div>;
+                                    })}
+                                </div>
+                            </>
                         )}
-                        {collapsed && <div className="h-px bg-white/10 mx-1 mb-2" />}
-                        <div className="space-y-0.5">
-                            {group.items.map((item) => {
-                                const active = item.exact
-                                    ? pathname === item.href
-                                    : pathname.startsWith(item.href);
-                                const badge = badges[item.href] || 0;
-
-                                const linkEl = (
-                                    <Link
-                                        href={item.href}
-                                        className={cn(
-                                            'flex items-center gap-2.5 rounded-lg text-sm font-medium transition-all',
-                                            collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-3 py-2 w-full',
-                                            active
-                                                ? 'bg-primary text-white shadow-sm'
-                                                : 'text-white/55 hover:bg-white/8 hover:text-white',
-                                        )}
-                                    >
-                                        <div className="relative shrink-0">
-                                            <item.icon className="h-4 w-4" />
-                                            {badge > 0 && collapsed && (
-                                                <span className="absolute -top-1.5 -right-1.5 h-3.5 min-w-3.5 px-0.5 text-[8px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center leading-none">{badge}</span>
-                                            )}
-                                        </div>
-                                        {!collapsed && (
-                                            <>
-                                                <span className="truncate">{item.label}</span>
-                                                {badge > 0 ? (
-                                                    <span className="ml-auto text-[9px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0">{badge}</span>
-                                                ) : active ? (
-                                                    <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />
-                                                ) : null}
-                                            </>
-                                        )}
-                                    </Link>
-                                );
-
-                                return collapsed
-                                    ? <Tooltip key={item.href} label={item.label}>{linkEl}</Tooltip>
-                                    : <div key={item.href}>{linkEl}</div>;
-                            })}
-                        </div>
                     </div>
                 ))}
             </nav>
@@ -332,7 +519,7 @@ function DesktopSidebar({
                                 )}
                             >
                                 <Bell className="h-4 w-4" />
-                                {liveCount > 0 && (
+                                {(liveCount + unreadNotifs) > 0 && (
                                     <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full animate-pulse" />
                                 )}
                             </button>
@@ -347,22 +534,39 @@ function DesktopSidebar({
                         >
                             <div className="relative">
                                 <Bell className="h-4 w-4 shrink-0" />
-                                {liveCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full flex items-center justify-center animate-pulse">
-                                        <span className="text-[7px] text-white font-bold leading-none">{liveCount}</span>
+                                {(liveCount + unreadNotifs) > 0 && (
+                                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full flex items-center justify-center">
+                                        <span className="text-[7px] text-white font-bold leading-none">{liveCount + unreadNotifs}</span>
                                     </span>
                                 )}
                             </div>
                             <span className="truncate">Thông báo</span>
-                            {liveCount > 0 && (
+                            {(liveCount + unreadNotifs) > 0 && (
                                 <span className="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold shrink-0">
-                                    {liveCount} LIVE
+                                    {liveCount > 0 ? `${liveCount} LIVE` : unreadNotifs}
                                 </span>
                             )}
                         </button>
                     )}
-                    {showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} collapsed={collapsed} />}
+                    {showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} collapsed={collapsed} onUnreadChange={onUnreadChange} />}
                 </div>
+
+                {/* Settings */}
+                {collapsed ? (
+                    <Tooltip label="Cài đặt">
+                        <Link href="/settings"
+                            className={cn('w-10 h-10 mx-auto flex items-center justify-center rounded-lg transition-colors',
+                                pathname === '/settings' ? 'bg-primary text-white' : 'text-white/40 hover:bg-white/8 hover:text-white/80')}>
+                            <Settings className="h-3.5 w-3.5" />
+                        </Link>
+                    </Tooltip>
+                ) : (
+                    <Link href="/settings"
+                        className={cn('w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                            pathname === '/settings' ? 'bg-primary text-white' : 'text-white/40 hover:bg-white/8 hover:text-white/80')}>
+                        <Settings className="h-3.5 w-3.5" />Cài đặt
+                    </Link>
+                )}
 
                 {/* User */}
                 {collapsed ? (
@@ -415,16 +619,17 @@ function DesktopSidebar({
 // ─── Mobile Drawer Sidebar ────────────────────────────────────────────────────
 
 function MobileSidebar({
-    user, pathname, liveCount, showNotif, setShowNotif,
-    notifRef, onNavClick, onLogout, open, onClose, navGroups, logoBg, logoBgHeight,
+    user, pathname, liveCount, unreadNotifs, showNotif, setShowNotif,
+    notifRef, onNavClick, onLogout, open, onClose, navGroups, logoBg, logoBgHeight, onUnreadChange,
 }: {
-    user: any; pathname: string; liveCount: number;
+    user: any; pathname: string; liveCount: number; unreadNotifs: number;
     showNotif: boolean; setShowNotif: (v: boolean) => void;
     notifRef: React.RefObject<HTMLDivElement>;
     onNavClick: () => void; onLogout: () => void;
     open: boolean; onClose: () => void;
     navGroups: ReturnType<typeof getNavGroups>;
     logoBg: string; logoBgHeight: number;
+    onUnreadChange: (n: number) => void;
 }) {
     return (
         <>
@@ -464,23 +669,34 @@ function MobileSidebar({
                 <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
                     {navGroups.map((group) => (
                         <div key={group.label}>
-                            <div className="text-[10px] font-semibold text-white/25 uppercase tracking-widest px-2 mb-1.5">{group.label}</div>
-                            <div className="space-y-0.5">
-                                {group.items.map((item) => {
-                                    const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-                                    return (
-                                        <Link key={item.href} href={item.href} onClick={onNavClick}
-                                            className={cn(
-                                                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-                                                active ? 'bg-primary text-white shadow-sm' : 'text-white/55 hover:bg-white/8 hover:text-white',
-                                            )}>
-                                            <item.icon className="h-4 w-4 shrink-0" />
-                                            <span className="truncate">{item.label}</span>
-                                            {active && <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />}
-                                        </Link>
-                                    );
-                                })}
-                            </div>
+                            {(group as NavGroup).collapsible ? (
+                                <CollapsibleNavGroup
+                                    group={group as NavGroup}
+                                    pathname={pathname}
+                                    sidebarCollapsed={false}
+                                    onNavClick={onNavClick}
+                                />
+                            ) : (
+                                <>
+                                    <div className="text-[10px] font-semibold text-white/25 uppercase tracking-widest px-2 mb-1.5">{group.label}</div>
+                                    <div className="space-y-0.5">
+                                        {group.items.map((item) => {
+                                            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                                            return (
+                                                <Link key={item.href} href={item.href} onClick={onNavClick}
+                                                    className={cn(
+                                                        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                                                        active ? 'bg-primary text-white shadow-sm' : 'text-white/55 hover:bg-white/8 hover:text-white',
+                                                    )}>
+                                                    <item.icon className="h-4 w-4 shrink-0" />
+                                                    <span className="truncate">{item.label}</span>
+                                                    {active && <ChevronRight className="h-3.5 w-3.5 ml-auto shrink-0 opacity-70" />}
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     ))}
                 </nav>
@@ -493,12 +709,19 @@ function MobileSidebar({
                                 showNotif ? 'bg-white/10 text-white' : 'text-white/55 hover:bg-white/8 hover:text-white')}>
                             <Bell className="h-4 w-4 shrink-0" />
                             <span className="truncate">Thông báo</span>
-                            {liveCount > 0 && (
-                                <span className="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold shrink-0">{liveCount} LIVE</span>
+                            {(liveCount + unreadNotifs) > 0 && (
+                                <span className="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                                    {liveCount > 0 ? `${liveCount} LIVE` : unreadNotifs}
+                                </span>
                             )}
                         </button>
-                        {showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} collapsed={false} />}
+                        {showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} collapsed={false} onUnreadChange={onUnreadChange} />}
                     </div>
+                    <Link href="/settings" onClick={onNavClick}
+                        className={cn('w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                            pathname === '/settings' ? 'bg-primary text-white' : 'text-white/40 hover:bg-white/8 hover:text-white/80')}>
+                        <Settings className="h-3.5 w-3.5" />Cài đặt
+                    </Link>
                     <div className="flex items-center gap-2.5 px-2 py-1.5">
                         <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shrink-0 overflow-hidden">
                             {user.avatarUrl ? <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" /> : <span className="text-sm font-semibold text-white">{user?.name?.[0]?.toUpperCase()}</span>}
@@ -521,6 +744,135 @@ function MobileSidebar({
 
 const COLLAPSED_KEY = 'sidebar_collapsed';
 
+// ─── Mobile Bottom Nav ────────────────────────────────────────────────────────
+
+function MobileBottomNav({ pathname, unreadNotifs, liveCount, onUnreadChange, role }: {
+    pathname: string; unreadNotifs: number; liveCount: number; onUnreadChange: (n: number) => void; role?: string;
+}) {
+    const [showSubjects, setShowSubjects] = useState(false);
+    const [showNotif, setShowNotif] = useState(false);
+    const notifRef = useRef<HTMLDivElement>(null);
+    const subjectRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => { setShowSubjects(false); setShowNotif(false); }, [pathname]);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotif(false);
+            if (subjectRef.current && !subjectRef.current.contains(e.target as Node)) setShowSubjects(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const totalBadge = liveCount + unreadNotifs;
+    const isInstructor = role === 'INSTRUCTOR' || role === 'ADMIN';
+
+    const subjectItems = isInstructor ? [
+        { href: '/instructor/language', label: 'Ngoại Ngữ', icon: Globe,       color: 'bg-purple-50 text-purple-600' },
+        { href: '/instructor/math',     label: 'Toán học',   icon: Calculator,  color: 'bg-blue-50 text-blue-600' },
+        { href: '/instructor/viet',     label: 'Tiếng Việt', icon: BookType,    color: 'bg-green-50 text-green-600' },
+    ] : [
+        { href: '/language', label: 'Ngoại Ngữ', icon: Globe,       color: 'bg-purple-50 text-purple-600' },
+        { href: '/math',     label: 'Toán học',   icon: Calculator,  color: 'bg-blue-50 text-blue-600' },
+        { href: '/viet',     label: 'Tiếng Việt', icon: BookType,    color: 'bg-green-50 text-green-600' },
+    ];
+
+    const mainItems = [
+        { href: '/dashboard',                    label: 'Trang chủ', icon: Home,          exact: true  },
+        { href: isInstructor ? '/instructor/quiz' : '/quiz', label: 'Quiz Game',  icon: Gamepad2,      exact: false },
+        { href: '/todo',                          label: 'Công việc', icon: ClipboardList, exact: false },
+    ];
+
+    const subjectBasePaths = isInstructor
+        ? ['/instructor/language', '/instructor/math', '/instructor/viet']
+        : ['/language', '/math', '/viet'];
+    const isSubjectActive = subjectBasePaths.some((p) => pathname.startsWith(p));
+
+    return (
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-100 flex items-center justify-around h-14 px-1">
+            {/* Trang chủ */}
+            {mainItems.slice(0, 1).map((item) => {
+                const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                return (
+                    <Link key={item.href} href={item.href}
+                        className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-0', active ? 'text-primary' : 'text-gray-400')}>
+                        <item.icon className={cn('h-5 w-5', active && 'stroke-[2.5px]')} />
+                        <span className="text-[10px] font-medium truncate">{item.label}</span>
+                        {active && <span className="h-1 w-1 rounded-full bg-primary" />}
+                    </Link>
+                );
+            })}
+
+            {/* Môn học popup */}
+            <div ref={subjectRef} className="relative flex flex-col items-center">
+                <button
+                    onClick={() => { setShowSubjects((v) => !v); setShowNotif(false); }}
+                    className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors', isSubjectActive || showSubjects ? 'text-primary' : 'text-gray-400')}
+                >
+                    <BookOpen className={cn('h-5 w-5', (isSubjectActive || showSubjects) && 'stroke-[2.5px]')} />
+                    <span className="text-[10px] font-medium">Môn học</span>
+                    {isSubjectActive && <span className="h-1 w-1 rounded-full bg-primary" />}
+                </button>
+                {showSubjects && (
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex gap-2 z-10">
+                        {subjectItems.map((s) => {
+                            const active = pathname.startsWith(s.href);
+                            return (
+                                <Link key={s.href} href={s.href}
+                                    className={cn('flex flex-col items-center gap-1.5 px-3 py-2 rounded-xl transition-all', active ? 'bg-primary/10 text-primary' : 'hover:bg-gray-50 text-gray-600')}>
+                                    <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center', active ? 'bg-primary text-white' : s.color)}>
+                                        <s.icon className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-[10px] font-medium whitespace-nowrap">{s.label}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Quiz Game, Công việc */}
+            {mainItems.slice(1).map((item) => {
+                const active = pathname.startsWith(item.href);
+                return (
+                    <Link key={item.href} href={item.href}
+                        className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-0', active ? 'text-primary' : 'text-gray-400')}>
+                        <item.icon className={cn('h-5 w-5', active && 'stroke-[2.5px]')} />
+                        <span className="text-[10px] font-medium truncate">{item.label}</span>
+                        {active && <span className="h-1 w-1 rounded-full bg-primary" />}
+                    </Link>
+                );
+            })}
+
+            {/* Thông báo (Bell) */}
+            <div ref={notifRef} className="relative flex flex-col items-center">
+                <button
+                    onClick={() => { setShowNotif((v) => !v); setShowSubjects(false); }}
+                    className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors relative', showNotif ? 'text-primary' : 'text-gray-400')}
+                >
+                    <div className="relative">
+                        <Bell className={cn('h-5 w-5', showNotif && 'stroke-[2.5px]')} />
+                        {totalBadge > 0 && (
+                            <span className="absolute -top-1 -right-1 h-3.5 min-w-3.5 px-0.5 text-[8px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center leading-none">
+                                {totalBadge > 9 ? '9+' : totalBadge}
+                            </span>
+                        )}
+                    </div>
+                    <span className="text-[10px] font-medium">Thông báo</span>
+                </button>
+                {showNotif && (
+                    <NotificationDropdown
+                        onClose={() => setShowNotif(false)}
+                        collapsed={false}
+                        onUnreadChange={onUnreadChange}
+                    />
+                )}
+            </div>
+        </nav>
+    );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const { user, accessToken, fetchMe, logout } = useAuthStore();
     const hydrated = useHydrated();
@@ -528,7 +880,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const router = useRouter();
     const [showNotif, setShowNotif] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
-    const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
+    const [unreadNotifs, setUnreadNotifs] = useState(0);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [collapsed, setCollapsed] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
@@ -560,9 +912,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 const list = Array.isArray(data) ? data : [];
                 setLiveCount(list.filter((s) => s.status === 'LIVE').length);
             }).catch(() => {});
-            api.get<{ count: number }>('/announcements/unread-count').then((d) => {
-                setUnreadAnnouncements(d?.count || 0);
-            }).catch(() => {});
+            Promise.all([
+                api.get<{ items: any[]; unread: number }>('/notifications').catch(() => ({ unread: 0 })),
+                api.get<{ count: number }>('/announcements/unread-count').catch(() => ({ count: 0 })),
+            ]).then(([notifsRes, annRes]) => {
+                setUnreadNotifs((notifsRes?.unread || 0) + (annRes?.count || 0));
+            });
         };
         check();
         const t = setInterval(check, 60_000);
@@ -589,11 +944,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const handleLogout = async () => { await logout(); router.push('/login'); };
     const navGroups = getNavGroups(user.role);
-    const badges: Record<string, number> = {};
-    if (unreadAnnouncements > 0) {
-        badges['/announcements'] = unreadAnnouncements;
-        badges['/instructor/announcements'] = unreadAnnouncements;
-    }
 
     return (
         <div className="min-h-screen flex bg-[#f1f5f9] overflow-x-clip">
@@ -603,6 +953,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 user={user}
                 pathname={pathname}
                 liveCount={liveCount}
+                unreadNotifs={unreadNotifs}
                 showNotif={showNotif}
                 setShowNotif={setShowNotif}
                 notifRef={notifRef}
@@ -612,7 +963,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 navGroups={navGroups}
                 logoBg={branding.logoBg}
                 logoBgHeight={branding.logoBgHeight}
-                badges={badges}
+                onUnreadChange={setUnreadNotifs}
             />
 
             {/* Mobile drawer */}
@@ -620,6 +971,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 user={user}
                 pathname={pathname}
                 liveCount={liveCount}
+                unreadNotifs={unreadNotifs}
                 showNotif={showNotif}
                 setShowNotif={setShowNotif}
                 notifRef={notifRef}
@@ -630,6 +982,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 navGroups={navGroups}
                 logoBg={branding.logoBg}
                 logoBgHeight={branding.logoBgHeight}
+                onUnreadChange={setUnreadNotifs}
             />
 
             {/* Content */}
@@ -655,21 +1008,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <AiChat />
 
                 {/* Mobile bottom nav */}
-                <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-100 flex items-center justify-around h-14 px-2">
-                    {navGroups[0].items.map((item) => {
-                        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-                        const badge = badges[item.href] || 0;
-                        return (
-                            <Link key={item.href} href={item.href}
-                                className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-0 relative', active ? 'text-primary' : 'text-gray-400 hover:text-gray-700')}>
-                                <item.icon className={cn('h-5 w-5', active && 'stroke-[2.5px]')} />
-                                <span className="text-[10px] font-medium truncate">{item.label}</span>
-                                {active && <span className="h-1 w-1 rounded-full bg-primary" />}
-                                {badge > 0 && <span className="absolute top-0.5 right-1 h-2 w-2 bg-red-500 rounded-full" />}
-                            </Link>
-                        );
-                    })}
-                </nav>
+                <MobileBottomNav
+                    pathname={pathname}
+                    unreadNotifs={unreadNotifs}
+                    liveCount={liveCount}
+                    onUnreadChange={setUnreadNotifs}
+                    role={user.role}
+                />
             </div>
         </div>
     );

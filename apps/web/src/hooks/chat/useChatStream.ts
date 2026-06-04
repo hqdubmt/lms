@@ -14,11 +14,13 @@ interface Options {
   subject: Subject;
   mode: Mode;
   setMode: (m: Mode) => void;
+  aiLabel?: string;
 }
 
-export function useChatStream({ messages, setMessages, subject, mode, setMode }: Options) {
+export function useChatStream({ messages, setMessages, subject, mode, setMode, aiLabel }: Options) {
   const [streaming, setStreaming] = useState(false);
   const [brainKey, setBrainKey] = useState(0);
+  const [streamChars, setStreamChars] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
   const getValidToken = useCallback(async (): Promise<string | null> => {
@@ -38,16 +40,20 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
     }
   }, []);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, historyOverride?: Message[]) => {
     if (!text.trim() || streaming) return;
 
     const inferred = inferMode(text);
     const effectiveMode = inferred ?? mode;
     if (inferred && inferred !== mode) setMode(inferred);
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: text.trim() }];
+    const sentAt = Date.now();
+    const baseHistory = historyOverride ?? messages;
+    const newMessages: Message[] = [...baseHistory, { role: 'user', content: text.trim(), timestamp: sentAt }];
     setMessages([...newMessages, { role: 'assistant', content: '', loading: true }]);
     setStreaming(true);
+    setStreamChars(0);
+    let streamStartAt = 0;
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -81,12 +87,14 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let aiContent = '';
+      let isStreamError = false;
       let metaData: {
         suggestions?: string[];
         sources?: Source[];
         langIntent?: string | null;
         validation?: string[] | null;
         activeAgents?: string[];
+        provider?: string;
       } = {};
 
       while (true) {
@@ -99,7 +107,7 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
           if (data === '[DONE]') continue;
           try {
             const parsed = JSON.parse(data);
-            if (parsed.error) { aiContent = parsed.error; break; }
+            if (parsed.error) { aiContent = parsed.error; isStreamError = true; break; }
             if (parsed.type === 'meta') {
               metaData = {
                 suggestions: parsed.suggestions,
@@ -107,12 +115,33 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
                 langIntent: parsed.langIntent,
                 validation: parsed.validation,
                 activeAgents: parsed.activeAgents,
+                provider: aiLabel || parsed.provider,
               };
+              // Emit metadata immediately — show live while streaming
+              setMessages([...newMessages, {
+                role: 'assistant',
+                content: aiContent,
+                loading: !aiContent,
+                sources: metaData.sources,
+                langIntent: metaData.langIntent,
+                activeAgents: metaData.activeAgents,
+                provider: metaData.provider,
+              }]);
               continue;
             }
             if (parsed.token) {
+              if (!streamStartAt) streamStartAt = Date.now();
               aiContent += parsed.token;
-              setMessages([...newMessages, { role: 'assistant', content: aiContent, loading: false }]);
+              setStreamChars(aiContent.length);
+              setMessages([...newMessages, {
+                role: 'assistant',
+                content: aiContent,
+                loading: false,
+                sources: metaData.sources,
+                langIntent: metaData.langIntent,
+                activeAgents: metaData.activeAgents,
+                provider: metaData.provider,
+              }]);
             }
           } catch { /* skip malformed */ }
         }
@@ -120,7 +149,13 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
 
       if (!aiContent) aiContent = 'Xin lỗi, tôi không thể trả lời lúc này.';
 
-      setMessages([...newMessages, {
+      const finishedAt = Date.now();
+      setMessages([...newMessages, isStreamError ? {
+        role: 'assistant',
+        content: aiContent,
+        loading: false,
+        error: true,
+      } : {
         role: 'assistant',
         content: aiContent,
         loading: false,
@@ -129,6 +164,9 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
         langIntent: metaData.langIntent,
         validationWarnings: metaData.validation,
         activeAgents: metaData.activeAgents,
+        timestamp: finishedAt,
+        latencyMs: streamStartAt ? finishedAt - streamStartAt : undefined,
+        provider: aiLabel || undefined,
       }]);
       setBrainKey(k => k + 1);
       recordLearningEvent({ type: 'chat_session', subject });
@@ -150,5 +188,5 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode }:
     setStreaming(false);
   };
 
-  return { streaming, sendMessage, handleStop, brainKey };
+  return { streaming, sendMessage, handleStop, brainKey, streamChars };
 }
