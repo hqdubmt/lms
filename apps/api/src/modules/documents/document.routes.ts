@@ -13,6 +13,7 @@ import { requireAdmin } from '../../middleware/auth';
 import { prisma } from '../../services/prisma';
 import {
   convertToMarkdown, cleanMarkdown, detectSubject, qualityCheck, ingestDocument,
+  fetchYouTubeTranscript, extractYouTubeId,
   type Subject, type IngestOpts,
 } from '../../services/document-ingestion';
 import { embedText, upsertEntry } from '../../services/rag';
@@ -89,6 +90,41 @@ export async function documentRoutes(app: FastifyInstance) {
     const doc = await ingestDocument(buffer, file.filename, file.mimetype, opts);
 
     return reply.status(201).send(doc);
+  });
+
+  // ── POST /documents/youtube — YouTube transcript ingestion (Module 3) ───────
+  app.post('/youtube', { preHandler: requireAdmin }, async (req, reply) => {
+    const body = req.body as { url?: string; subject?: string };
+    const url = body?.url?.trim();
+    if (!url) return reply.status(400).send({ error: 'Vui lòng cung cấp URL YouTube' });
+
+    const videoId = extractYouTubeId(url);
+    if (!videoId) return reply.status(400).send({ error: 'URL YouTube không hợp lệ' });
+
+    const { sub } = req.user as { sub: string };
+
+    try {
+      const { markdown: raw, rawText } = await fetchYouTubeTranscript(url);
+      const markdown = cleanMarkdown(raw);
+      const subject = (body?.subject as Subject) || detectSubject(markdown);
+      const quality = qualityCheck(markdown);
+
+      const opts: IngestOpts = {
+        importedBy: sub,
+        subject,
+        saveToMinio: false,
+      };
+      const doc = await ingestDocument(
+        Buffer.from(markdown, 'utf-8'),
+        `youtube-${videoId}.md`,
+        'text/markdown',
+        opts,
+      );
+
+      return reply.status(201).send({ ...doc, videoId, quality });
+    } catch (err: any) {
+      return reply.status(422).send({ error: err?.message || 'Không thể lấy transcript từ YouTube' });
+    }
   });
 
   // ── POST /documents/embed/:id — trigger RAG embedding ────────────────────

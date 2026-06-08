@@ -185,6 +185,74 @@ function pdfTextToMarkdown(text: string): string {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ─── YouTube Transcript Extractor (Module 3) ─────────────────────────────────
+
+export function extractYouTubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
+    /^([A-Za-z0-9_-]{11})$/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+export async function fetchYouTubeTranscript(videoIdOrUrl: string): Promise<ConversionResult> {
+  const videoId = extractYouTubeId(videoIdOrUrl);
+  if (!videoId) throw new Error('URL YouTube không hợp lệ');
+
+  // Fetch YouTube page để lấy captionTracks URL
+  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: { 'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8', 'User-Agent': 'Mozilla/5.0' },
+  });
+  const html = await pageRes.text();
+
+  // Extract timedtext URL from serialized page data
+  const captionMatch = html.match(/"captionTracks":\[(.*?)\](?=,"audioTracks")/s);
+  if (!captionMatch) {
+    // Fallback: try direct timedtext URL for auto-generated captions
+    const timedUrl = `https://www.youtube.com/api/timedtext?lang=vi&v=${videoId}`;
+    const res = await fetch(timedUrl);
+    const xml = await res.text();
+    if (!xml.includes('<text')) throw new Error('Video không có phụ đề');
+    return xmlTranscriptToMarkdown(xml, videoId);
+  }
+
+  // Parse first available track (prefer vi, then en, then first)
+  const tracks = JSON.parse(`[${captionMatch[1]}]`) as Array<{
+    baseUrl: string; languageCode: string; name?: { simpleText?: string };
+  }>;
+  const track = tracks.find(t => t.languageCode === 'vi')
+    ?? tracks.find(t => t.languageCode?.startsWith('en'))
+    ?? tracks[0];
+  if (!track?.baseUrl) throw new Error('Không tìm thấy phụ đề');
+
+  const tRes = await fetch(track.baseUrl);
+  const xml = await tRes.text();
+  return xmlTranscriptToMarkdown(xml, videoId, track.languageCode);
+}
+
+function xmlTranscriptToMarkdown(xml: string, videoId: string, lang = 'vi'): ConversionResult {
+  const entries = [...xml.matchAll(/<text[^>]*start="([^"]+)"[^>]*>([^<]*)<\/text>/g)];
+  if (!entries.length) throw new Error('Không phân tích được phụ đề');
+
+  const lines = entries.map(([, , text]) =>
+    text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\n/g, ' ').trim(),
+  ).filter(Boolean);
+
+  const rawText = lines.join(' ');
+  const paragraphs: string[] = [];
+  for (let i = 0; i < lines.length; i += 8) {
+    paragraphs.push(lines.slice(i, i + 8).join(' '));
+  }
+
+  const markdown = `# Transcript YouTube: ${videoId}\n\n*Ngôn ngữ: ${lang}*\n\n${paragraphs.join('\n\n')}`;
+  return { markdown, rawText, sourceType: 'youtube' };
+}
+
 // ─── Main conversion function ─────────────────────────────────────────────────
 
 export async function convertToMarkdown(

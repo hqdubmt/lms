@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Library, Upload, Trash2, Zap, RefreshCw, CheckCircle2,
   XCircle, Clock, Loader2, FileText, Eye, Filter, ChevronDown,
-  FileType2, Database,
+  FileType2, Database, Youtube, Link2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -50,6 +50,9 @@ export default function DocumentsPage() {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState('');
   const [previewDoc, setPreviewDoc] = useState<Doc & { markdown?: string } | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [ytImporting, setYtImporting] = useState(false);
+  const [ytMsg, setYtMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async (page = 1) => {
@@ -93,6 +96,23 @@ export default function DocumentsPage() {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     Array.from(e.dataTransfer.files).forEach(f => importFile(f));
+  };
+
+  const importYoutube = async () => {
+    if (!youtubeUrl.trim()) return;
+    setYtImporting(true);
+    setYtMsg('Đang tải transcript YouTube...');
+    try {
+      const d = await api.post<{ filename: string; subject: string }>('/admin/documents/youtube', { url: youtubeUrl.trim() });
+      setYtMsg(`✓ Nhập thành công: ${d.filename} [${d.subject}]`);
+      setYoutubeUrl('');
+      load();
+    } catch (e: any) {
+      setYtMsg(`Lỗi: ${e?.message || 'Không thể lấy transcript'}`);
+    } finally {
+      setYtImporting(false);
+      setTimeout(() => setYtMsg(''), 5000);
+    }
   };
 
   const embed = async (id: string) => {
@@ -171,6 +191,29 @@ export default function DocumentsPage() {
             PDF · DOCX · XLSX · PPTX · CSV · HTML · TXT · MD — hỗ trợ nhiều file
           </p>
         </div>
+      </div>
+
+      {/* YouTube URL import (Module 3) */}
+      <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-2xl">
+        <Youtube className="h-5 w-5 text-red-500 shrink-0" />
+        <input
+          type="url"
+          value={youtubeUrl}
+          onChange={e => setYoutubeUrl(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && importYoutube()}
+          placeholder="Dán URL YouTube để trích xuất transcript..."
+          className="flex-1 text-sm bg-transparent border-none outline-none placeholder:text-red-300"
+          disabled={ytImporting}
+        />
+        {ytMsg && <span className="text-xs text-red-600 shrink-0 max-w-[200px] truncate">{ytMsg}</span>}
+        <button
+          onClick={importYoutube}
+          disabled={ytImporting || !youtubeUrl.trim()}
+          className="flex items-center gap-1 text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
+        >
+          {ytImporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+          Nhập
+        </button>
       </div>
 
       {/* Filters */}

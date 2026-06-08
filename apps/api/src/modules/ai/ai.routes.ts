@@ -372,7 +372,11 @@ export async function aiRoutes(app: FastifyInstance) {
         if (agentResults.length > 0) {
           for (const r of agentResults) {
             const agentName = r.agent.toLowerCase().replace(/ /g, '_') as MonitoredAgent;
-            const knownAgents: MonitoredAgent[] = ['tutor', 'math', 'quiz', 'homework', 'knowledge_graph'];
+            const knownAgents: MonitoredAgent[] = [
+              'tutor', 'math', 'quiz', 'homework', 'knowledge_graph',
+              'reflection', 'self_correction', 'critic', 'planner',
+              'motivation', 'career', 'language', 'learning_coach',
+            ];
             if (knownAgents.includes(agentName)) {
               recordAgentCall(agentName, 0, true).catch(() => {});
             }

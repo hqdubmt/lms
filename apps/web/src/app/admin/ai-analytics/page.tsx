@@ -97,11 +97,19 @@ const PROVIDER_COLOR: Record<string, string> = {
 };
 
 const AGENT_COLOR: Record<string, string> = {
-  tutor: 'bg-indigo-100 text-indigo-700',
-  math: 'bg-blue-100 text-blue-700',
-  quiz: 'bg-amber-100 text-amber-700',
-  homework: 'bg-rose-100 text-rose-700',
+  tutor:           'bg-indigo-100 text-indigo-700',
+  math:            'bg-blue-100 text-blue-700',
+  quiz:            'bg-amber-100 text-amber-700',
+  homework:        'bg-rose-100 text-rose-700',
   knowledge_graph: 'bg-violet-100 text-violet-700',
+  reflection:      'bg-slate-100 text-slate-700',
+  self_correction: 'bg-orange-100 text-orange-700',
+  critic:          'bg-red-100 text-red-700',
+  planner:         'bg-teal-100 text-teal-700',
+  motivation:      'bg-yellow-100 text-yellow-700',
+  career:          'bg-green-100 text-green-700',
+  language:        'bg-cyan-100 text-cyan-700',
+  learning_coach:  'bg-pink-100 text-pink-700',
 };
 
 const STATUS_ICON: Record<HealthStatus, React.ElementType> = {
