@@ -58,13 +58,13 @@ async function callGroqForJSON(
   }
 }
 
-async function groqChat(messages: ChatMessage[]): Promise<string> {
+async function groqChat(messages: ChatMessage[], maxTokens = 1024): Promise<string> {
   const client = getGroqClient();
   if (!client) throw new Error('Groq không khả dụng');
   const res = await client.chat.completions.create({
     model: GROQ_MODEL,
     messages: messages as any,
-    max_tokens: 512,
+    max_tokens: maxTokens,
     temperature: 0.7,
   });
   return res.choices[0]?.message?.content ?? '';
@@ -128,7 +128,7 @@ async function callGeminiForJSON(
   }
 }
 
-async function geminiChat(messages: ChatMessage[]): Promise<string> {
+async function geminiChat(messages: ChatMessage[], maxTokens = 1024): Promise<string> {
   const key = getGeminiKey();
   if (!key) throw new Error('Gemini không khả dụng');
 
@@ -146,7 +146,7 @@ async function geminiChat(messages: ChatMessage[]): Promise<string> {
       body: JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
         contents: convo,
-        generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
       }),
       signal: AbortSignal.timeout(30_000),
     },
@@ -370,12 +370,13 @@ function buildProviderOrder(prefer?: ProviderPref): ProviderPref[] {
 
 export async function aiChatOnce(
   messages: ChatMessage[],
-  opts?: { prefer?: ProviderPref },
+  opts?: { prefer?: ProviderPref; maxTokens?: number },
 ): Promise<string> {
+  const maxTokens = opts?.maxTokens ?? 1024;
   for (const provider of buildProviderOrder(opts?.prefer)) {
     try {
-      if (provider === 'groq' && getGroqClient()) return await groqChat(messages);
-      if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages);
+      if (provider === 'groq' && getGroqClient()) return await groqChat(messages, maxTokens);
+      if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages, maxTokens);
       if (provider === 'ollama') return await ollamaChat(messages); // luôn thử
     } catch { /* thử provider tiếp theo */ }
   }

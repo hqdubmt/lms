@@ -89,17 +89,23 @@ export async function getBrain(userId: string, subject: string): Promise<BrainSt
   }
 }
 
-// ─── Merge mistakes: tăng count nếu trùng type ───────────────────────────────
+// ─── Merge mistakes: tăng count nếu trùng type, dedup trong incoming ─────────
 
 function mergeMistakes(current: MistakeRecord[], incoming: MistakeRecord[]): MistakeRecord[] {
+  const now = Date.now();
   const map = new Map(current.map(m => [m.type, { ...m }]));
+  // Dedup incoming trước — nếu cùng type, gộp count
+  const incomingDeduped = new Map<string, number>();
   for (const m of incoming) {
-    const existing = map.get(m.type);
+    incomingDeduped.set(m.type, (incomingDeduped.get(m.type) ?? 0) + 1);
+  }
+  for (const [type, cnt] of incomingDeduped) {
+    const existing = map.get(type);
     if (existing) {
-      existing.count += 1;
-      existing.lastSeen = Date.now();
+      existing.count += cnt;
+      existing.lastSeen = now;
     } else {
-      map.set(m.type, { type: m.type, count: 1, lastSeen: Date.now() });
+      map.set(type, { type, count: cnt, lastSeen: now });
     }
   }
   return [...map.values()].slice(-8);

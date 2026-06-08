@@ -45,17 +45,18 @@ export async function getDifficultyLevel(
   // Adaptive rules
   let score = avgMasteryPct;
 
-  // Boost/penalise based on quiz score
+  // Boost/penalise based on quiz score (clamp to 0-100 trước khi dùng)
   if (quizScore !== null) {
-    score = Math.round(score * 0.6 + quizScore * 0.4);
+    const clampedQuiz = Math.max(0, Math.min(100, quizScore));
+    score = Math.round(score * 0.6 + clampedQuiz * 0.4);
   }
 
   // Penalise for many recent mistakes
   if (recentMistakes >= 4) score -= 10;
   else if (recentMistakes >= 2) score -= 5;
 
-  // Level based on brain.level hint
-  const levelBonus: Record<string, number> = { beginner: -10, intermediate: 0, advanced: 10 };
+  // Level hint từ brain — key phải khớp với LearningLevel
+  const levelBonus: Record<string, number> = { basic: -10, intermediate: 0, advanced: 10 };
   score += levelBonus[brain.level] ?? 0;
 
   score = Math.max(0, Math.min(100, score));

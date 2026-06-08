@@ -38,6 +38,20 @@ export const LANG_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; promp
   { label: 'Luyện nghe', icon: Headphones, prompt: 'Giải thích nội dung nghe và từ vựng quan trọng: ' },
 ];
 
+export const MATH_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; prompt: string }> = [
+  { label: 'Giải bài',   icon: PenLine,    prompt: 'Giải bài toán: ' },
+  { label: 'Giải thích', icon: BookOpen,   prompt: 'Giải thích công thức: ' },
+  { label: 'Bài tập',    icon: CheckSquare, prompt: 'Cho em bài tập về: ' },
+  { label: 'Quiz',       icon: HelpCircle, prompt: 'Tạo quiz toán về: ' },
+];
+
+export const VIET_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; prompt: string }> = [
+  { label: 'Giải thích', icon: BookOpen,   prompt: 'Giải thích từ: ' },
+  { label: 'Chính tả',   icon: PenLine,    prompt: 'Kiểm tra chính tả câu: ' },
+  { label: 'Ngữ pháp',   icon: Sparkles,   prompt: 'Giải thích ngữ pháp câu: ' },
+  { label: 'Quiz',       icon: HelpCircle, prompt: 'Tạo quiz tiếng Việt về: ' },
+];
+
 export const INTENT_PATTERNS: Array<{ pattern: RegExp; mode: Mode }> = [
   { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của/i,                 mode: 'homework' }, // 1
   { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i,                 mode: 'quiz' },     // 2

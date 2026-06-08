@@ -1,6 +1,6 @@
 import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { LANG_QUICK_ACTIONS } from './constants';
+import { LANG_QUICK_ACTIONS, MATH_QUICK_ACTIONS, VIET_QUICK_ACTIONS } from './constants';
 import type { Subject } from './types';
 
 interface EmptyStateProps {
@@ -12,7 +12,14 @@ interface EmptyStateProps {
   onSetInput: (text: string) => void;
 }
 
+const QUICK_ACTIONS: Partial<Record<Subject, Array<{ label: string; icon: React.ElementType; prompt: string }>>> = {
+  language: LANG_QUICK_ACTIONS,
+  math:     MATH_QUICK_ACTIONS,
+  viet:     VIET_QUICK_ACTIONS,
+};
+
 export function EmptyState({ label, color, hint, subject, historyLoading, onSetInput }: EmptyStateProps) {
+  const actions = QUICK_ACTIONS[subject];
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
       <div className={cn('h-14 w-14 rounded-2xl mb-3 flex items-center justify-center bg-gradient-to-br', color)}>
@@ -23,9 +30,9 @@ export function EmptyState({ label, color, hint, subject, historyLoading, onSetI
         ? <p className="text-xs text-gray-400 mb-3">Đang tải lịch sử...</p>
         : <p className="text-xs text-gray-400 mb-3">{hint}</p>
       }
-      {subject === 'language' && !historyLoading && (
+      {actions && !historyLoading && (
         <div className="flex flex-wrap gap-1.5 justify-center mt-1">
-          {LANG_QUICK_ACTIONS.map(action => {
+          {actions.slice(0, subject === 'language' ? 8 : 4).map(action => {
             const Icon = action.icon;
             return (
               <button

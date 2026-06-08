@@ -165,6 +165,7 @@ export async function aiRoutes(app: FastifyInstance) {
       subject,
       mode: effectiveMode,
       brain,
+      message: lastUserMsg,
       messageLen: lastUserMsg.length,
       ragIndexSize: indexStats.total,
     });
@@ -254,15 +255,18 @@ export async function aiRoutes(app: FastifyInstance) {
     const streamBeginAt = Date.now();
     try {
       // ── LLM Router — dùng preferred provider từ Orchestrator ─────────────
-      // Language agent cần nhiều tokens hơn để trả về IPA + dịch + ngữ pháp + ví dụ
-      const streamMaxTokens = langResult ? 1024 : 768;
+      // Adaptive + homework cần nhiều tokens; language cần IPA + format phong phú
+      const streamMaxTokens = effectiveMode === 'homework' ? 1536
+        : effectiveMode === 'adaptive' ? 1024
+        : langResult ? 1024
+        : 768;
       for await (const token of aiChatStream(fullMessages, { prefer: orch.preferredProvider ?? undefined, maxTokens: streamMaxTokens })) {
         aiFullContent += token;
         reply.raw.write(`data: ${JSON.stringify({ token })}\n\n`);
       }
       reply.raw.write('data: [DONE]\n\n');
 
-      const suggestions = SUGGESTIONS[subject as Subject]?.[effectiveMode as Mode] ?? SUGGESTIONS.general.tutor;
+      const suggestions = SUGGESTIONS[subject as Subject]?.[effectiveMode as Mode] ?? SUGGESTIONS.general.tutor ?? [];
       const sources = ragSources.length > 0 ? ragSources : await findSources(lastUserMsg);
       const activeAgents = agentResults.map(r => r.agent);
 
@@ -497,7 +501,7 @@ Trả về JSON theo đúng định dạng sau (không có markdown):
       const raw = await aiChatOnce([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Đây là bài làm của em:\n\n${content}` },
-      ], { prefer: 'gemini' });
+      ], { prefer: 'gemini', maxTokens: 1536 });
 
       let parsed: { score: number; rubric: any[]; mistakes: string[]; suggestions: string[]; summary: string } | null = null;
       try {
