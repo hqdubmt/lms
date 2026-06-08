@@ -13,9 +13,10 @@ const XP_KEY = (userId: string) => `xp:v1:${userId}`;
 const XP_TABLE: Record<string, number> = {
   chat:     5,
   quiz:     20,
-  homework: 25,
+  homework: 50,
   voice:    15,
   study:    10,
+  achievement: 100,
 };
 
 // Level thresholds (total XP needed)
@@ -271,6 +272,7 @@ export async function awardXP(
   updateQuestProgress(data, activity);
 
   await saveXPStore(userId, data);
+  redis.zadd('xp:global:leaderboard', data.totalXP, userId).catch(() => {});
   return {
     xpGained,
     newTotal: data.totalXP,

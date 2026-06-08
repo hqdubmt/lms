@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { getXPData, awardXP, completeQuest } from '../../services/xp-gamification';
+import { redis } from '../../services/redis';
+import { prisma } from '../../services/prisma';
 
 export async function xpGamificationRoutes(app: FastifyInstance) {
   app.get('/xp', { preHandler: requireAuth }, async (req, reply) => {
@@ -30,5 +32,44 @@ export async function xpGamificationRoutes(app: FastifyInstance) {
     const result = await completeQuest(sub, body.data.questId);
     if (!result) return reply.status(400).send({ error: 'Quest không hợp lệ hoặc đã hoàn thành' });
     return reply.send(result);
+  });
+
+  // GET /ai/leaderboard — top users by total XP (Module 11: Leaderboard)
+  app.get('/leaderboard', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const limit = Math.min(50, parseInt((req.query as any).limit ?? '20', 10));
+
+    const raw = await redis.zrevrange('xp:global:leaderboard', 0, limit - 1, 'WITHSCORES');
+
+    if (!raw.length) {
+      const xp = await getXPData(sub);
+      const me = await prisma.user.findUnique({ where: { id: sub }, select: { id: true, name: true, avatarUrl: true } });
+      return reply.send({ entries: [{ rank: 1, userId: sub, name: me?.name ?? 'Bạn', avatarUrl: me?.avatarUrl ?? null, totalXP: xp.totalXP, isMe: true }], myRank: 1 });
+    }
+
+    const entries: Array<{ userId: string; totalXP: number }> = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      entries.push({ userId: raw[i], totalXP: parseInt(raw[i + 1], 10) });
+    }
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: entries.map(e => e.userId) } },
+      select: { id: true, name: true, avatarUrl: true },
+    });
+    const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+    const myRankRaw = await redis.zrevrank('xp:global:leaderboard', sub);
+    const myRank = myRankRaw !== null ? myRankRaw + 1 : null;
+
+    const result = entries.map((e, idx) => ({
+      rank: idx + 1,
+      userId: e.userId,
+      name: userMap[e.userId]?.name ?? 'Ẩn danh',
+      avatarUrl: userMap[e.userId]?.avatarUrl ?? null,
+      totalXP: e.totalXP,
+      isMe: e.userId === sub,
+    }));
+
+    return reply.send({ entries: result, myRank });
   });
 }

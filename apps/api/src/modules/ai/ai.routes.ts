@@ -347,6 +347,7 @@ export async function aiRoutes(app: FastifyInstance) {
               homeworkCount: la.homeworkCount,
               currentStreak: streak.currentStreak,
               topMastery: masteryAvg,
+              subject: subject as string,
             });
             // XP + Timeline (fire-and-forget)
             await awardXP(sub, eventType).catch(() => {});
@@ -545,6 +546,7 @@ Trả về JSON theo đúng định dạng sau (không có markdown):
           await checkAndUnlockAchievements(sub, {
             homeworkCount: la.homeworkCount,
             currentStreak: sk.currentStreak,
+            subject: subject as string,
           });
           await awardXP(sub, 'homework').catch(() => {});
           await recordTimelineEvent(sub, {
