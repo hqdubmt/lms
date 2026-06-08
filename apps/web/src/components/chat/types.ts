@@ -49,6 +49,7 @@ export interface Recommendation {
 }
 
 export interface Message {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
   loading?: boolean;
@@ -61,6 +62,8 @@ export interface Message {
   timestamp?: number;
   latencyMs?: number;
   provider?: string;
+  subject?: string;
+  mode?: string;
 }
 
 export type Subject = 'math' | 'language' | 'viet' | 'general';

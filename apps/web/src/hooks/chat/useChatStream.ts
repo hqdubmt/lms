@@ -156,6 +156,7 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode, a
         loading: false,
         error: true,
       } : {
+        id: `msg_${finishedAt}_${Math.random().toString(36).slice(2, 8)}`,
         role: 'assistant',
         content: aiContent,
         loading: false,
@@ -167,6 +168,8 @@ export function useChatStream({ messages, setMessages, subject, mode, setMode, a
         timestamp: finishedAt,
         latencyMs: streamStartAt ? finishedAt - streamStartAt : undefined,
         provider: aiLabel || undefined,
+        subject,
+        mode: effectiveMode,
       }]);
       setBrainKey(k => k + 1);
       recordLearningEvent({ type: 'chat_session', subject });

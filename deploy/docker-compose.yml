@@ -218,6 +218,69 @@ services:
     networks:
       - frontend
 
+  # ─── Phase 13: Monitoring Stack ─────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: lms_prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: lms_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s/grafana/'
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - backend
+      - frontend
+
+  loki:
+    image: grafana/loki:2.9.6
+    container_name: lms_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    networks:
+      - backend
+
+  promtail:
+    image: grafana/promtail:2.9.6
+    container_name: lms_promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./monitoring/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    networks:
+      - backend
+
   # ── Watchtower: tự pull image mới từ Docker Hub mỗi 60s ─────────────────
   watchtower:
     image: containrrr/watchtower
@@ -235,6 +298,9 @@ volumes:
   mongo_data:
   minio_data:
   nginx_logs:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 
 networks:
   backend:

@@ -5,6 +5,7 @@ import { MessageContent } from './MessageContent';
 import { CopyButton } from './CopyButton';
 import { TtsButton } from './TtsButton';
 import { StreamActivityStrip } from './StreamActivityStrip';
+import { FeedbackButtons } from './FeedbackButtons';
 import type { Message } from './types';
 
 interface MessageBubbleProps {
@@ -90,11 +91,19 @@ export function MessageBubble({
           />
         )}
 
-        {/* Copy + TTS actions */}
+        {/* Copy + TTS + Feedback actions */}
         {streamDone && (
           <div className="flex items-center gap-0.5 px-1">
             <CopyButton text={msg.content} />
             <TtsButton text={msg.content} lang={ttsLang} />
+            {msg.id && (
+              <FeedbackButtons
+                messageId={msg.id}
+                subject={msg.subject}
+                mode={msg.mode}
+                provider={msg.provider}
+              />
+            )}
           </div>
         )}
 

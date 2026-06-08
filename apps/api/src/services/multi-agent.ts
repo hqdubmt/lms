@@ -8,8 +8,9 @@
 
 import type { BrainState } from './conversation-brain';
 import { getTopConcepts } from './knowledge-graph';
+import { getDnaProfile, buildDnaHint } from './learning-dna';
 
-export type AgentType = 'tutor' | 'math' | 'language' | 'quiz' | 'homework' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner' | 'motivation' | 'career';
+export type AgentType = 'tutor' | 'math' | 'language' | 'quiz' | 'homework' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner' | 'motivation' | 'career' | 'learning_dna';
 
 export interface AgentResult {
   agent: AgentType;
@@ -387,6 +388,18 @@ function careerAgent(brain: BrainState, subject: Subject): AgentResult | null {
 
 // ─── Multi-Agent Runner ───────────────────────────────────────────────────────
 
+// ─── Learning DNA Agent ───────────────────────────────────────────────────────
+
+async function learningDnaAgent(userId: string): Promise<AgentResult | null> {
+  try {
+    const profile = await getDnaProfile(userId);
+    if (profile.interactionCount < 2) return null;
+    return { agent: 'learning_dna', hint: buildDnaHint(profile) };
+  } catch {
+    return null;
+  }
+}
+
 export interface MultiAgentParams {
   subject: string;
   mode: string;
@@ -416,6 +429,7 @@ export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResu
 
   if (userId) {
     tasks.push(knowledgeGraphAgent(userId, s, message));
+    tasks.push(learningDnaAgent(userId));
   }
 
   if (mode === 'tutor' || mode === 'exercise') {

@@ -9,7 +9,7 @@ import {
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
     Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
     Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users, BarChart2,
-    Map, HeartHandshake, Briefcase, Sparkles, Trophy,
+    Map, HeartHandshake, Briefcase, Sparkles, Trophy, ShoppingBag,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -36,6 +36,7 @@ const BASE_NAV_GROUPS = [
         items: [
             { href: '/dashboard',      label: 'Trang chủ',  icon: Home,          exact: true },
             { href: '/courses',        label: 'Khoá học',   icon: BookOpen },
+            { href: '/marketplace',    label: 'Marketplace', icon: ShoppingBag },
             { href: '/media',          label: 'Thư viện',   icon: ImageIcon },
             { href: '/language',       label: 'Ngoại ngữ',  icon: Globe },
             { href: '/math',           label: 'Toán học',   icon: Calculator },
