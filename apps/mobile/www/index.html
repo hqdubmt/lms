@@ -9,13 +9,19 @@
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
-  /* Splash */
+  /* ── Variables ──────────────────────────────────────── */
+  :root {
+    --safe-top: max(16px, env(safe-area-inset-top));
+    --safe-bot: max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* ── Splash ─────────────────────────────────────────── */
   #splash {
     position: fixed; inset: 0; z-index: 100;
     background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
   }
-  #splash .logo {
+  .logo-icon {
     width: 88px; height: 88px;
     background: linear-gradient(135deg, #3b82f6, #6366f1);
     border-radius: 22px;
@@ -24,12 +30,10 @@
     box-shadow: 0 12px 40px rgba(59,130,246,0.45);
     animation: pulse 2s ease-in-out infinite;
   }
-  @keyframes pulse {
-    0%,100% { transform: scale(1); } 50% { transform: scale(1.06); }
-  }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
   #splash h1 { font-size: 30px; font-weight: 700; color: #fff; }
   #splash p { font-size: 14px; color: rgba(255,255,255,0.45); }
-  #splash .ai-badge {
+  .ai-badge {
     font-size: 11px; font-weight: 600;
     color: #a78bfa; background: rgba(124,58,237,0.15);
     border: 1px solid rgba(124,58,237,0.3);
@@ -37,44 +41,42 @@
   }
   .dots { display: flex; gap: 7px; margin-top: 6px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; animation: bounce 1.2s ease-in-out infinite; }
-  .dot:nth-child(1) { background: #3b82f6; }
-  .dot:nth-child(2) { background: #6366f1; animation-delay: .2s; }
-  .dot:nth-child(3) { background: #8b5cf6; animation-delay: .4s; }
-  @keyframes bounce { 0%,80%,100% { transform: translateY(0); opacity:.4; } 40% { transform: translateY(-9px); opacity:1; } }
+  .dot:nth-child(1){background:#3b82f6} .dot:nth-child(2){background:#6366f1;animation-delay:.2s} .dot:nth-child(3){background:#8b5cf6;animation-delay:.4s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-9px);opacity:1}}
 
-  /* Setup */
+  /* ── Setup screen ───────────────────────────────────── */
   #setup {
     position: fixed; inset: 0; z-index: 90;
     background: #0f172a;
     display: none; flex-direction: column; align-items: center; justify-content: center;
-    padding: 32px 28px;
-    padding-top: max(32px, env(safe-area-inset-top));
-    padding-bottom: max(32px, env(safe-area-inset-bottom));
+    padding: var(--safe-top) 28px var(--safe-bot);
+    overflow-y: auto;
   }
-  #setup .logo { width: 72px; height: 72px; background: linear-gradient(135deg,#3b82f6,#6366f1); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 20px; box-shadow: 0 8px 28px rgba(59,130,246,.35); }
+  #setup .logo-icon { width: 72px; height: 72px; font-size: 32px; border-radius: 18px; margin-bottom: 20px; animation: none; }
   #setup h2 { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 8px; text-align: center; }
   #setup .desc { font-size: 13px; color: rgba(255,255,255,.45); text-align: center; line-height: 1.6; margin-bottom: 16px; }
-  #setup .features { display: flex; gap: 6px; margin-bottom: 22px; flex-wrap: wrap; justify-content: center; }
-  #setup .feat { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid; }
-  #setup .feat-ai   { color: #a78bfa; border-color: rgba(124,58,237,.3); background: rgba(124,58,237,.12); }
-  #setup .feat-chat { color: #34d399; border-color: rgba(5,150,105,.3); background: rgba(5,150,105,.12); }
-  #setup .feat-stt  { color: #60a5fa; border-color: rgba(37,99,235,.3); background: rgba(37,99,235,.12); }
-  #setup .feat-quiz { color: #fb923c; border-color: rgba(234,88,12,.3); background: rgba(234,88,12,.12); }
-  #setup .feat-rag  { color: #f472b6; border-color: rgba(219,39,119,.3); background: rgba(219,39,119,.12); }
-  #setup label { align-self: flex-start; font-size: 11px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; width: 100%; }
-  #setup input {
+  .features { display: flex; gap: 6px; margin-bottom: 22px; flex-wrap: wrap; justify-content: center; }
+  .feat { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid; }
+  .feat-ai   { color: #a78bfa; border-color: rgba(124,58,237,.3); background: rgba(124,58,237,.12); }
+  .feat-chat { color: #34d399; border-color: rgba(5,150,105,.3); background: rgba(5,150,105,.12); }
+  .feat-stt  { color: #60a5fa; border-color: rgba(37,99,235,.3); background: rgba(37,99,235,.12); }
+  .feat-quiz { color: #fb923c; border-color: rgba(234,88,12,.3); background: rgba(234,88,12,.12); }
+  .feat-rag  { color: #f472b6; border-color: rgba(219,39,119,.3); background: rgba(219,39,119,.12); }
+  .feat-voice{ color: #22d3ee; border-color: rgba(8,145,178,.3); background: rgba(8,145,178,.12); }
+  label { align-self: flex-start; font-size: 11px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; width: 100%; }
+  input[type="url"], input[type="text"] {
     width: 100%; padding: 14px 16px;
     background: rgba(255,255,255,.07); border: 1.5px solid rgba(255,255,255,.12); border-radius: 12px;
     color: #fff; font-size: 15px; outline: none; margin-bottom: 8px;
     -webkit-appearance: none; appearance: none;
   }
-  #setup input:focus { border-color: #3b82f6; background: rgba(59,130,246,.1); }
-  #setup input::placeholder { color: rgba(255,255,255,.25); }
-  .hint { font-size: 12px; color: rgba(255,255,255,.3); width: 100%; margin-bottom: 24px; line-height: 1.5; }
+  input:focus { border-color: #3b82f6; background: rgba(59,130,246,.1); }
+  input::placeholder { color: rgba(255,255,255,.25); }
+  .hint { font-size: 12px; color: rgba(255,255,255,.3); width: 100%; margin-bottom: 16px; line-height: 1.5; }
   .hint code { background: rgba(255,255,255,.08); padding: 1px 6px; border-radius: 4px; color: rgba(255,255,255,.5); }
   .err { font-size: 12px; color: #f87171; width: 100%; margin-bottom: 12px; display: none; }
   .err.show { display: block; }
-  #connectBtn {
+  .btn-primary {
     width: 100%; padding: 15px;
     background: linear-gradient(135deg,#3b82f6,#6366f1); border: none; border-radius: 12px;
     color: #fff; font-size: 16px; font-weight: 700; cursor: pointer;
@@ -82,10 +84,10 @@
     box-shadow: 0 4px 20px rgba(59,130,246,.4);
     transition: opacity .15s, transform .1s;
   }
-  #connectBtn:active { transform: scale(0.98); opacity: .9; }
-  #connectBtn:disabled { opacity: .5; }
+  .btn-primary:active { transform: scale(0.98); opacity: .9; }
+  .btn-primary:disabled { opacity: .5; }
 
-  /* Main webview frame */
+  /* ── App WebView ────────────────────────────────────── */
   #appFrame {
     position: fixed; inset: 0;
     display: none;
@@ -93,12 +95,9 @@
     padding-bottom: env(safe-area-inset-bottom);
     background: #fff;
   }
-  #appFrame iframe {
-    width: 100%; height: 100%; border: none;
-    display: block;
-  }
+  #lmsFrame { width: 100%; height: 100%; border: none; display: block; }
 
-  /* Error */
+  /* ── Error screen ───────────────────────────────────── */
   #errorScreen {
     position: fixed; inset: 0; z-index: 80;
     background: #0f172a; display: none;
@@ -111,16 +110,45 @@
   .err-btns { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
   .btn-retry { padding: 11px 28px; background: #3b82f6; border: none; border-radius: 10px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
   .btn-settings { padding: 11px 28px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+  /* ── Offline banner ─────────────────────────────────── */
+  #offlineBanner {
+    position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 200;
+    background: #ef4444; color: #fff;
+    font-size: 12px; font-weight: 600; text-align: center;
+    padding: 8px 16px;
+    transform: translateY(-100%); transition: transform .3s ease;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  #offlineBanner.show { transform: translateY(0); }
+  #offlineBanner::before { content: '📶'; font-size: 14px; }
+
+  /* ── Update banner ──────────────────────────────────── */
+  #updateBanner {
+    position: fixed; bottom: env(safe-area-inset-bottom); left: 12px; right: 12px; z-index: 200;
+    background: #1e293b; border: 1px solid rgba(99,102,241,.4);
+    border-radius: 14px; padding: 12px 16px;
+    display: none; align-items: center; gap: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    animation: slideUp .3s ease;
+  }
+  @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+  #updateBanner p { flex:1; font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+  #updateBanner strong { color: #fff; display: block; margin-bottom: 2px; }
+  .btn-update { padding: 8px 16px; background: #6366f1; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 </style>
 </head>
 <body>
 
+<!-- Offline Banner -->
+<div id="offlineBanner">Không có kết nối internet</div>
+
 <!-- Splash -->
 <div id="splash">
-  <div class="logo">📚</div>
+  <div class="logo-icon">📚</div>
   <h1>MasterLMS</h1>
   <p>Nền tảng học tập thông minh</p>
-  <div class="ai-badge">🤖 AI Tutor OS v2 · Groq · Gemini · Ollama</div>
+  <div class="ai-badge">🤖 AI Tutor · Chat · Quiz · Voice</div>
   <div class="dots">
     <div class="dot"></div><div class="dot"></div><div class="dot"></div>
   </div>
@@ -128,37 +156,26 @@
 
 <!-- Setup -->
 <div id="setup">
-  <div class="logo">📚</div>
+  <div class="logo-icon">📚</div>
   <h2>Kết nối máy chủ</h2>
-  <p class="desc">Nhập địa chỉ máy chủ LMS của trường để bắt đầu học tập và giảng dạy.</p>
+  <p class="desc">Nhập địa chỉ máy chủ LMS của trường để bắt đầu học tập.</p>
   <div class="features">
     <span class="feat feat-ai">🤖 AI Tutor OS v2</span>
-    <span class="feat feat-chat">🧠 Conversation Intelligence</span>
+    <span class="feat feat-chat">🧠 Multi-Agent AI</span>
     <span class="feat feat-quiz">📝 Quiz tương tác</span>
     <span class="feat feat-rag">📚 RAG giáo trình</span>
-    <span class="feat feat-stt">🎤 Nhận dạng giọng nói</span>
+    <span class="feat feat-stt">🎤 Voice Learning</span>
+    <span class="feat feat-voice">💡 Learning DNA</span>
   </div>
   <label for="urlInput">Địa chỉ máy chủ</label>
-  <input type="url" id="urlInput" placeholder="http://192.168.1.100:3000" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
-  <p class="hint">Ví dụ: <code>http://192.168.1.100:3000</code><br>hoặc <code>https://lms.truong.edu.vn</code></p>
+  <input type="url" id="urlInput" placeholder="https://lms.truong.edu.vn" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+  <p class="hint">Ví dụ: <code>http://192.168.1.100:3000</code> hoặc <code>https://lms.truong.edu.vn</code></p>
   <p class="err" id="errMsg">Vui lòng nhập địa chỉ hợp lệ (bắt đầu bằng http:// hoặc https://)</p>
-  <button id="connectBtn">Kết nối</button>
+  <button class="btn-primary" id="connectBtn">Kết nối</button>
 </div>
 
 <!-- App WebView -->
 <div id="appFrame">
-  <!--
-    sandbox:
-    - allow-autoplay        : cho phép video/audio tự động phát (FIX chính)
-    - allow-downloads       : cho phép tải file
-    - allow-forms           : submit form
-    - allow-modals          : alert/confirm/prompt
-    - allow-popups          : window.open
-    - allow-presentation    : fullscreen API
-    - allow-same-origin     : cookies, localStorage, API requests
-    - allow-scripts         : chạy JS
-    - allow-top-navigation-by-user-activation : điều hướng top frame chỉ khi user tương tác
-  -->
   <iframe
     id="lmsFrame"
     allow="autoplay; fullscreen; camera; microphone; clipboard-read; clipboard-write; web-share; speech-synthesis"
@@ -177,14 +194,19 @@
   </div>
 </div>
 
+<!-- Update Banner -->
+<div id="updateBanner">
+  <p><strong>Có bản cập nhật mới</strong>Tải lại để nhận tính năng mới nhất.</p>
+  <button class="btn-update" id="updateBtn">Cập nhật</button>
+</div>
+
 <script>
-// ── Storage helpers (dùng localStorage, Capacitor Preferences là bonus nếu có) ──
+// ── Storage helpers ───────────────────────────────────────────────────────────
 const PREF_KEY = 'serverUrl';
 
 async function getUrl() {
-  // Thử Capacitor Preferences trước (native), fallback localStorage
   try {
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    if (window.Capacitor?.isNativePlatform()) {
       const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
       const { value } = await Preferences.get({ key: PREF_KEY });
       if (value) return value;
@@ -196,7 +218,7 @@ async function getUrl() {
 async function saveUrl(url) {
   localStorage.setItem(PREF_KEY, url);
   try {
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    if (window.Capacitor?.isNativePlatform()) {
       const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
       await Preferences.set({ key: PREF_KEY, value: url });
     }
@@ -206,30 +228,44 @@ async function saveUrl(url) {
 async function clearUrl() {
   localStorage.removeItem(PREF_KEY);
   try {
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    if (window.Capacitor?.isNativePlatform()) {
       const { Preferences } = await import('https://cdn.jsdelivr.net/npm/@capacitor/preferences@6/+esm');
       await Preferences.remove({ key: PREF_KEY });
     }
   } catch {}
 }
 
-// ── UI refs ──
-const splash        = document.getElementById('splash');
-const setup         = document.getElementById('setup');
-const appFrame      = document.getElementById('appFrame');
-const errorScreen   = document.getElementById('errorScreen');
-const lmsFrame      = document.getElementById('lmsFrame');
-const urlInput      = document.getElementById('urlInput');
-const connectBtn    = document.getElementById('connectBtn');
-const errMsg        = document.getElementById('errMsg');
+// ── UI refs ───────────────────────────────────────────────────────────────────
+const splash         = document.getElementById('splash');
+const setup          = document.getElementById('setup');
+const appFrame       = document.getElementById('appFrame');
+const errorScreen    = document.getElementById('errorScreen');
+const lmsFrame       = document.getElementById('lmsFrame');
+const urlInput       = document.getElementById('urlInput');
+const connectBtn     = document.getElementById('connectBtn');
+const errMsg         = document.getElementById('errMsg');
+const offlineBanner  = document.getElementById('offlineBanner');
+const updateBanner   = document.getElementById('updateBanner');
 
 const SCREENS = [splash, setup, appFrame, errorScreen];
 function show(el) {
-  SCREENS.forEach(e => e.style.display = 'none');
+  SCREENS.forEach(e => { e.style.display = 'none'; });
   el.style.display = 'flex';
 }
 
-// ── Load app ──
+// ── Offline detection ─────────────────────────────────────────────────────────
+function updateOnlineStatus() {
+  if (navigator.onLine) {
+    offlineBanner.classList.remove('show');
+  } else {
+    offlineBanner.classList.add('show');
+  }
+}
+window.addEventListener('online',  updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// ── Load app ──────────────────────────────────────────────────────────────────
 let loadTimer = null;
 
 function loadApp(url) {
@@ -237,56 +273,183 @@ function loadApp(url) {
   if (loadTimer) clearTimeout(loadTimer);
 
   lmsFrame.src = '';
-  // Nhỏ delay để reset iframe trước khi gán src mới
-  setTimeout(() => {
-    lmsFrame.src = url;
-  }, 50);
+  setTimeout(() => { lmsFrame.src = url; }, 50);
 
   loadTimer = setTimeout(() => {
     try {
-      // Nếu iframe không load được (blank page), hiện màn lỗi
       const doc = lmsFrame.contentDocument;
-      if (!doc || doc.URL === 'about:blank' || doc.URL === '') {
-        show(errorScreen);
-      }
+      if (!doc || doc.URL === 'about:blank' || doc.URL === '') show(errorScreen);
     } catch {
-      // Cross-origin → iframe đã load thành công (không thể đọc contentDocument)
       clearTimeout(loadTimer);
     }
   }, 15000);
 
-  lmsFrame.onload = () => {
-    if (loadTimer) clearTimeout(loadTimer);
-  };
-
-  lmsFrame.onerror = () => {
-    if (loadTimer) clearTimeout(loadTimer);
-    show(errorScreen);
-  };
+  lmsFrame.onload  = () => { if (loadTimer) clearTimeout(loadTimer); };
+  lmsFrame.onerror = () => { if (loadTimer) clearTimeout(loadTimer); show(errorScreen); };
 }
 
-// ── Android back button: điều hướng lịch sử trong iframe ──
+// ── Android back button ───────────────────────────────────────────────────────
 function setupAndroidBack() {
-  if (!window.Capacitor || !window.Capacitor.isNativePlatform()) return;
+  if (!window.Capacitor?.isNativePlatform()) return;
   try {
     import('https://cdn.jsdelivr.net/npm/@capacitor/app@6/+esm').then(({ App }) => {
       App.addListener('backButton', ({ canGoBack }) => {
-        // Thử điều hướng back bên trong iframe trước
         try {
           const iframeWin = lmsFrame.contentWindow;
-          if (iframeWin && iframeWin.history && iframeWin.history.length > 1) {
-            iframeWin.history.back();
-            return;
-          }
+          if (iframeWin?.history?.length > 1) { iframeWin.history.back(); return; }
         } catch {}
-        // Nếu iframe ở trang gốc, thoát app
         if (!canGoBack) App.exitApp();
       });
     }).catch(() => {});
   } catch {}
 }
 
-// ── Connect button ──
+// ── Status bar color ──────────────────────────────────────────────────────────
+function setupStatusBar() {
+  if (!window.Capacitor?.isNativePlatform()) return;
+  try {
+    import('https://cdn.jsdelivr.net/npm/@capacitor/status-bar@6/+esm').then(({ StatusBar, Style }) => {
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#0f172a' }).catch(() => {});
+    }).catch(() => {});
+  } catch {}
+}
+
+// ── Haptic feedback relay from iframe ────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || typeof e.data.type !== 'string') return;
+
+  // ── TTS bridge ─────────────────────────────────────────────────────────────
+  if (e.data.type === 'TTS_SPEAK') {
+    try {
+      const text = String(e.data.text || '');
+      const lang = String(e.data.lang || 'vi-VN');
+      if (!text) return;
+      speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = lang;
+      const doSpeak = () => speechSynthesis.speak(utt);
+      if (speechSynthesis.getVoices().length > 0) {
+        doSpeak();
+      } else {
+        speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
+        setTimeout(doSpeak, 400);
+      }
+    } catch {}
+    return;
+  }
+
+  if (e.data.type === 'TTS_CANCEL') {
+    try { speechSynthesis.cancel(); } catch {}
+    return;
+  }
+
+  // ── Haptics ────────────────────────────────────────────────────────────────
+  if (e.data.type === 'HAPTIC') {
+    try {
+      if (window.Capacitor?.isNativePlatform()) {
+        import('https://cdn.jsdelivr.net/npm/@capacitor/haptics@6/+esm').then(({ Haptics, ImpactStyle }) => {
+          const style = e.data.style === 'light' ? ImpactStyle.Light
+            : e.data.style === 'heavy' ? ImpactStyle.Heavy
+            : ImpactStyle.Medium;
+          Haptics.impact({ style }).catch(() => {});
+        }).catch(() => {});
+      }
+    } catch {}
+    return;
+  }
+
+  // ── Server URL request from iframe ─────────────────────────────────────────
+  if (e.data.type === 'GET_SERVER_URL') {
+    const frame = document.getElementById('lmsFrame');
+    if (frame?.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'SERVER_URL', url: window._serverUrl || '' }, '*');
+    }
+    return;
+  }
+});
+
+// ── STT bridge ────────────────────────────────────────────────────────────────
+(function() {
+  let _rec = null;
+  let _mediaRec = null;
+  let _stream = null;
+
+  function sendResult(transcript, error) {
+    const frame = document.getElementById('lmsFrame');
+    if (frame?.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'STT_RESULT', transcript: transcript || '', error: error || null }, '*');
+    }
+  }
+
+  function stopAll() {
+    try { if (_rec) { _rec.stop(); _rec = null; } } catch {}
+    try { if (_mediaRec?.state === 'recording') _mediaRec.stop(); _mediaRec = null; } catch {}
+    try { if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; } } catch {}
+  }
+
+  function startWebSpeech(lang, onFail) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return false;
+    try {
+      _rec = new SR();
+      _rec.lang = lang || 'vi-VN';
+      _rec.continuous = false; _rec.interimResults = false; _rec.maxAlternatives = 3;
+      let done = false;
+      _rec.onresult = ev => { if (done) return; done = true; sendResult(ev.results[0][0].transcript); stopAll(); };
+      _rec.onerror = ev => {
+        if (done) return; done = true; _rec = null;
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') sendResult('', 'Không có quyền dùng micro');
+        else onFail();
+      };
+      _rec.onend = () => { if (!done) { done = true; _rec = null; onFail(); } };
+      _rec.start();
+      return true;
+    } catch { return false; }
+  }
+
+  function startMediaRecorder(lang, maxSec, serverUrl, authToken) {
+    if (!navigator.mediaDevices) { sendResult('', 'Micro không khả dụng'); return; }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      _stream = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+      _mediaRec = new MediaRecorder(stream, { mimeType });
+      const chunks = [];
+      _mediaRec.ondataavailable = ev => { if (ev.data.size > 0) chunks.push(ev.data); };
+      _mediaRec.onstop = () => {
+        stopAll();
+        if (!chunks.length) { sendResult('', 'Không ghi được âm thanh'); return; }
+        const blob = new Blob(chunks, { type: mimeType });
+        const form = new FormData();
+        form.append('audio', blob, 'rec.webm');
+        const headers = authToken ? { Authorization: 'Bearer ' + authToken } : {};
+        fetch(serverUrl + '/api/ai/stt?lang=' + (lang||'vi').slice(0, 2), { method: 'POST', body: form, headers, credentials: 'include' })
+          .then(r => r.json())
+          .then(j => sendResult(j.transcript || '', j.error || null))
+          .catch(() => sendResult('', 'Lỗi kết nối STT'));
+      };
+      _mediaRec.start(250);
+      setTimeout(() => { if (_mediaRec?.state === 'recording') _mediaRec.stop(); }, maxSec * 1000);
+    }).catch(() => sendResult('', 'Không có quyền dùng micro'));
+  }
+
+  window.addEventListener('message', e => {
+    if (!e.data || typeof e.data.type !== 'string') return;
+    if (e.data.type === 'STT_START') {
+      stopAll();
+      const lang = e.data.lang || 'vi-VN';
+      const maxSec = e.data.maxSeconds || 8;
+      const serverUrl = (window._serverUrl || '').replace(/\/$/, '');
+      const authToken = e.data.authToken || null;
+      const doMediaRecorder = () => startMediaRecorder(lang, maxSec, serverUrl, authToken);
+      if (!startWebSpeech(lang, doMediaRecorder)) doMediaRecorder();
+    } else if (e.data.type === 'STT_STOP') {
+      stopAll();
+    }
+  });
+})();
+
+// ── Connect button ────────────────────────────────────────────────────────────
 connectBtn.addEventListener('click', async () => {
   const url = urlInput.value.trim().replace(/\/$/, '');
   if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
@@ -307,6 +470,7 @@ urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') connectBtn.cl
 document.getElementById('retryBtn').addEventListener('click', async () => {
   const url = await getUrl();
   if (url) loadApp(url);
+  else show(setup);
 });
 
 document.getElementById('changeServerBtn').addEventListener('click', async () => {
@@ -317,144 +481,22 @@ document.getElementById('changeServerBtn').addEventListener('click', async () =>
   show(setup);
 });
 
-// ── TTS bridge: relay speechSynthesis from cross-origin iframe ──
-window.addEventListener('message', function(e) {
-  if (!e.data || typeof e.data.type !== 'string') return;
-  if (e.data.type === 'TTS_SPEAK') {
-    try {
-      const text = String(e.data.text || '');
-      const lang = String(e.data.lang || 'en-US');
-      if (!text) return;
-      speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = lang;
-      const doSpeak = () => speechSynthesis.speak(utt);
-      if (speechSynthesis.getVoices().length > 0) {
-        doSpeak();
-      } else {
-        speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
-        setTimeout(doSpeak, 400);
-      }
-    } catch {}
-  } else if (e.data.type === 'TTS_CANCEL') {
-    try { speechSynthesis.cancel(); } catch {}
-  }
+document.getElementById('updateBtn').addEventListener('click', () => {
+  updateBanner.style.display = 'none';
+  window.location.reload();
 });
 
-// ── STT bridge: mic recording on behalf of cross-origin iframe ──
-(function() {
-  let _rec = null;       // SpeechRecognition instance
-  let _mediaRec = null;  // MediaRecorder fallback
-  let _stream = null;
-
-  function sendResult(transcript, error) {
-    const frame = document.getElementById('lmsFrame');
-    if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'STT_RESULT', transcript: transcript || '', error: error || null }, '*');
-    }
-  }
-
-  function stopAll() {
-    try { if (_rec) { _rec.stop(); _rec = null; } } catch {}
-    try { if (_mediaRec && _mediaRec.state === 'recording') _mediaRec.stop(); _mediaRec = null; } catch {}
-    try { if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; } } catch {}
-  }
-
-  // onFail: called when Web Speech is unavailable or fails mid-session → fall back to MediaRecorder
-  function startWebSpeech(lang, onFail) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return false;
-    try {
-      _rec = new SR();
-      _rec.lang = lang || 'vi-VN';
-      _rec.continuous = false;
-      _rec.interimResults = false;
-      _rec.maxAlternatives = 3;
-      let done = false;
-      _rec.onresult = function(ev) {
-        if (done) return; done = true;
-        sendResult(ev.results[0][0].transcript);
-        stopAll();
-      };
-      _rec.onerror = function(ev) {
-        if (done) return; done = true;
-        _rec = null;
-        // User denied mic → report immediately; other errors → try MediaRecorder fallback
-        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-          sendResult('', 'Không có quyền dùng micro');
-        } else {
-          onFail();
-        }
-      };
-      _rec.onend = function() {
-        // ended without result → try MediaRecorder fallback
-        if (!done) { done = true; _rec = null; onFail(); }
-      };
-      _rec.start();
-      return true;
-    } catch { return false; }
-  }
-
-  function startMediaRecorder(lang, maxSec, serverUrl, authToken) {
-    if (!navigator.mediaDevices) { sendResult('', 'Micro không khả dụng'); return; }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
-      _stream = stream;
-      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
-        ? 'audio/webm;codecs=opus' : 'audio/webm';
-      _mediaRec = new MediaRecorder(stream, { mimeType: mimeType });
-      const chunks = [];
-      _mediaRec.ondataavailable = function(ev) { if (ev.data.size > 0) chunks.push(ev.data); };
-      _mediaRec.onstop = function() {
-        stopAll();
-        if (chunks.length === 0) { sendResult('', 'Không ghi được âm thanh'); return; }
-        const blob = new Blob(chunks, { type: mimeType });
-        const form = new FormData();
-        form.append('audio', blob, 'rec.webm');
-        const langCode = (lang || 'vi').slice(0, 2);
-        const headers = {};
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-        fetch(serverUrl + '/api/ai/stt?lang=' + langCode, {
-          method: 'POST', body: form, headers: headers, credentials: 'include'
-        }).then(function(r) { return r.json(); })
-          .then(function(j) { sendResult(j.transcript || '', j.error || null); })
-          .catch(function() { sendResult('', 'Lỗi kết nối STT'); });
-      };
-      _mediaRec.start(250);
-      setTimeout(function() { if (_mediaRec && _mediaRec.state === 'recording') _mediaRec.stop(); }, maxSec * 1000);
-    }).catch(function() { sendResult('', 'Không có quyền dùng micro'); });
-  }
-
-  window.addEventListener('message', function(e) {
-    if (!e.data || typeof e.data.type !== 'string') return;
-    if (e.data.type === 'STT_START') {
-      stopAll();
-      const lang = e.data.lang || 'vi-VN';
-      const maxSec = e.data.maxSeconds || 8;
-      const serverUrl = (window._serverUrl || '').replace(/\/$/, '');
-      const authToken = e.data.authToken || null;
-
-      function doMediaRecorder() { startMediaRecorder(lang, maxSec, serverUrl, authToken); }
-
-      // Try Web Speech first; if unavailable or fails → MediaRecorder → server
-      if (!startWebSpeech(lang, doMediaRecorder)) {
-        doMediaRecorder();
-      }
-    } else if (e.data.type === 'STT_STOP') {
-      stopAll();
-    }
-  });
-})();
-
-// ── Lưu serverUrl cho STT bridge dùng ──
+// ── Server URL global (for STT bridge) ───────────────────────────────────────
 async function updateServerUrlGlobal() {
   const url = await getUrl();
   if (url) window._serverUrl = url.replace(/\/$/, '');
 }
 
-// ── Khởi động ──
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   await new Promise(r => setTimeout(r, 1500));
   setupAndroidBack();
+  setupStatusBar();
   await updateServerUrlGlobal();
   const url = await getUrl();
   if (url) {

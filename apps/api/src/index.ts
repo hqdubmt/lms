@@ -63,6 +63,7 @@ import { aiFeedbackRoutes } from './modules/ai/ai-feedback.routes';
 import { learningDnaRoutes } from './modules/ai/learning-dna.routes';
 import { marketplaceRoutes } from './modules/ai/marketplace.routes';
 import { enterpriseRoutes } from './modules/admin/enterprise.routes';
+import { ecosystemRoutes } from './modules/ai/ecosystem.routes';
 
 const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
@@ -183,6 +184,7 @@ if (cluster.isPrimary) {
     await app.register(learningDnaRoutes, { prefix: '/ai' });
     await app.register(marketplaceRoutes, { prefix: '/marketplace' });
     await app.register(enterpriseRoutes, { prefix: '/admin' });
+    await app.register(ecosystemRoutes, { prefix: '/ai' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

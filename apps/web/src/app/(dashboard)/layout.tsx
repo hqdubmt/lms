@@ -9,7 +9,7 @@ import {
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
     Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
     Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users, BarChart2,
-    Map, HeartHandshake, Briefcase, Sparkles, Trophy, ShoppingBag,
+    Map, HeartHandshake, Briefcase, Sparkles, Trophy, ShoppingBag, Cpu,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -64,6 +64,7 @@ const BASE_NAV_GROUPS = [
             { href: '/learning/teacher',           label: 'AI Teacher',    icon: GraduationCap },
             { href: '/learning/mentor',            label: 'AI Mentor',     icon: HeartHandshake },
             { href: '/learning/career',            label: 'Career Advisor', icon: Briefcase },
+            { href: '/ecosystem',                  label: 'AI Ecosystem',   icon: Cpu },
         ],
     },
 ];
