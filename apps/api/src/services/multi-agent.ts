@@ -339,7 +339,7 @@ function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
 function motivationAgent(brain: BrainState): AgentResult | null {
   const parts: string[] = [];
 
-  if (brain.messageCount === 1) {
+  if (brain.messageCount === 0) {
     parts.push('Đây là tin nhắn đầu tiên của học sinh — chào đón nhiệt tình, tạo không khí học tập tích cực.');
   } else if (brain.messageCount > 0 && brain.messageCount % 10 === 0) {
     parts.push(`Học sinh đã học ${brain.messageCount} lần — ghi nhận sự cố gắng và khuyến khích tiếp tục.`);

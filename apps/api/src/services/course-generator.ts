@@ -22,7 +22,6 @@ interface GenLesson {
   description: string;
   textContent: string;
   quizzes: Array<{ question: string; options: string[]; answer: number; explanation: string }>;
-  flashcards: Array<{ front: string; back: string }>;
 }
 
 interface GenChapter {
@@ -77,9 +76,6 @@ Trả về JSON (KHÔNG có markdown, KHÔNG giải thích):
           "textContent": "Nội dung bài học đầy đủ (300-500 từ, có tiêu đề ##, ví dụ minh họa)",
           "quizzes": [
             { "question": "Câu hỏi trắc nghiệm?", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "answer": 0, "explanation": "Giải thích ngắn" }
-          ],
-          "flashcards": [
-            { "front": "Khái niệm / Từ khóa", "back": "Định nghĩa / Giải thích" }
           ]
         }
       ]
@@ -87,9 +83,9 @@ Trả về JSON (KHÔNG có markdown, KHÔNG giải thích):
   ]
 }
 
-Tạo đủ ${numChapters} chương, mỗi chương 2-3 bài, mỗi bài có 2 quizzes và 2 flashcards.`;
+Tạo đủ ${numChapters} chương, mỗi chương 2-3 bài, mỗi bài có 2 quizzes.`;
 
-  const raw = await aiChatOnce([{ role: 'user', content: prompt }], { prefer: 'gemini' });
+  const raw = await aiChatOnce([{ role: 'user', content: prompt }], { prefer: 'gemini', maxTokens: 8192 });
   const cleaned = raw.replace(/```json\n?|\n?```/g, '').trim();
 
   let generated: GenCourse;
@@ -102,67 +98,71 @@ Tạo đủ ${numChapters} chương, mỗi chương 2-3 bài, mỗi bài có 2 q
   const baseSlug = makeSlug(generated.title);
   const slug = `${baseSlug}-${Date.now()}`;
 
-  const course = await prisma.course.create({
-    data: {
-      title: generated.title,
-      slug,
-      description: generated.description,
-      level: input.level,
-      language: input.language,
-      instructorId: input.instructorId,
-      objectives: generated.objectives ?? [],
-      requirements: generated.requirements ?? [],
-      status: 'DRAFT',
-      tags: [input.topic],
-    },
-  });
-
-  let totalLessons = 0;
-
-  for (const chapter of generated.chapters) {
-    const section = await prisma.section.create({
+  const { course, totalLessons } = await prisma.$transaction(async (tx) => {
+    const course = await tx.course.create({
       data: {
-        title: chapter.title,
-        order: chapter.order,
-        courseId: course.id,
+        title: generated.title,
+        slug,
+        description: generated.description,
+        level: input.level,
+        language: input.language,
+        instructorId: input.instructorId,
+        objectives: generated.objectives ?? [],
+        requirements: generated.requirements ?? [],
+        status: 'DRAFT',
+        tags: [input.topic],
       },
     });
 
-    for (const lesson of chapter.lessons) {
-      const lessonSlug = `${makeSlug(lesson.title)}-${section.id.slice(0, 8)}-${lesson.order}`;
-      const createdLesson = await prisma.lesson.create({
+    let totalLessons = 0;
+
+    for (const chapter of generated.chapters) {
+      const section = await tx.section.create({
         data: {
-          title: lesson.title,
-          slug: lessonSlug,
-          description: lesson.description,
-          type: 'TEXT',
-          order: lesson.order,
-          sectionId: section.id,
-          textContent: lesson.textContent,
-          isPublished: false,
+          title: chapter.title,
+          order: chapter.order,
+          courseId: course.id,
         },
       });
-      totalLessons++;
 
-      for (let i = 0; i < (lesson.quizzes?.length ?? 0); i++) {
-        const q = lesson.quizzes[i];
-        await prisma.quiz.create({
+      for (const lesson of chapter.lessons) {
+        const lessonSlug = `${makeSlug(lesson.title)}-${section.id.slice(0, 8)}-${lesson.order}`;
+        const createdLesson = await tx.lesson.create({
           data: {
-            question: q.question,
-            options: q.options,
-            answer: q.answer,
-            explanation: q.explanation,
-            lessonId: createdLesson.id,
-            order: i + 1,
+            title: lesson.title,
+            slug: lessonSlug,
+            description: lesson.description,
+            type: 'TEXT',
+            order: lesson.order,
+            sectionId: section.id,
+            textContent: lesson.textContent,
+            isPublished: false,
           },
         });
+        totalLessons++;
+
+        for (let i = 0; i < (lesson.quizzes?.length ?? 0); i++) {
+          const q = lesson.quizzes[i];
+          await tx.quiz.create({
+            data: {
+              question: q.question,
+              options: q.options,
+              answer: q.answer,
+              explanation: q.explanation,
+              lessonId: createdLesson.id,
+              order: i + 1,
+            },
+          });
+        }
       }
     }
-  }
 
-  await prisma.course.update({
-    where: { id: course.id },
-    data: { totalLessons },
+    await tx.course.update({
+      where: { id: course.id },
+      data: { totalLessons },
+    });
+
+    return { course, totalLessons };
   });
 
   return {
@@ -172,6 +172,5 @@ Tạo đủ ${numChapters} chương, mỗi chương 2-3 bài, mỗi bài có 2 q
     level: course.level,
     chaptersCount: generated.chapters.length,
     lessonsCount: totalLessons,
-    flashcardsPerLesson: 2,
   };
 }
