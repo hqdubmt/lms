@@ -64,6 +64,9 @@
   .feat-ai    { color: #a78bfa; border-color: #7c3aed40; background: #7c3aed15; }
   .feat-chat  { color: #34d399; border-color: #05966940; background: #05966915; }
   .feat-quiz  { color: #f59e0b; border-color: #d9770640; background: #d9770615; }
+  .feat-rank  { color: #fbbf24; border-color: #d9770640; background: #d9770610; }
+  .feat-dna   { color: #f472b6; border-color: #db277740; background: #db277710; }
+  .feat-mkt   { color: #60a5fa; border-color: #2563eb40; background: #2563eb10; }
   label {
     display: block; width: 100%;
     font-size: 11px; font-weight: 600;
@@ -140,8 +143,11 @@
 
   <div class="features">
     <span class="feat feat-ai">🤖 AI Tutor OS v2</span>
-    <span class="feat feat-chat">🧠 Conversation Intelligence</span>
-    <span class="feat feat-quiz">🎮 Quiz Game</span>
+    <span class="feat feat-chat">🧠 Multi-Agent AI</span>
+    <span class="feat feat-quiz">🎮 Quiz · MATCHING · ESSAY</span>
+    <span class="feat feat-rank">🏆 Leaderboard</span>
+    <span class="feat feat-dna">🧬 Learning DNA</span>
+    <span class="feat feat-mkt">🏪 Marketplace</span>
   </div>
 
   <label for="serverUrl">Địa chỉ máy chủ (URL)</label>
@@ -193,7 +199,7 @@
     txt.textContent = 'Đang kiểm tra AI...';
     try {
       const h = await window.electronAPI.checkAiHealth();
-      const names = { groq: 'Groq · llama-3.3-70b ⚡', gemini: 'Gemini · Flash 2.0', ollama: 'Ollama · ' + (h.model || '7b') };
+      const names = { groq: 'Groq · llama-3.3-70b ⚡', gemini: 'Gemini · Flash 2.0', ollama: 'Ollama · ' + (h.model || '7b'), openai: 'OpenAI · ' + (h.model || 'gpt-4o'), anthropic: 'Anthropic · Claude' };
       if (h.available) {
         box.className = 'ai-status show online';
         txt.textContent = 'AI Online — ' + (names[h.provider] || h.model || 'Sẵn sàng');

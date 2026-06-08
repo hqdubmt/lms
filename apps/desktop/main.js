@@ -164,7 +164,7 @@ async function buildTrayMenu() {
         req.setTimeout(3000, () => { req.abort(); resolve({}); });
         req.end();
       });
-      const names = { groq: 'Groq · llama-3.3-70b', gemini: 'Gemini · Flash 2.0', ollama: 'Ollama · ' + (health.model || '7b') };
+      const names = { groq: 'Groq · llama-3.3-70b', gemini: 'Gemini · Flash 2.0', ollama: 'Ollama · ' + (health.model || '7b'), openai: 'OpenAI · ' + (health.model || 'gpt-4o'), anthropic: 'Anthropic · Claude' };
       aiLabel = health.available
         ? `AI: ${names[health.provider] || health.model || 'Online'} ✓`
         : 'AI: Offline';
