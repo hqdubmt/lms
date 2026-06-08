@@ -24,9 +24,19 @@ const PROVIDER_COLOR: Record<string, string> = {
 };
 
 const AGENT_ICONS: Record<string, string> = {
-  tutor: '🧑‍🏫', math: '📐', quiz: '📝', homework: '📚',
-  language: '🌐', research: '🔍', review: '✅',
-  knowledge_graph: '🕸️', learning_coach: '🎯',
+  tutor:           '🧑‍🏫',
+  math:            '📐',
+  language:        '🌐',
+  quiz:            '📝',
+  homework:        '📚',
+  research:        '🔍',
+  review:          '✅',
+  knowledge_graph: '🕸️',
+  learning_coach:  '🎯',
+  reflection:      '🪞',
+  self_correction: '🔧',
+  critic:          '⚖️',
+  planner:         '🗺️',
 };
 
 function providerKey(label?: string) {

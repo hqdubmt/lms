@@ -9,7 +9,7 @@
 import type { BrainState } from './conversation-brain';
 import { getTopConcepts } from './knowledge-graph';
 
-export type AgentType = 'tutor' | 'math' | 'quiz' | 'homework' | 'language' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner';
+export type AgentType = 'tutor' | 'math' | 'language' | 'quiz' | 'homework' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner';
 
 export interface AgentResult {
   agent: AgentType;
@@ -266,6 +266,44 @@ function criticAgent(mode: string, brain: BrainState): AgentResult | null {
   };
 }
 
+// ─── Language Agent ───────────────────────────────────────────────────────────
+
+function languageAgent(subject: Subject, message: string, brain: BrainState): AgentResult | null {
+  if (subject !== 'language') return null;
+
+  const wantPronunciation = /phát âm|pronunciation|ipa|đọc như thế nào|how to say|stress|syllable|trọng âm/i.test(message);
+  const wantGrammar       = /ngữ pháp|grammar|cấu trúc|sentence structure|tense|thì/i.test(message);
+  const wantVocabulary    = /từ vựng|vocabulary|từ mới|word meaning|synonym|antonym/i.test(message);
+  const wantTranslation   = /dịch|translate|nghĩa là gì|how do you say|mean/i.test(message);
+  const wantWriting       = /sửa bài viết|check writing|essay|paragraph|composition/i.test(message);
+
+  let instruction: string;
+  if (wantPronunciation) {
+    instruction = 'Cung cấp IPA đầy đủ, trọng âm (ˈ), phiên âm tiếng Việt, lỗi phát âm thường gặp và câu ví dụ.';
+  } else if (wantGrammar) {
+    instruction = 'Giải thích công thức ngữ pháp, ví dụ thực tế, so sánh các thì, và lỗi học sinh Việt thường mắc.';
+  } else if (wantVocabulary) {
+    instruction = 'Cung cấp IPA, nghĩa chính/phụ, từ đồng nghĩa/trái nghĩa, collocations và ví dụ câu tự nhiên.';
+  } else if (wantTranslation) {
+    instruction = 'Dịch chính xác, giải thích sắc thái nghĩa, liệt kê các cách diễn đạt thay thế.';
+  } else if (wantWriting) {
+    instruction = 'Sửa lỗi theo thứ tự: grammar → vocabulary → coherence → style. Cho điểm /10 và 3 gợi ý cải thiện.';
+  } else {
+    instruction = 'Hỗ trợ học tiếng Anh. Dùng ví dụ thực tế, ngữ cảnh giao tiếp hàng ngày, khuyến khích nói.';
+  }
+
+  const weakAreas = Object.entries(brain.mastery as Record<string, number>)
+    .filter(([, v]) => v < 0.5).map(([k]) => k).slice(0, 2);
+  const weakHint = weakAreas.length > 0
+    ? ` Chú ý: học sinh đang yếu phần ${weakAreas.join(', ')} — giải thích kỹ hơn.`
+    : '';
+
+  return {
+    agent: 'language',
+    hint: `[Language Agent] ${instruction}${weakHint}`,
+  };
+}
+
 // ─── Phase 7: Planner Agent ───────────────────────────────────────────────────
 
 function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
@@ -333,6 +371,10 @@ export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResu
 
   if (s === 'math') {
     tasks.push(Promise.resolve(mathAgent(message)));
+  }
+
+  if (s === 'language') {
+    tasks.push(Promise.resolve(languageAgent(s, message, brain)));
   }
 
   if (mode === 'quiz') {

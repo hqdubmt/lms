@@ -25,6 +25,8 @@ import { recordProviderCall, type Provider } from '../../services/provider-monit
 import { recordAgentCall, type MonitoredAgent } from '../../services/agent-monitor';
 import { awardXP } from '../../services/xp-gamification';
 import { recordTimelineEvent } from '../../services/timeline';
+import { analyzeKnowledgeGap } from '../../services/knowledge-gap';
+import { getDifficultyLevel } from '../../services/adaptive-learning';
 
 const CHAT_SESSION_TTL = 7 * 24 * 3600;
 const MAX_HISTORY_MESSAGES = 20;
@@ -106,7 +108,7 @@ function detectIntent(text: string): { primary: Mode; secondary: Mode[]; confide
 const chatBodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(4000) })).max(20),
   subject: z.enum(['math', 'language', 'viet', 'general']).optional().default('general'),
-  mode: z.enum(['tutor', 'exercise', 'homework', 'quiz', 'voice']).optional().default('tutor'),
+  mode: z.enum(['tutor', 'exercise', 'homework', 'quiz', 'voice', 'adaptive']).optional().default('tutor'),
 });
 
 const explainBodySchema = z.object({
@@ -196,6 +198,26 @@ export async function aiRoutes(app: FastifyInstance) {
     // ── Phase E — Language Agent intent enrichment ────────────────────────────
     const langResult = subject === 'language' ? detectLangIntent(lastUserMsg) : null;
 
+    // ── Phase 4 — Adaptive Learning prompt enrichment ─────────────────────────
+    let adaptiveBlock = '';
+    if (effectiveMode === 'adaptive') {
+      try {
+        const [gap, diff] = await Promise.all([
+          analyzeKnowledgeGap(sub, subject),
+          getDifficultyLevel(sub, subject),
+        ]);
+        const diffMap = { easy: 'cơ bản (dễ)', medium: 'trung bình', hard: 'nâng cao (khó)' };
+        const weakList = gap.weak.slice(0, 3).join(', ') || 'chưa xác định';
+        adaptiveBlock = `\nChế độ Học Cá Nhân Hóa:\n`
+          + `- Độ khó phù hợp: ${diffMap[diff.level]}\n`
+          + `- Chủ đề cần ôn: ${weakList}\n`
+          + `- Lý do: ${diff.reason}\n`
+          + `- Gợi ý: ${diff.recommendation}\n`
+          + `Hãy dạy và đặt câu hỏi tập trung vào chủ đề "${weakList}" ở mức ${diffMap[diff.level]}. `
+          + `Sau mỗi giải thích, đặt 1 câu hỏi kiểm tra hiểu biết của học sinh.`;
+      } catch { /* noop */ }
+    }
+
     // ── Phase 3 — Multi-Agent System ──────────────────────────────────────────
     const agentResults = await runMultiAgent({
       subject,
@@ -210,6 +232,7 @@ export async function aiRoutes(app: FastifyInstance) {
     if (brainContext) systemParts.push(`\nTrạng thái học tập:\n${brainContext}`);
     if (ragContextBlock) systemParts.push(`\nNội dung giáo trình liên quan:\n${ragContextBlock}`);
     if (langResult) systemParts.push(`\nYêu cầu format phản hồi: ${langResult.hint}`);
+    if (adaptiveBlock) systemParts.push(adaptiveBlock);
     if (agentResults.length > 0) {
       systemParts.push(`\nHướng dẫn từ Multi-Agent System:\n${agentResults.map(r => r.hint).join('\n')}`);
     }
@@ -246,7 +269,7 @@ export async function aiRoutes(app: FastifyInstance) {
       // Feature 6: Knowledge Validation (warn only, never block)
       const validation = validateResponse(aiFullContent, subject, effectiveMode);
 
-      reply.raw.write(`data: ${JSON.stringify({ type: 'meta', suggestions, sources, langIntent: langResult?.intent ?? null, activeAgents, validation: validation.ok ? null : validation.warnings })}\n\n`);
+      reply.raw.write(`data: ${JSON.stringify({ type: 'meta', suggestions, sources, langIntent: langResult?.intent ?? null, activeAgents, validation: validation.ok ? null : validation.warnings, provider: orch.preferredProvider ?? 'groq' })}\n\n`);
 
       if (lastUserMsg && aiFullContent) {
         // ── Redis history ───────────────────────────────────────────────────

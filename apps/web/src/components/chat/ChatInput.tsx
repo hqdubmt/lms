@@ -2,7 +2,21 @@ import type { RefObject } from 'react';
 import { Send, X, Mic, MicOff, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MODE_HINTS } from './constants';
-import type { Mode } from './types';
+import type { Mode, Subject } from './types';
+
+const SUBJECT_COMMANDS: Record<string, Subject> = {
+  '/math':     'math',
+  '/language': 'language',
+  '/viet':     'viet',
+  '/default':  'general',
+};
+
+const SUBJECT_LABELS: Record<Subject, string> = {
+  math:     'Toán',
+  language: 'Ngoại ngữ',
+  viet:     'Tiếng Việt',
+  general:  'Tổng quát',
+};
 
 interface ChatInputProps {
   input: string;
@@ -14,16 +28,19 @@ interface ChatInputProps {
   color: string;
   hasMessages: boolean;
   inputRef: RefObject<HTMLTextAreaElement>;
+  subjectOverride?: Subject | null;
   onInputChange: (value: string) => void;
   onSend: () => void;
   onStop: () => void;
   onMic: () => void;
   onClearHistory: () => void;
+  onSubjectOverride?: (subject: Subject | null) => void;
 }
 
 export function ChatInput({
   input, mode, streaming, aiOk, micListening, micAvailable, color,
-  hasMessages, inputRef, onInputChange, onSend, onStop, onMic, onClearHistory,
+  hasMessages, inputRef, subjectOverride, onInputChange, onSend, onStop,
+  onMic, onClearHistory, onSubjectOverride,
 }: ChatInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -32,13 +49,38 @@ export function ChatInput({
     }
   };
 
+  const handleChange = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    const matched = SUBJECT_COMMANDS[trimmed];
+    if (matched !== undefined) {
+      onSubjectOverride?.(matched);
+      onInputChange('');
+      return;
+    }
+    onInputChange(value);
+  };
+
   return (
     <div className="p-3 border-t border-gray-100 shrink-0">
+      {subjectOverride && (
+        <div className="flex items-center gap-1 mb-1.5">
+          <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-full px-2 py-0.5 font-medium">
+            Môn: {SUBJECT_LABELS[subjectOverride]}
+          </span>
+          <button
+            onClick={() => onSubjectOverride?.(null)}
+            className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+            title="Trở về môn mặc định"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="flex gap-2 items-end">
         <textarea
           ref={inputRef}
           value={input}
-          onChange={e => onInputChange(e.target.value)}
+          onChange={e => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={MODE_HINTS[mode]}
           disabled={streaming || aiOk === false}

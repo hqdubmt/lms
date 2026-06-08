@@ -25,7 +25,7 @@ import { StudyPlanPanel } from '@/components/chat/StudyPlanPanel';
 import { useHomework } from '@/hooks/chat/useHomework';
 import { getAchievements, getXPData } from '@/services/gamification';
 
-import type { Message, Mode } from '@/components/chat/types';
+import type { Message, Mode, Subject } from '@/components/chat/types';
 
 interface ToastAchievement { id: string; label: string; description: string }
 
@@ -38,6 +38,7 @@ export function AiChat() {
   const [mode, setMode] = useState<Mode>('tutor');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [subjectOverride, setSubjectOverride] = useState<Subject | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -47,7 +48,8 @@ export function AiChat() {
   const [toastLevelUp, setToastLevelUp] = useState<{ level: number; rank: string } | null>(null);
   const prevLevelRef = useRef<number | null>(null);
 
-  const subject = detectSubject(pathname);
+  const baseSubject = detectSubject(pathname);
+  const subject: Subject = subjectOverride ?? baseSubject;
   const meta = SUBJECT_META[subject];
   const ttsLang = subject === 'language' ? 'en-US' : 'vi-VN';
 
@@ -312,11 +314,13 @@ export function AiChat() {
                 color={meta.color}
                 hasMessages={messages.length > 0}
                 inputRef={inputRef}
+                subjectOverride={subjectOverride}
                 onInputChange={setInput}
                 onSend={() => { sendMessage(input); setInput(''); }}
                 onStop={handleStop}
                 onMic={handleMic}
                 onClearHistory={clearHistory}
+                onSubjectOverride={setSubjectOverride}
               />
             </>
           )}
