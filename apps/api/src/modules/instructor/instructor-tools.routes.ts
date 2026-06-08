@@ -5,6 +5,8 @@ import {
   convertToMarkdown, cleanMarkdown, detectSubject, qualityCheck,
 } from '../../services/document-ingestion';
 import { aiChatStream, isAnyAIAvailable } from '../../services/ai-provider';
+import { prisma } from '../../services/prisma';
+import { getBrain } from '../../services/conversation-brain';
 
 const SUPPORTED_EXTS: Record<string, string> = {
   '.docx': 'Word Document', '.doc': 'Word Document (legacy)',
@@ -80,6 +82,7 @@ export async function instructorToolsRoutes(app: FastifyInstance) {
       markdown?: string;
       type: 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet' | 'study-guide';
       grade?: number; subject?: string; count?: number; language?: string;
+      classId?: string;
     };
 
     const markdown = body.markdown ?? '';
@@ -93,6 +96,65 @@ export async function instructorToolsRoutes(app: FastifyInstance) {
     const langNote = lang === 'vi' ? 'Trả lời bằng tiếng Việt.' : 'Reply in English.';
     const content = markdown.length > 8000 ? markdown.slice(0, 8000) + '\n...(đã cắt)' : markdown;
 
+    // Fetch class analytics khi soạn giáo án
+    let classContext = '';
+    if (type === 'lesson-plan' && body.classId) {
+      try {
+        const { sub } = req.user as { sub: string };
+        const cls = await prisma.class.findFirst({
+          where: { id: body.classId, createdBy: sub },
+          include: {
+            members: { select: { userId: true } },
+            courses: { select: { courseId: true } },
+          },
+        });
+        if (cls) {
+          const memberIds = cls.members.map(m => m.userId);
+          const courseIds = cls.courses.map(c => c.courseId);
+
+          const enrollments = await prisma.enrollment.findMany({
+            where: { userId: { in: memberIds }, courseId: { in: courseIds } },
+            select: { progress: true },
+          });
+          const avgProgress = enrollments.length
+            ? Math.round(enrollments.reduce((s, e) => s + e.progress, 0) / enrollments.length)
+            : 0;
+
+          const quizAttempts = await prisma.quizAttempt.findMany({
+            where: { userId: { in: memberIds } },
+            select: { score: true },
+          });
+          const avgQuiz = quizAttempts.length
+            ? Math.round(quizAttempts.reduce((s, a) => s + a.score, 0) / quizAttempts.length)
+            : null;
+
+          // Tổng hợp weak topics từ AI brain của từng học sinh
+          const weakTopicFreq: Record<string, number> = {};
+          for (const userId of memberIds) {
+            try {
+              const brain = await getBrain(userId, 'general');
+              const masteryMap = brain.mastery as Record<string, number>;
+              for (const [topic, score] of Object.entries(masteryMap)) {
+                if (score < 0.5) {
+                  weakTopicFreq[topic] = (weakTopicFreq[topic] ?? 0) + 1;
+                }
+              }
+            } catch { /* skip */ }
+          }
+          const topWeak = Object.entries(weakTopicFreq)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5)
+            .map(([topic, n]) => `${topic} (${n} học sinh)`);
+
+          classContext = `\n\n--- DỮ LIỆU LỚP HỌC: ${cls.name} ---
+Tổng học sinh: ${memberIds.length}
+Tiến độ học trung bình: ${avgProgress}%${avgQuiz !== null ? `\nĐiểm quiz trung bình: ${avgQuiz}/100` : ''}${topWeak.length > 0 ? `\nChủ đề học sinh đang yếu (cần ưu tiên ôn tập):\n${topWeak.map(t => `  - ${t}`).join('\n')}` : ''}
+Yêu cầu: Giáo án phải tập trung ôn tập và giải thích kỹ các chủ đề yếu nêu trên, điều chỉnh hoạt động phù hợp với trình độ thực tế của lớp.
+---`;
+        }
+      } catch { /* không block nếu analytics lỗi */ }
+    }
+
     const PROMPTS: Record<string, { system: string; user: string }> = {
       quiz: {
         system: `Bạn là giáo viên chuyên tạo câu hỏi trắc nghiệm. ${langNote}
@@ -104,9 +166,10 @@ Chỉ trả JSON thuần, không markdown, không giải thích thêm.`,
       'lesson-plan': {
         system: `Bạn là giáo viên giàu kinh nghiệm. ${langNote}
 Tạo giáo án chi tiết dạng JSON từ nội dung tài liệu.
-Schema: { "title": string, "grade": number, "subject": string, "duration": string, "objectives": string[], "materials": string[], "steps": [{ "phase": string, "duration": string, "activity": string, "teacherActions": string[], "studentActions": string[] }], "assessment": string, "homework": string }
+Schema: { "title": string, "grade": number, "subject": string, "duration": string, "objectives": string[], "materials": string[], "steps": [{ "phase": string, "duration": string, "activity": string, "teacherActions": string[], "studentActions": string[] }], "assessment": string, "homework": string, "classInsights"?: { "focusTopics": string[], "adaptationNotes": string } }
+Nếu có dữ liệu lớp học, thêm trường classInsights mô tả cách giáo án được điều chỉnh cho lớp.
 Chỉ trả JSON thuần.`,
-        user: `Môn: ${subject}${grade ? `, Lớp ${grade}` : ''}\n\nNội dung:\n${content}`,
+        user: `Môn: ${subject}${grade ? `, Lớp ${grade}` : ''}\n\nNội dung:\n${content}${classContext}`,
       },
       exam: {
         system: `Bạn là giáo viên chuyên ra đề thi. ${langNote}

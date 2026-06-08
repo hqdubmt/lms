@@ -4,13 +4,15 @@ import { useCallback, useRef, useState } from 'react';
 import {
   Bot, Upload, Loader2, CheckCircle2, XCircle, Copy, Download,
   RefreshCw, FileText, ClipboardList, BookOpen, FileSearch, PenLine,
-  ChevronRight, Settings2,
+  ChevronRight, Settings2, Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type GenType = 'quiz' | 'lesson-plan' | 'exam' | 'answer-key' | 'worksheet';
 type RunState = 'idle' | 'converting' | 'generating' | 'done' | 'error';
+
+interface ClassInfo { id: string; name: string; memberCount?: number; }
 
 interface StreamLine {
   type: 'start' | 'chunk' | 'done' | 'error';
@@ -106,11 +108,26 @@ export default function InstructorCopilotPage() {
   const [subjectOpt, setSubjectOpt] = useState('Chung');
   const [count, setCount] = useState('5');
 
+  // Class analytics integration
+  const [classes, setClasses] = useState<ClassInfo[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [useClassData, setUseClassData] = useState(false);
+
   const [streamText, setStreamText] = useState('');
   const [resultData, setResultData] = useState<unknown>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch danh sách lớp khi chọn lesson-plan
+  const fetchClasses = useCallback(async () => {
+    if (classes.length > 0) return;
+    try {
+      const data = await api.get<{ allClasses: ClassInfo[] }>('/instructor/class-analytics');
+      setClasses(data.allClasses ?? []);
+      if (data.allClasses?.[0]) setSelectedClassId(data.allClasses[0].id);
+    } catch { /* không bắt buộc */ }
+  }, [classes.length]);
 
   const convertFile = useCallback(async (file: File) => {
     setState('converting');
@@ -164,6 +181,7 @@ export default function InstructorCopilotPage() {
           grade: grade ? parseInt(grade) : undefined,
           subject: subjectOpt,
           count: parseInt(count) || 5,
+          classId: genType === 'lesson-plan' && useClassData && selectedClassId ? selectedClassId : undefined,
         }),
       });
 
@@ -201,6 +219,7 @@ export default function InstructorCopilotPage() {
   const reset = () => {
     setStep(1); setState('idle'); setMarkdown(''); setFilename(''); setStreamText('');
     setResultData(null); setErrorMsg(''); setDetectedSubject(''); setQuality(null);
+    setUseClassData(false);
   };
 
   return (
@@ -315,7 +334,7 @@ export default function InstructorCopilotPage() {
             {GEN_TYPES.map(gt => {
               const Icon = gt.icon;
               return (
-                <button key={gt.id} onClick={() => setGenType(gt.id)}
+                <button key={gt.id} onClick={() => { setGenType(gt.id); if (gt.id === 'lesson-plan') fetchClasses(); }}
                   className={cn(
                     'flex flex-col items-start gap-2 p-3.5 rounded-xl border-2 text-left transition-all',
                     genType === gt.id ? gt.color + ' border-current/30' : 'border-gray-100 hover:border-gray-200 bg-white',
@@ -362,6 +381,51 @@ export default function InstructorCopilotPage() {
                 </div>
               )}
             </div>
+
+            {/* Class data toggle — chỉ hiện khi soạn giáo án */}
+            {genType === 'lesson-plan' && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => { setUseClassData(v => !v); if (!useClassData) fetchClasses(); }}
+                  className={cn(
+                    'flex items-center gap-2.5 text-sm font-medium px-4 py-2.5 rounded-xl border-2 transition-all',
+                    useClassData
+                      ? 'border-green-400 bg-green-50 text-green-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+                  )}
+                >
+                  <Users className="h-4 w-4 shrink-0" />
+                  {useClassData ? 'Đang dùng dữ liệu lớp học' : 'Dùng dữ liệu lớp học'}
+                  <span className="text-xs font-normal opacity-70">— AI điều chỉnh giáo án theo chủ đề yếu thực tế</span>
+                </button>
+
+                {useClassData && (
+                  <div className="mt-3">
+                    {classes.length === 0 ? (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />Đang tải danh sách lớp...
+                      </p>
+                    ) : (
+                      <div>
+                        <label className="text-xs font-medium text-gray-600 block mb-1">Chọn lớp</label>
+                        <select
+                          value={selectedClassId}
+                          onChange={e => setSelectedClassId(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400/30 min-w-48"
+                        >
+                          {classes.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}{c.memberCount != null ? ` (${c.memberCount} hs)` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
