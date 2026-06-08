@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import {
-  BarChart2, BookOpen, Target, Clock, TrendingUp, TrendingDown,
-  RefreshCw, Loader2, Brain, Award, Flame, CheckCircle2,
+  BarChart2, BookOpen, Target, Clock, TrendingDown,
+  RefreshCw, Loader2, Brain, Flame, CheckCircle2,
+  MessageSquare, ClipboardCheck, FileText, Mic, Zap, Star, Server, Bot,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,27 @@ interface AnalyticsSummary {
   avgMastery: number;
 }
 
+interface DashboardData {
+  activity: {
+    chatCount: number;
+    quizCount: number;
+    homeworkCount: number;
+    voiceCount: number;
+    studyMinutes: number;
+  };
+  xp: {
+    totalXP: number;
+    level: number;
+    rank: string;
+    rankColor: string;
+    xpProgress: number;
+    xpToNextLevel: number;
+    history: Array<{ date: string; xp: number }>;
+  };
+  providers: Array<{ name: string; totalRequests: number; totalSuccess: number }>;
+  agents: Array<{ name: string; totalCalls: number }>;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const SUBJECT_LABEL: Record<string, string> = {
@@ -50,20 +72,34 @@ const SUBJECT_COLOR: Record<string, string> = {
   language: 'bg-purple-100 text-purple-700',
 };
 
+const PROVIDER_COLOR: Record<string, string> = {
+  groq: 'bg-orange-500',
+  gemini: 'bg-blue-500',
+  ollama: 'bg-gray-500',
+};
+
+const AGENT_LABEL: Record<string, string> = {
+  tutor: 'Gia sư',
+  math: 'Toán',
+  quiz: 'Quiz',
+  homework: 'Bài tập',
+  knowledge_graph: 'Đồ thị KT',
+};
+
 function StatCard({
   label, value, icon: Icon, color, sub,
 }: {
   label: string; value: string | number; icon: React.ElementType; color: string; sub?: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4">
-      <div className={cn('h-12 w-12 rounded-xl flex items-center justify-center shrink-0', color)}>
-        <Icon className="h-6 w-6" />
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
+      <div className={cn('h-10 w-10 rounded-xl flex items-center justify-center shrink-0', color)}>
+        <Icon className="h-5 w-5" />
       </div>
       <div>
-        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-xl font-bold leading-tight">{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
-        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+        {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
       </div>
     </div>
   );
@@ -82,6 +118,19 @@ function MasteryBar({ topic, score }: { topic: string; score: number }) {
   );
 }
 
+function UsageBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <p className="text-sm w-28 truncate shrink-0 capitalize">{label}</p>
+      <div className="flex-1 bg-gray-100 rounded-full h-2">
+        <div className={cn('h-2 rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-sm font-semibold w-8 text-right text-gray-600">{value}</p>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StudentAnalyticsPage() {
@@ -91,20 +140,23 @@ export default function StudentAnalyticsPage() {
   const [subjects, setSubjects] = useState<SubjectStat[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [mastery, setMastery] = useState<MasteryEntry[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedSubject, setSelectedSubject] = useState('general');
   const [days, setDays] = useState<7 | 30 | 90>(30);
 
   const load = async (subject = selectedSubject, d = days) => {
     setLoading(true);
     try {
-      const [subjectData, summaryData, masteryData] = await Promise.all([
+      const [subjectData, summaryData, masteryData, dashData] = await Promise.all([
         api.get<{ subjects: SubjectStat[] }>('/ai/analytics/subject'),
         api.get<AnalyticsSummary>(`/ai/analytics/summary?subject=${subject}&days=${d}`),
         api.get<{ topicMastery: MasteryEntry[] }>(`/ai/analytics/mastery?subject=${subject}`),
+        api.get<DashboardData>('/ai/analytics/dashboard'),
       ]);
       setSubjects(subjectData.subjects ?? []);
       setSummary(summaryData);
       setMastery(masteryData.topicMastery ?? []);
+      setDashboard(dashData);
     } catch {
       // ignore
     } finally {
@@ -123,6 +175,9 @@ export default function StudentAnalyticsPage() {
     setDays(d);
     load(selectedSubject, d);
   };
+
+  const maxProviderReq = Math.max(1, ...(dashboard?.providers.map(p => p.totalRequests) ?? [1]));
+  const maxAgentCalls = Math.max(1, ...(dashboard?.agents.map(a => a.totalCalls) ?? [1]));
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -143,13 +198,13 @@ export default function StudentAnalyticsPage() {
         </button>
       </div>
 
-      {/* Summary cards */}
       {loading && !summary ? (
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <>
+          {/* ── Row 1: Primary stats ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Phút học tổng"
@@ -176,6 +231,137 @@ export default function StudentAnalyticsPage() {
               icon={Flame}
               color="bg-orange-100 text-orange-600"
             />
+          </div>
+
+          {/* ── Row 2: Activity counts (Phase 6) ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard
+              label="Lượt chat AI"
+              value={dashboard?.activity.chatCount ?? 0}
+              icon={MessageSquare}
+              color="bg-cyan-100 text-cyan-600"
+            />
+            <StatCard
+              label="Bài quiz"
+              value={dashboard?.activity.quizCount ?? 0}
+              icon={ClipboardCheck}
+              color="bg-indigo-100 text-indigo-600"
+            />
+            <StatCard
+              label="Bài homework"
+              value={dashboard?.activity.homeworkCount ?? 0}
+              icon={FileText}
+              color="bg-rose-100 text-rose-600"
+            />
+            <StatCard
+              label="Luyện giọng nói"
+              value={dashboard?.activity.voiceCount ?? 0}
+              icon={Mic}
+              color="bg-teal-100 text-teal-600"
+            />
+          </div>
+
+          {/* ── Row 3: XP Growth + Provider/Agent usage (Phase 6) ── */}
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* XP Growth */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+              <h2 className="font-semibold flex items-center gap-2">
+                <Zap className="h-4 w-4 text-yellow-500" /> XP &amp; Cấp độ
+              </h2>
+              {dashboard?.xp ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center shrink-0">
+                      <Star className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold">{dashboard.xp.totalXP.toLocaleString()} XP</p>
+                      <p className="text-xs text-muted-foreground">Level {dashboard.xp.level} · {dashboard.xp.rank}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>Tiến độ level</span>
+                      <span>{Math.round(dashboard.xp.xpProgress * 100)}%</span>
+                    </div>
+                    <div className="bg-gray-100 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full bg-gradient-to-r from-yellow-400 to-orange-400 transition-all"
+                        style={{ width: `${Math.round(dashboard.xp.xpProgress * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Cần thêm {dashboard.xp.xpToNextLevel} XP để lên cấp
+                    </p>
+                  </div>
+                  {dashboard.xp.history.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-2">XP gần đây</p>
+                      <div className="flex items-end gap-1 h-10">
+                        {dashboard.xp.history.map((h, i) => {
+                          const maxXP = Math.max(1, ...dashboard.xp.history.map(x => x.xp));
+                          const pct = Math.max(4, Math.round((h.xp / maxXP) * 100));
+                          return (
+                            <div
+                              key={i}
+                              className="flex-1 bg-gradient-to-t from-yellow-400 to-orange-300 rounded-sm"
+                              style={{ height: `${pct}%` }}
+                              title={`${h.date}: +${h.xp} XP`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">Chưa có dữ liệu</p>
+              )}
+            </div>
+
+            {/* Provider Usage */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+              <h2 className="font-semibold flex items-center gap-2">
+                <Server className="h-4 w-4 text-gray-500" /> Provider AI (7 ngày)
+              </h2>
+              {dashboard?.providers && dashboard.providers.length > 0 ? (
+                <div className="space-y-3">
+                  {dashboard.providers.map(p => (
+                    <UsageBar
+                      key={p.name}
+                      label={p.name}
+                      value={p.totalRequests}
+                      max={maxProviderReq}
+                      color={PROVIDER_COLOR[p.name] ?? 'bg-gray-400'}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">Chưa có dữ liệu</p>
+              )}
+            </div>
+
+            {/* Agent Usage */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+              <h2 className="font-semibold flex items-center gap-2">
+                <Bot className="h-4 w-4 text-primary" /> Agent AI (7 ngày)
+              </h2>
+              {dashboard?.agents && dashboard.agents.length > 0 ? (
+                <div className="space-y-3">
+                  {dashboard.agents.map(a => (
+                    <UsageBar
+                      key={a.name}
+                      label={AGENT_LABEL[a.name] ?? a.name}
+                      value={a.totalCalls}
+                      max={maxAgentCalls}
+                      color="bg-primary"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">Chưa có dữ liệu</p>
+              )}
+            </div>
           </div>
 
           {/* Subject selector */}
@@ -276,6 +462,7 @@ export default function StudentAnalyticsPage() {
               </div>
             </div>
           ) : null}
+
         </>
       )}
     </div>

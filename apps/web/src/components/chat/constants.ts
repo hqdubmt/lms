@@ -1,4 +1,4 @@
-import { BookOpen, PenLine, CheckSquare, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones, MicVocal } from 'lucide-react';
+import { BookOpen, PenLine, CheckSquare, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones, MicVocal, TrendingUp } from 'lucide-react';
 import type { ElementType } from 'react';
 import type { Subject, Mode } from './types';
 
@@ -14,6 +14,7 @@ export const MODES: { id: Mode; label: string; icon: ElementType }[] = [
   { id: 'exercise', label: 'Bài tập',    icon: PenLine     },
   { id: 'homework', label: 'Chấm bài',   icon: CheckSquare },
   { id: 'quiz',     label: 'Quiz',       icon: HelpCircle  },
+  { id: 'adaptive', label: 'Cá nhân',    icon: TrendingUp  },
   { id: 'voice',    label: 'Giọng nói',  icon: Mic         },
 ];
 
@@ -22,6 +23,7 @@ export const MODE_HINTS: Record<Mode, string> = {
   exercise: 'Yêu cầu tạo bài tập...',
   homework: 'Gửi bài làm để chấm...',
   quiz:     'Yêu cầu kiểm tra nhanh...',
+  adaptive: 'AI cá nhân hóa theo điểm yếu...',
   voice:    'Nhấn micro để nói chuyện...',
 };
 

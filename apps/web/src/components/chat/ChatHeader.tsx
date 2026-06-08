@@ -1,4 +1,4 @@
-import { Bot, Minimize2, Maximize2, X, Brain } from 'lucide-react';
+import { Bot, Minimize2, Maximize2, X, Brain, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ChatHeaderProps {
@@ -6,17 +6,19 @@ interface ChatHeaderProps {
   color: string;
   minimized: boolean;
   showBrain: boolean;
+  showPlanner: boolean;
   aiOk: boolean | null;
   aiLabel: string;
   streaming?: boolean;
   onToggleMinimize: () => void;
   onToggleBrain: (e: React.MouseEvent) => void;
+  onTogglePlanner: (e: React.MouseEvent) => void;
   onClose: (e: React.MouseEvent) => void;
 }
 
 export function ChatHeader({
-  label, color, minimized, showBrain, aiOk, aiLabel, streaming = false,
-  onToggleMinimize, onToggleBrain, onClose,
+  label, color, minimized, showBrain, showPlanner, aiOk, aiLabel, streaming = false,
+  onToggleMinimize, onToggleBrain, onTogglePlanner, onClose,
 }: ChatHeaderProps) {
   return (
     <div className="shrink-0">
@@ -47,16 +49,28 @@ export function ChatHeader({
       </div>
       <div className="flex items-center gap-1">
         {!minimized && (
-          <button
-            onClick={onToggleBrain}
-            className={cn(
-              'h-6 w-6 rounded-lg flex items-center justify-center transition-colors',
-              showBrain ? 'bg-white/30 text-white' : 'hover:bg-white/20 text-white/80 hover:text-white',
-            )}
-            title="Tiến trình học tập"
-          >
-            <Brain className="h-3.5 w-3.5" />
-          </button>
+          <>
+            <button
+              onClick={onTogglePlanner}
+              className={cn(
+                'h-6 w-6 rounded-lg flex items-center justify-center transition-colors',
+                showPlanner ? 'bg-white/30 text-white' : 'hover:bg-white/20 text-white/80 hover:text-white',
+              )}
+              title="Kế hoạch học tập"
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={onToggleBrain}
+              className={cn(
+                'h-6 w-6 rounded-lg flex items-center justify-center transition-colors',
+                showBrain ? 'bg-white/30 text-white' : 'hover:bg-white/20 text-white/80 hover:text-white',
+              )}
+              title="Tiến trình học tập"
+            >
+              <Brain className="h-3.5 w-3.5" />
+            </button>
+          </>
         )}
         <button
           onClick={e => { e.stopPropagation(); onToggleMinimize(); }}

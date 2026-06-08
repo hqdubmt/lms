@@ -20,6 +20,8 @@ import { ChatInput } from '@/components/chat/ChatInput';
 import { VoicePanel } from '@/components/chat/VoicePanel';
 import { LangQuickBar } from '@/components/chat/LangQuickBar';
 import { HomeworkPanel } from '@/components/chat/HomeworkPanel';
+import { AdaptivePanel } from '@/components/chat/AdaptivePanel';
+import { StudyPlanPanel } from '@/components/chat/StudyPlanPanel';
 import { useHomework } from '@/hooks/chat/useHomework';
 import { getAchievements, getXPData } from '@/services/gamification';
 
@@ -32,6 +34,7 @@ export function AiChat() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [showBrain, setShowBrain] = useState(false);
+  const [showPlanner, setShowPlanner] = useState(false);
   const [mode, setMode] = useState<Mode>('tutor');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -205,11 +208,13 @@ export function AiChat() {
         color={meta.color}
         minimized={minimized}
         showBrain={showBrain}
+        showPlanner={showPlanner}
         aiOk={aiOk}
         aiLabel={aiLabel}
         streaming={streaming}
         onToggleMinimize={() => setMinimized(m => !m)}
-        onToggleBrain={e => { e.stopPropagation(); setShowBrain(b => !b); }}
+        onToggleBrain={e => { e.stopPropagation(); setShowBrain(b => !b); setShowPlanner(false); }}
+        onTogglePlanner={e => { e.stopPropagation(); setShowPlanner(p => !p); setShowBrain(false); }}
         onClose={e => { e.stopPropagation(); setOpen(false); handleStop(); }}
       />
 
@@ -221,6 +226,15 @@ export function AiChat() {
                 key={brainKey}
                 subject={subject}
                 onSendMessage={text => { setShowBrain(false); sendMessage(text); }}
+              />
+            </div>
+          )}
+
+          {showPlanner && (
+            <div className="shrink-0 max-h-44 overflow-y-auto">
+              <StudyPlanPanel
+                subject={subject}
+                onSendMessage={text => { setShowPlanner(false); sendMessage(text); }}
               />
             </div>
           )}
@@ -256,6 +270,14 @@ export function AiChat() {
               {/* Language Tutor quick actions — persistent bar */}
               {subject === 'language' && messages.length > 0 && (
                 <LangQuickBar onSetInput={setInput} />
+              )}
+
+              {/* Adaptive Learning — show panel when mode is adaptive */}
+              {mode === 'adaptive' && (
+                <AdaptivePanel
+                  subject={subject}
+                  onSendMessage={text => sendMessage(text)}
+                />
               )}
 
               {/* Homework 2.0+ — rubric panel */}

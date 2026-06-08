@@ -14,7 +14,11 @@ export type MonitoredAgent =
   | 'math'
   | 'quiz'
   | 'homework'
-  | 'knowledge_graph';
+  | 'knowledge_graph'
+  | 'reflection'
+  | 'self_correction'
+  | 'critic'
+  | 'planner';
 
 export interface AgentStats {
   agent: MonitoredAgent;
@@ -73,11 +77,11 @@ export async function getAgentDashboard(
 ): Promise<Record<MonitoredAgent, AgentStats[]>> {
   if (!ENABLED) {
     return {
-      tutor: [], math: [], quiz: [], homework: [], knowledge_graph: [],
+      tutor: [], math: [], quiz: [], homework: [], knowledge_graph: [], reflection: [], self_correction: [], critic: [], planner: [],
     };
   }
 
-  const agents: MonitoredAgent[] = ['tutor', 'math', 'quiz', 'homework', 'knowledge_graph'];
+  const agents: MonitoredAgent[] = ['tutor', 'math', 'quiz', 'homework', 'knowledge_graph', 'reflection', 'self_correction', 'critic', 'planner'];
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     dates.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));

@@ -9,7 +9,7 @@
 import type { BrainState } from './conversation-brain';
 import { getTopConcepts } from './knowledge-graph';
 
-export type AgentType = 'tutor' | 'math' | 'quiz' | 'homework' | 'language' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach';
+export type AgentType = 'tutor' | 'math' | 'quiz' | 'homework' | 'language' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner';
 
 export interface AgentResult {
   agent: AgentType;
@@ -194,6 +194,108 @@ function learningCoachAgent(brain: BrainState, subject: Subject): AgentResult | 
   };
 }
 
+// ─── Phase 7: Reflection Agent ───────────────────────────────────────────────
+
+function reflectionAgent(brain: BrainState): AgentResult | null {
+  if (brain.messageCount < 3) return null;
+
+  const parts: string[] = [];
+
+  if (brain.summary) {
+    parts.push(`Tóm tắt cuộc hội thoại: ${brain.summary}`);
+  }
+
+  const mastered = Object.entries(brain.mastery as Record<string, number>)
+    .filter(([, v]) => v >= 0.75)
+    .map(([k]) => k)
+    .slice(0, 3);
+
+  if (mastered.length > 0) {
+    parts.push(`Học sinh đã nắm vững: ${mastered.join(', ')} — không cần lặp lại kiến thức này.`);
+  }
+
+  if (parts.length === 0) return null;
+
+  return {
+    agent: 'reflection',
+    hint: `[Reflection Agent] ${parts.join(' ')} Xây dựng trên nền tảng này thay vì bắt đầu từ đầu.`,
+  };
+}
+
+// ─── Phase 7: Self Correction Agent ──────────────────────────────────────────
+
+function selfCorrectionAgent(brain: BrainState, subject: Subject): AgentResult | null {
+  const COMMON_MISCONCEPTIONS: Record<Subject, string[]> = {
+    math:     ['nhầm dấu khi chuyển vế', 'quên kiện nghiệm', 'nhầm công thức sin/cos', 'chia cho 0'],
+    language: ['nhầm thì động từ', 'dùng sai giới từ', 'thiếu mạo từ a/an/the', 'nhầm its/it\'s'],
+    viet:     ['nhầm thanh điệu', 'viết sai chính tả dấu hỏi/ngã', 'dùng sai từ đồng âm'],
+    general:  ['trả lời chưa đúng trọng tâm câu hỏi', 'thiếu ví dụ minh họa'],
+  };
+
+  const patterns = COMMON_MISCONCEPTIONS[subject] ?? COMMON_MISCONCEPTIONS.general;
+  const recentMistakeTypes = brain.mistakes.slice(-3).map(m => m.type);
+  const relevant = patterns.filter(p => recentMistakeTypes.some(r => r.toLowerCase().includes(p.slice(0, 8).toLowerCase())));
+
+  const checkList = relevant.length > 0
+    ? `Đặc biệt kiểm tra: ${relevant.join(', ')}.`
+    : `Kiểm tra các lỗi thường gặp: ${patterns.slice(0, 2).join(', ')}.`;
+
+  return {
+    agent: 'self_correction',
+    hint: `[Self-Correction Agent] Trước khi kết thúc phản hồi, tự kiểm tra lại tính chính xác của kết quả. ${checkList} Nếu phát hiện lỗi, sửa ngay không cần xin lỗi.`,
+  };
+}
+
+// ─── Phase 7: Critic Agent ────────────────────────────────────────────────────
+
+function criticAgent(mode: string, brain: BrainState): AgentResult | null {
+  if (brain.messageCount < 2) return null;
+
+  const QUALITY_STANDARDS: Record<string, string> = {
+    tutor:    'Giải thích phải có: (1) Khái niệm rõ ràng, (2) Ít nhất 1 ví dụ cụ thể, (3) Kết nối với kiến thức đã biết.',
+    exercise: 'Bài tập phải có: (1) Đề bài rõ ràng, (2) Hướng dẫn từng bước, (3) Đáp án.',
+    quiz:     'Quiz phải có: (1) Câu hỏi đa dạng, (2) Độ khó phù hợp, (3) Giải thích đáp án.',
+    homework: 'Chấm bài phải có: (1) Điểm số cụ thể, (2) Nhận xét từng phần, (3) Gợi ý cải thiện.',
+    adaptive: 'Nội dung phải: (1) Phù hợp độ khó hiện tại, (2) Nhắm vào điểm yếu, (3) Có bước tiến rõ.',
+  };
+
+  const standard = QUALITY_STANDARDS[mode] ?? QUALITY_STANDARDS.tutor;
+  return {
+    agent: 'critic',
+    hint: `[Critic Agent] Tiêu chuẩn chất lượng phản hồi: ${standard} Đảm bảo đáp ứng đủ trước khi kết thúc.`,
+  };
+}
+
+// ─── Phase 7: Planner Agent ───────────────────────────────────────────────────
+
+function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
+  const masteryMap = brain.mastery as Record<string, number>;
+  const entries = Object.entries(masteryMap);
+  if (entries.length < 2) return null;
+
+  const weak = entries.filter(([, v]) => v < 0.5).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([k]) => k);
+  const next = entries.filter(([, v]) => v >= 0.5 && v < 0.8).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([k]) => k);
+
+  if (weak.length === 0 && next.length === 0) return null;
+
+  const SUBJECT_PATH: Record<Subject, string> = {
+    math:     'nền tảng số học → đại số → hình học → giải tích',
+    language: 'từ vựng cơ bản → ngữ pháp → kỹ năng nghe-nói → đọc-viết nâng cao',
+    viet:     'chính tả → ngữ pháp → văn phong → nghị luận',
+    general:  'hiểu khái niệm → áp dụng → phân tích → sáng tạo',
+  };
+
+  const parts: string[] = [];
+  if (weak.length > 0) parts.push(`Ưu tiên ôn tập: ${weak.join(', ')}`);
+  if (next.length > 0) parts.push(`Chuẩn bị học tiếp: ${next.join(', ')}`);
+  parts.push(`Lộ trình môn: ${SUBJECT_PATH[subject]}`);
+
+  return {
+    agent: 'planner',
+    hint: `[Planner Agent] Kế hoạch học tập: ${parts.join('. ')}. Nếu phù hợp, gợi ý bước học tiếp theo ở cuối phản hồi.`,
+  };
+}
+
 // ─── Multi-Agent Runner ───────────────────────────────────────────────────────
 
 export interface MultiAgentParams {
@@ -214,6 +316,11 @@ export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResu
     Promise.resolve(reviewAgent(brain)),
     Promise.resolve(researchAgent(ragHits, brain.topic)),
     Promise.resolve(learningCoachAgent(brain, s)),
+    // Phase 7: new agents — only add hints, không thay đổi output cũ
+    Promise.resolve(reflectionAgent(brain)),
+    Promise.resolve(selfCorrectionAgent(brain, s)),
+    Promise.resolve(criticAgent(mode, brain)),
+    Promise.resolve(plannerAgent(brain, s)),
   ];
 
   if (userId) {

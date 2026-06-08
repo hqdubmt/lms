@@ -4,6 +4,9 @@ import { requireAuth } from '../../middleware/auth';
 import { recordEvent, getAnalyticsSummary } from '../../services/analytics';
 import { getBrain } from '../../services/conversation-brain';
 import { getLearningAnalytics } from '../../services/learning-analytics';
+import { getXPData } from '../../services/xp-gamification';
+import { getProviderDashboard, type Provider } from '../../services/provider-monitor';
+import { getAgentDashboard, type MonitoredAgent } from '../../services/agent-monitor';
 
 const SUBJECTS = ['math', 'language', 'viet', 'general'];
 
@@ -130,6 +133,59 @@ export async function analyticsRoutes(app: FastifyInstance) {
         quizAccuracy: Math.round(summary.quizAccuracy),
         masteryGrowth: Math.round((summary.masteryGrowth ?? 0) * 100),
       },
+    });
+  });
+
+  // Phase 6: GET /ai/analytics/dashboard — advanced analytics for student
+  app.get('/dashboard', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+
+    const [la, xp, providerDash, agentDash] = await Promise.all([
+      getLearningAnalytics(sub),
+      getXPData(sub),
+      getProviderDashboard(7),
+      getAgentDashboard(7),
+    ]);
+
+    // Aggregate provider stats over last 7 days
+    const providers = (Object.entries(providerDash) as [Provider, ReturnType<typeof providerDash[Provider]['map']>][]).map(
+      ([name, days]) => {
+        const totalRequests = (days as any[]).reduce((s: number, d: any) => s + (d.requestCount ?? 0), 0);
+        const totalSuccess = (days as any[]).reduce((s: number, d: any) => s + (d.successCount ?? 0), 0);
+        return { name, totalRequests, totalSuccess };
+      },
+    ).filter(p => p.totalRequests > 0);
+
+    // Aggregate agent stats over last 7 days
+    const agents = (Object.entries(agentDash) as [MonitoredAgent, ReturnType<typeof agentDash[MonitoredAgent]['map']>][]).map(
+      ([name, days]) => {
+        const totalCalls = (days as any[]).reduce((s: number, d: any) => s + (d.callCount ?? 0), 0);
+        return { name, totalCalls };
+      },
+    ).filter(a => a.totalCalls > 0);
+
+    // XP history last 7 days (from xp.history)
+    const xpHistory = xp.history.slice(-7).map(h => ({ date: h.date, xp: h.xp }));
+
+    return reply.send({
+      activity: {
+        chatCount: la.chatCount,
+        quizCount: la.quizCount,
+        homeworkCount: la.homeworkCount,
+        voiceCount: la.voiceCount,
+        studyMinutes: la.studyMinutes,
+      },
+      xp: {
+        totalXP: xp.totalXP,
+        level: xp.level,
+        rank: xp.rank,
+        rankColor: xp.rankColor,
+        xpProgress: xp.xpProgress,
+        xpToNextLevel: xp.xpToNextLevel,
+        history: xpHistory,
+      },
+      providers,
+      agents,
     });
   });
 }
