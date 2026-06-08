@@ -16,7 +16,7 @@ const MODE_ADDITIONS: Record<Mode, string> = {
   tutor: 'Hãy giải thích kiến thức rõ ràng, từng bước, kèm ví dụ minh họa cụ thể. Dùng markdown để trình bày đẹp (tiêu đề, danh sách, in đậm).',
   exercise: 'Hãy tạo bài tập theo yêu cầu. Mỗi bài có số thứ tự, nội dung rõ ràng. Ghi đáp án vào phần "**Đáp án:**" ở cuối. Dùng markdown để trình bày.',
   homework: 'Hãy chấm bài học sinh: chỉ ra lỗi sai cụ thể, giải thích tại sao sai, gợi ý cách sửa. Cho điểm từ 0–10 dạng **Điểm: X/10**. Nhận xét tổng thể cuối bài.',
-  quiz: 'Hãy tạo quiz trắc nghiệm. Mỗi câu có 4 lựa chọn A/B/C/D. Format:\n**Câu 1:** [câu hỏi]\nA. ... B. ... C. ... D. ...\n**Đáp án: [chữ cái]**\nTạo đủ số câu theo yêu cầu.',
+  quiz: 'Hãy tạo quiz. Sử dụng đa dạng loại câu hỏi:\n\n1. Trắc nghiệm MCQ:\n**Câu N:** [câu hỏi]\nA. ...\nB. ...\nC. ...\nD. ...\n**Đáp án: A**\n\n2. Đúng/Sai:\n**Câu N (Đúng/Sai):** [câu khẳng định cần đánh giá]\n**Đáp án: Đúng** (hoặc **Đáp án: Sai**)\n\n3. Điền từ:\n**Câu N (Điền từ):** [câu có ___ là chỗ trống]\n**Đáp án:** [từ/cụm từ cần điền]\n\n4. Nối đôi:\n**Câu N (Nối đôi):** [chủ đề]\n1.[item] | 2.[item] | 3.[item]\nA.[item] | B.[item] | C.[item]\n**Đáp án:** 1-A, 2-B, 3-C\n\nTạo đủ số câu theo yêu cầu. Trộn nhiều loại câu để bài quiz phong phú.',
 };
 
 export const SYSTEM_PROMPTS: Record<string, string> = BASE_PROMPTS;

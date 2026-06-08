@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   BarChart2, Users, MessageSquare, Gamepad2, ClipboardList, Mic,
   Zap, Network, RefreshCw, Loader2, TrendingUp, Server, Bot,
+  CheckCircle2, XCircle, AlertTriangle, Database, HardDrive, Cpu,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -51,6 +52,22 @@ interface AgentDetail {
   today: Record<string, AgentStat | null>;
 }
 
+type HealthStatus = 'ok' | 'degraded' | 'down' | 'unknown';
+
+interface ComponentHealth {
+  name: string;
+  status: HealthStatus;
+  latencyMs: number | null;
+  detail?: string;
+}
+
+interface SystemHealth {
+  status: HealthStatus;
+  components: ComponentHealth[];
+  uptimeSeconds: number;
+  checkedAt: string;
+}
+
 function StatCard({ label, value, icon: Icon, color, sub }: {
   label: string; value: string | number; icon: React.ElementType; color: string; sub?: string;
 }) {
@@ -87,10 +104,32 @@ const AGENT_COLOR: Record<string, string> = {
   knowledge_graph: 'bg-violet-100 text-violet-700',
 };
 
+const STATUS_ICON: Record<HealthStatus, React.ElementType> = {
+  ok: CheckCircle2,
+  degraded: AlertTriangle,
+  down: XCircle,
+  unknown: AlertTriangle,
+};
+
+const STATUS_COLOR: Record<HealthStatus, string> = {
+  ok: 'text-emerald-600',
+  degraded: 'text-yellow-600',
+  down: 'text-red-600',
+  unknown: 'text-gray-400',
+};
+
+const COMPONENT_ICON: Record<string, React.ElementType> = {
+  API: Cpu,
+  Redis: Database,
+  MinIO: HardDrive,
+  Qdrant: Database,
+};
+
 export default function AdminAiAnalyticsPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [provDetail, setProvDetail] = useState<ProviderDetail | null>(null);
   const [agentDetail, setAgentDetail] = useState<AgentDetail | null>(null);
+  const [sysHealth, setSysHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,14 +137,16 @@ export default function AdminAiAnalyticsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, p, a] = await Promise.all([
+      const [s, p, a, h] = await Promise.all([
         api.get<AdminStats>('/ai/admin/stats').catch(() => null),
         api.get<ProviderDetail>('/ai/admin/provider-stats?days=7').catch(() => null),
         api.get<AgentDetail>('/ai/admin/agent-stats?days=7').catch(() => null),
+        api.get<SystemHealth>('/ai/admin/system-health').catch(() => null),
       ]);
       setStats(s);
       setProvDetail(p);
       setAgentDetail(a);
+      setSysHealth(h);
       if (!s) setError('Bạn không có quyền xem thống kê này');
     } finally {
       setLoading(false);
@@ -262,6 +303,57 @@ export default function AdminAiAnalyticsPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* System Monitor — Module 6 */}
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+          <Server className="h-4 w-4" />System Monitor
+        </h2>
+        {sysHealth ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const Icon = STATUS_ICON[sysHealth.status];
+                  return <Icon className={cn('h-5 w-5', STATUS_COLOR[sysHealth.status])} />;
+                })()}
+                <span className="font-semibold capitalize">{sysHealth.status === 'ok' ? 'Tất cả hoạt động bình thường' : `Hệ thống: ${sysHealth.status}`}</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                uptime {Math.floor(sysHealth.uptimeSeconds / 3600)}h {Math.floor((sysHealth.uptimeSeconds % 3600) / 60)}m
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {sysHealth.components.map(c => {
+                const Icon = COMPONENT_ICON[c.name] ?? Database;
+                const StatusIcon = STATUS_ICON[c.status];
+                return (
+                  <div key={c.name} className="rounded-xl border border-gray-100 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">{c.name}</span>
+                      </div>
+                      <StatusIcon className={cn('h-4 w-4', STATUS_COLOR[c.status])} />
+                    </div>
+                    <p className={cn('text-xs font-semibold capitalize', STATUS_COLOR[c.status])}>{c.status}</p>
+                    {c.latencyMs !== null && (
+                      <p className="text-[10px] text-muted-foreground">{c.latencyMs}ms</p>
+                    )}
+                    {c.detail && (
+                      <p className="text-[10px] text-muted-foreground truncate" title={c.detail}>{c.detail}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 text-sm text-muted-foreground text-center">
+            Không thể tải system health
+          </div>
+        )}
       </section>
 
       {/* KG visualization link */}

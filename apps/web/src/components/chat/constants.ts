@@ -1,4 +1,4 @@
-import { BookOpen, PenLine, CheckSquare, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones } from 'lucide-react';
+import { BookOpen, PenLine, CheckSquare, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones, MicVocal } from 'lucide-react';
 import type { ElementType } from 'react';
 import type { Subject, Mode } from './types';
 
@@ -30,6 +30,8 @@ export const LANG_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; promp
   { label: 'Ngữ pháp',   icon: BookOpen,   prompt: 'Giải thích ngữ pháp của: ' },
   { label: 'Từ vựng',    icon: Sparkles,   prompt: 'Giải thích từ vựng: ' },
   { label: 'Phát âm',    icon: Volume2,    prompt: 'Hướng dẫn phát âm và IPA của: ' },
+  { label: 'IPA',        icon: BookOpen,   prompt: 'Giải thích ký hiệu IPA: ' },
+  { label: 'Luyện nói',  icon: MicVocal,   prompt: 'Luyện nói và cách đọc câu: ' },
   { label: 'Viết',       icon: PenLine,    prompt: 'Kiểm tra và sửa bài viết của em: ' },
   { label: 'Luyện nghe', icon: Headphones, prompt: 'Giải thích nội dung nghe và từ vựng quan trọng: ' },
 ];

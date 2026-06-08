@@ -7,6 +7,7 @@ import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../../middleware/auth';
 import { getProviderDashboard, getTotalTokenUsage } from '../../services/provider-monitor';
 import { getAgentDashboard } from '../../services/agent-monitor';
+import { getSystemHealth } from '../../services/system-monitor';
 import { redis } from '../../services/redis';
 import { prisma } from '../../services/prisma';
 
@@ -308,5 +309,15 @@ export async function adminStatsRoutes(app: FastifyInstance) {
       tokens: totalTokens,
       generatedAt: new Date().toISOString(),
     });
+  });
+
+  // ── Module 6: System Health ──────────────────────────────────────────────────
+  app.get('/admin/system-health', { preHandler: requireAuth }, async (req, reply) => {
+    const user = req.user as { sub: string };
+    if (!(await assertAdmin(user.sub))) {
+      return reply.status(403).send({ error: 'Chỉ admin mới có thể xem thông tin này' });
+    }
+    const health = await getSystemHealth();
+    return reply.send(health);
   });
 }

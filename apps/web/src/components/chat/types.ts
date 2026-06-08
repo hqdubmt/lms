@@ -4,11 +4,37 @@ export interface Source {
 }
 
 export interface QuizQ {
+  type: 'mcq';
   num: number;
   text: string;
   options: { key: string; text: string }[];
   answer: string;
 }
+
+export interface QuizQTF {
+  type: 'tf';
+  num: number;
+  text: string;
+  answer: boolean;
+}
+
+export interface QuizQFill {
+  type: 'fill';
+  num: number;
+  text: string;
+  answer: string;
+}
+
+export interface QuizQMatch {
+  type: 'match';
+  num: number;
+  text: string;
+  colA: { num: number; text: string }[];
+  colB: { key: string; text: string }[];
+  answer: Record<number, string>;
+}
+
+export type AnyQuizQ = QuizQ | QuizQTF | QuizQFill | QuizQMatch;
 
 export interface KnowledgeGap {
   weak: string[];

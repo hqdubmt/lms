@@ -59,7 +59,7 @@ function mathAgent(message: string): AgentResult | null {
   };
 }
 
-function quizAgent(brain: BrainState): AgentResult {
+function quizAgent(brain: BrainState, subject: Subject, message: string): AgentResult {
   const weak = Object.entries(brain.mastery)
     .filter(([, v]) => v < 0.5)
     .map(([k]) => k);
@@ -67,9 +67,38 @@ function quizAgent(brain: BrainState): AgentResult {
   const topicHint = weak.length > 0
     ? `Ưu tiên kiểm tra chủ đề yếu: ${weak.slice(0, 2).join(', ')}.`
     : 'Bao phủ đều các chủ đề đã học.';
+
+  // Detect explicit type request from user message
+  const wantTF    = /đúng.*sai|true.*false/i.test(message);
+  const wantFill  = /điền từ|fill.{0,5}blank|điền vào/i.test(message);
+  const wantMatch = /nối đôi|nối cặp|matching/i.test(message);
+  const hasExplicit = wantTF || wantFill || wantMatch;
+
+  // Chọn loại câu theo subject + explicit request
+  const useMCQ   = !hasExplicit || /trắc nghiệm|mcq/i.test(message);
+  const useTF    = wantTF    || (!hasExplicit && subject !== 'math');
+  const useFill  = wantFill  || (!hasExplicit && (subject === 'language' || subject === 'viet'));
+  const useMatch = wantMatch || (!hasExplicit && subject === 'language');
+
+  const FORMATS: Record<string, string> = {
+    mcq:   '**MCQ:**\n**Câu N:** [câu hỏi]\nA. ...\nB. ...\nC. ...\nD. ...\n**Đáp án: A**',
+    tf:    '**Đúng/Sai:**\n**Câu N (Đúng/Sai):** [câu khẳng định cần đánh giá]\n**Đáp án: Đúng**',
+    fill:  '**Điền từ:**\n**Câu N (Điền từ):** [câu có ___ là chỗ trống]\n**Đáp án:** [từ/cụm từ]',
+    match: '**Nối đôi:**\n**Câu N (Nối đôi):** [chủ đề]\n1.[item] | 2.[item] | 3.[item]\nA.[item] | B.[item] | C.[item]\n**Đáp án:** 1-A, 2-B, 3-C',
+  };
+
+  const selected: string[] = [];
+  if (useMCQ)   selected.push(FORMATS.mcq);
+  if (useTF)    selected.push(FORMATS.tf);
+  if (useFill)  selected.push(FORMATS.fill);
+  if (useMatch) selected.push(FORMATS.match);
+  if (selected.length === 0) selected.push(FORMATS.mcq);
+
+  const mixHint = selected.length > 1 ? `Trộn ${selected.length} loại câu trong bài quiz.` : '';
+
   return {
     agent: 'quiz',
-    hint: `[Quiz Agent] Tạo ${numQ} câu trắc nghiệm. Format bắt buộc:\n**Câu N:** [nội dung câu hỏi]\nA. ... B. ... C. ... D. ...\n**Đáp án: X**\n${topicHint}`,
+    hint: `[Quiz Agent] Tạo ${numQ} câu quiz. ${topicHint}\nFormat bắt buộc:\n${selected.join('\n\n')}\n${mixHint}`,
   };
 }
 
@@ -200,7 +229,7 @@ export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResu
   }
 
   if (mode === 'quiz') {
-    tasks.push(Promise.resolve(quizAgent(brain)));
+    tasks.push(Promise.resolve(quizAgent(brain, s, message)));
   }
 
   if (mode === 'homework') {

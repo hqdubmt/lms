@@ -46,7 +46,7 @@ const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: Mode }> = [
 // ─── Phase E — Language Agent intent patterns ─────────────────────────────────
 
 type LangIntent = 'LANGUAGE_TRANSLATE' | 'LANGUAGE_GRAMMAR' | 'LANGUAGE_VOCABULARY'
-  | 'LANGUAGE_SPEAKING' | 'LANGUAGE_WRITING' | 'LANGUAGE_LISTENING';
+  | 'LANGUAGE_SPEAKING' | 'LANGUAGE_WRITING' | 'LANGUAGE_LISTENING' | 'LANGUAGE_PRONUNCIATION';
 
 const LANG_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: LangIntent; hint: string }> = [
   {
@@ -78,6 +78,11 @@ const LANG_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: LangIntent; hint: s
     pattern: /nghe|listening|dictation|nghe hiểu/i,
     intent: 'LANGUAGE_LISTENING',
     hint: 'Hỗ trợ luyện nghe. Giải thích nội dung nghe và các điểm ngôn ngữ quan trọng.',
+  },
+  {
+    pattern: /ipa|phiên âm|âm tiết|trọng âm|luyện nói|cách đọc|how to say|stress|syllable/i,
+    intent: 'LANGUAGE_PRONUNCIATION',
+    hint: 'Hướng dẫn phát âm chi tiết. Format: **IPA:** /.../ → **Trọng âm:** ... → **Âm tiết:** ... → **Gợi ý tiếng Việt:** ... → **Lỗi thường gặp:** ...',
   },
 ];
 

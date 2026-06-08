@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { PenLine, Headphones, MessageCircle, ChevronLeft, Loader2, Star, CheckCircle2, AlertCircle, Lightbulb } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { PenLine, Headphones, MessageCircle, ChevronLeft, Loader2, Star, CheckCircle2, AlertCircle, Lightbulb, Mic, MicOff, Volume2 } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-type CoachTab = 'writing' | 'listening' | 'conversation';
+type CoachTab = 'writing' | 'listening' | 'conversation' | 'speaking';
 
 // ─── Writing Coach ─────────────────────────────────────────────────────────────
 
@@ -362,12 +362,190 @@ function ConversationCoach() {
   );
 }
 
+// ─── Speaking Coach ────────────────────────────────────────────────────────────
+
+interface SpeakingAiResult {
+  transcript: string;
+  score: number;
+  feedback: string;
+  corrections: string[];
+  encouragement: string;
+}
+
+const SPEAKING_PROMPTS = [
+  { en: 'Tell me about your daily routine and what you enjoy most about it.', target: '' },
+  { en: 'Describe a memorable trip you have taken.', target: '' },
+  { en: 'What are the advantages of learning a foreign language?', target: '' },
+  { en: "Talk about your favorite hobby and why you enjoy it.", target: '' },
+  { en: 'How has technology changed the way people communicate?', target: '' },
+];
+
+function SpeakingCoach() {
+  const [targetPhrase, setTargetPhrase] = useState('');
+  const [transcript, setTranscript] = useState('');
+  const [result, setResult] = useState<SpeakingAiResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const canRecord = typeof window !== 'undefined' &&
+    ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  const startListening = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    let full = '';
+    rec.onresult = (e: any) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) full += t + ' ';
+        else interim = t;
+      }
+      setTranscript(full + interim);
+    };
+    rec.onend = () => setListening(false);
+    rec.start();
+    recognitionRef.current = rec;
+    setListening(true);
+  }, []);
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  }, []);
+
+  const randomPrompt = () => {
+    const p = SPEAKING_PROMPTS[Math.floor(Math.random() * SPEAKING_PROMPTS.length)];
+    setTargetPhrase(p.en);
+    setTranscript('');
+    setResult(null);
+  };
+
+  const submit = async () => {
+    if (!transcript.trim() || loading) return;
+    setLoading(true);
+    try {
+      const r = await api.post<SpeakingAiResult>('/ai/speaking-practice', {
+        transcript: transcript.trim(),
+        subject: 'language',
+        targetPhrase: targetPhrase.trim() || undefined,
+      });
+      setResult(r);
+    } catch { /* noop */ } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Nói tiếng Anh rồi nhận phản hồi từ AI giáo viên</p>
+        <button onClick={randomPrompt}
+          className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
+          Câu hỏi ngẫu nhiên
+        </button>
+      </div>
+
+      {/* Target phrase */}
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Chủ đề / câu mục tiêu (không bắt buộc)</label>
+        <input
+          value={targetPhrase}
+          onChange={e => setTargetPhrase(e.target.value)}
+          placeholder="Ví dụ: Tell me about yourself..."
+          className="w-full p-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      {/* Recording */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-600">Câu trả lời của bạn</label>
+          {canRecord && (
+            <button
+              onClick={listening ? stopListening : startListening}
+              className={cn(
+                'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all',
+                listening
+                  ? 'bg-red-100 text-red-700 border border-red-200'
+                  : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100',
+              )}>
+              {listening ? <><MicOff className="h-3.5 w-3.5" />Dừng</> : <><Mic className="h-3.5 w-3.5" />Ghi âm</>}
+            </button>
+          )}
+          {listening && (
+            <span className="flex items-center gap-1 text-xs text-red-600">
+              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />Đang nghe...
+            </span>
+          )}
+        </div>
+        <textarea
+          value={transcript}
+          onChange={e => setTranscript(e.target.value)}
+          placeholder="Nói hoặc gõ câu trả lời tiếng Anh vào đây..."
+          className="w-full h-28 p-3 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={submit} disabled={!transcript.trim() || loading}
+          className="flex items-center gap-2 text-sm font-semibold px-5 py-2 bg-primary text-white rounded-xl disabled:opacity-40 hover:bg-primary/90 transition-colors">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+          Đánh giá
+        </button>
+      </div>
+
+      {result && (
+        <div className="space-y-4 border-t border-gray-100 pt-4">
+          {/* Score */}
+          <div className="flex items-center gap-4">
+            <div className={cn(
+              'h-16 w-16 rounded-2xl flex flex-col items-center justify-center shrink-0',
+              result.score >= 8 ? 'bg-green-100' : result.score >= 6 ? 'bg-yellow-100' : 'bg-red-100',
+            )}>
+              <span className={cn('text-2xl font-bold', result.score >= 8 ? 'text-green-700' : result.score >= 6 ? 'text-yellow-700' : 'text-red-700')}>
+                {result.score}
+              </span>
+              <span className="text-[10px] text-gray-400">/10</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">{result.feedback}</p>
+              <p className="text-xs text-primary mt-0.5 italic">{result.encouragement}</p>
+            </div>
+          </div>
+
+          {/* Corrections */}
+          {result.corrections.length > 0 && (
+            <div className="bg-amber-50 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5"><Lightbulb className="h-3.5 w-3.5" />Cần cải thiện</p>
+              {result.corrections.map((c, i) => (
+                <p key={i} className="text-xs text-amber-700">· {c}</p>
+              ))}
+            </div>
+          )}
+
+          {result.corrections.length === 0 && (
+            <div className="bg-green-50 rounded-xl p-3 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+              <p className="text-xs text-green-700 font-medium">Tuyệt vời! Không có lỗi đáng kể.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: { key: CoachTab; label: string; icon: React.ElementType; desc: string }[] = [
   { key: 'writing',      label: 'Writing Coach',      icon: PenLine,       desc: 'Chấm bài viết, sửa ngữ pháp & từ vựng' },
   { key: 'listening',    label: 'Listening Coach',    icon: Headphones,    desc: 'Đánh giá kỹ năng nghe hiểu' },
   { key: 'conversation', label: 'Conversation Coach', icon: MessageCircle, desc: 'Phân tích hội thoại, gợi ý cách nói tự nhiên' },
+  { key: 'speaking',     label: 'Speaking Coach',     icon: Mic,           desc: 'Luyện nói tiếng Anh với AI, nhận phản hồi tức thì' },
 ];
 
 export default function LanguageCoachPage() {
@@ -386,7 +564,7 @@ export default function LanguageCoachPage() {
       </div>
 
       {/* Tab selector */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {TABS.map(t => {
           const Icon = t.icon;
           return (
@@ -408,6 +586,7 @@ export default function LanguageCoachPage() {
         {tab === 'writing'      && <WritingCoach />}
         {tab === 'listening'    && <ListeningCoach />}
         {tab === 'conversation' && <ConversationCoach />}
+        {tab === 'speaking'     && <SpeakingCoach />}
       </div>
     </div>
   );

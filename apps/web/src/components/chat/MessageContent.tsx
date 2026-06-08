@@ -4,9 +4,10 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { parseQuiz } from '@/services/chat/quizParser';
 import { QuizRenderer } from './QuizRenderer';
+import type { AnyQuizQ } from './types';
 
 export function MessageContent({ content }: { content: string }) {
-  const questions = parseQuiz(content);
+  const questions: AnyQuizQ[] = parseQuiz(content);
   if (questions.length > 0) return <QuizRenderer questions={questions} />;
 
   return (

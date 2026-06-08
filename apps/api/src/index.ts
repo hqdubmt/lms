@@ -43,6 +43,7 @@ import { learningRoutes } from './modules/ai/learning.routes';
 import { analyticsRoutes } from './modules/ai/analytics.routes';
 import { knowledgeGraphRoutes } from './modules/ai/knowledge-graph.routes';
 import { instructorToolsRoutes } from './modules/instructor/instructor-tools.routes';
+import { classAnalyticsRoutes } from './modules/instructor/class-analytics.routes';
 import { adminStatsRoutes } from './modules/ai/admin-stats.routes';
 import { gamificationRoutes } from './modules/ai/gamification.routes';
 import { studyPlanRoutes } from './modules/ai/study-plan.routes';
@@ -51,6 +52,8 @@ import { revisionRoutes } from './modules/ai/revision.routes';
 import { timelineRoutes } from './modules/ai/timeline.routes';
 import { reportCardRoutes } from './modules/ai/report-card.routes';
 import { xpGamificationRoutes } from './modules/ai/xp-gamification.routes';
+import { pronunciationRoutes } from './modules/pronunciation/pronunciation.routes';
+import { ieltsCoachRoutes } from './modules/ai/ielts-coach.routes';
 
 const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
@@ -151,6 +154,7 @@ if (cluster.isPrimary) {
     await app.register(markitdownRoutes, { prefix: '/admin' });
     await app.register(documentRoutes, { prefix: '/admin/documents' });
     await app.register(instructorToolsRoutes, { prefix: '/instructor' });
+    await app.register(classAnalyticsRoutes, { prefix: '/instructor' });
     await app.register(adminStatsRoutes, { prefix: '/ai' });
     await app.register(gamificationRoutes, { prefix: '/ai' });
     await app.register(studyPlanRoutes, { prefix: '/ai' });
@@ -159,6 +163,8 @@ if (cluster.isPrimary) {
     await app.register(timelineRoutes, { prefix: '/ai' });
     await app.register(reportCardRoutes, { prefix: '/ai' });
     await app.register(xpGamificationRoutes, { prefix: '/ai' });
+    await app.register(pronunciationRoutes, { prefix: '/ai' });
+    await app.register(ieltsCoachRoutes, { prefix: '/ai' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 

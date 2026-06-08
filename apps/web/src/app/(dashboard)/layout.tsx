@@ -8,7 +8,7 @@ import {
     Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
     Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
-    Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users,
+    Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users, BarChart2,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -49,12 +49,13 @@ const BASE_NAV_GROUPS = [
         collapsible: true,
         groupIcon: Zap,
         items: [
-            { href: '/learning',                   label: 'Tiến độ AI',    icon: Brain,     exact: true },
+            { href: '/learning',                   label: 'Tiến độ AI',    icon: Brain,      exact: true },
             { href: '/learning/coach',             label: 'Study Coach',   icon: Target },
             { href: '/learning/revision',          label: 'Ôn tập',        icon: RotateCcw },
             { href: '/learning/timeline',          label: 'Timeline',      icon: Calendar },
             { href: '/learning/report-card',       label: 'Bảng điểm AI',  icon: Award },
             { href: '/learning/knowledge-graph',   label: 'Knowledge Map', icon: Brain },
+            { href: '/analytics',                  label: 'Phân tích',     icon: BarChart2 },
         ],
     },
 ];
@@ -72,9 +73,10 @@ const INSTRUCTOR_EXTRA_GROUP = {
     collapsible: true,
     groupIcon: Bot,
     items: [
-        { href: '/instructor/copilot',        label: 'Copilot AI',   icon: Bot,      exact: false as const },
-        { href: '/instructor/convert',        label: 'Convert MD',   icon: FileType2, exact: false as const },
-        { href: '/instructor/announcements',  label: 'Thông báo',    icon: Bell,      exact: false as const },
+        { href: '/instructor/copilot',        label: 'Copilot AI',   icon: Bot,       exact: false as const },
+        { href: '/instructor/convert',        label: 'Convert MD',   icon: FileType2,  exact: false as const },
+        { href: '/instructor/analytics',      label: 'Phân tích lớp', icon: BarChart2, exact: false as const },
+        { href: '/instructor/announcements',  label: 'Thông báo',    icon: Bell,       exact: false as const },
     ],
 };
 
