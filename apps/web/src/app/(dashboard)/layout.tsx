@@ -9,7 +9,7 @@ import {
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
     Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
     Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users, BarChart2,
-    Map, HeartHandshake, Briefcase,
+    Map, HeartHandshake, Briefcase, Sparkles,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -79,11 +79,12 @@ const INSTRUCTOR_EXTRA_GROUP = {
     collapsible: true,
     groupIcon: Bot,
     items: [
-        { href: '/instructor/copilot',        label: 'Copilot AI',   icon: Bot,       exact: false as const },
-        { href: '/instructor/convert',        label: 'Convert MD',   icon: FileType2,  exact: false as const },
-        { href: '/instructor/analytics',      label: 'Phân tích lớp', icon: BarChart2, exact: false as const },
-        { href: '/instructor/ai-students',    label: 'AI Học sinh',  icon: Brain,      exact: false as const },
-        { href: '/instructor/announcements',  label: 'Thông báo',    icon: Bell,       exact: false as const },
+        { href: '/instructor/copilot',        label: 'Copilot AI',     icon: Bot,       exact: false as const },
+        { href: '/ai-course',                 label: 'Tạo khóa học AI', icon: Sparkles,  exact: false as const },
+        { href: '/instructor/convert',        label: 'Convert MD',     icon: FileType2,  exact: false as const },
+        { href: '/instructor/analytics',      label: 'Phân tích lớp',  icon: BarChart2, exact: false as const },
+        { href: '/instructor/ai-students',    label: 'AI Học sinh',    icon: Brain,      exact: false as const },
+        { href: '/instructor/announcements',  label: 'Thông báo',      icon: Bell,       exact: false as const },
     ],
 };
 

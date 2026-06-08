@@ -9,7 +9,7 @@
 import type { BrainState } from './conversation-brain';
 import { getTopConcepts } from './knowledge-graph';
 
-export type AgentType = 'tutor' | 'math' | 'language' | 'quiz' | 'homework' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner';
+export type AgentType = 'tutor' | 'math' | 'language' | 'quiz' | 'homework' | 'research' | 'review' | 'knowledge_graph' | 'learning_coach' | 'reflection' | 'self_correction' | 'critic' | 'planner' | 'motivation' | 'career';
 
 export interface AgentResult {
   agent: AgentType;
@@ -334,6 +334,57 @@ function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
   };
 }
 
+// ─── Motivation Agent ─────────────────────────────────────────────────────────
+
+function motivationAgent(brain: BrainState): AgentResult | null {
+  const parts: string[] = [];
+
+  if (brain.messageCount === 1) {
+    parts.push('Đây là tin nhắn đầu tiên của học sinh — chào đón nhiệt tình, tạo không khí học tập tích cực.');
+  } else if (brain.messageCount > 0 && brain.messageCount % 10 === 0) {
+    parts.push(`Học sinh đã học ${brain.messageCount} lần — ghi nhận sự cố gắng và khuyến khích tiếp tục.`);
+  }
+
+  const masteryEntries = Object.entries(brain.mastery as Record<string, number>);
+  const mastered = masteryEntries.filter(([, v]) => v >= 0.8).map(([k]) => k);
+  if (mastered.length > 0) {
+    parts.push(`Khen ngợi học sinh đã thành thạo: ${mastered.slice(0, 2).join(', ')}.`);
+  }
+
+  if (brain.mistakes.length >= 5) {
+    parts.push('Học sinh đang gặp khó khăn — động viên kiên nhẫn, mỗi lỗi là cơ hội học hỏi.');
+  }
+
+  if (parts.length === 0) return null;
+
+  return {
+    agent: 'motivation',
+    hint: `[Motivation Agent] ${parts.join(' ')} Kết thúc phản hồi bằng một câu động viên ngắn, chân thành.`,
+  };
+}
+
+// ─── Career Agent ─────────────────────────────────────────────────────────────
+
+function careerAgent(brain: BrainState, subject: Subject): AgentResult | null {
+  const CAREER_HINTS: Record<Subject, string> = {
+    math:     'Toán học là nền tảng của kỹ thuật, khoa học dữ liệu, tài chính. Nếu phù hợp, gợi ý ngắn về ứng dụng thực tế của kiến thức này trong nghề nghiệp.',
+    language: 'Tiếng Anh mở ra cơ hội quốc tế: phiên dịch, giảng dạy, nội dung số. Nếu phù hợp, kết nối bài học với mục tiêu nghề nghiệp.',
+    viet:     'Ngữ văn phát triển tư duy phản biện và viết lách — kỹ năng quan trọng trong mọi nghề. Nhắc nhở nếu liên quan.',
+    general:  'Kiến thức này hữu ích cho nhiều ngành nghề. Nếu học sinh hỏi về định hướng, gợi ý ngắn gọn.',
+  };
+
+  const masteryEntries = Object.entries(brain.mastery as Record<string, number>);
+  if (masteryEntries.length < 2) return null;
+
+  const avgMastery = masteryEntries.reduce((s, [, v]) => s + v, 0) / masteryEntries.length;
+  if (avgMastery < 0.6) return null;
+
+  return {
+    agent: 'career',
+    hint: `[Career Agent] ${CAREER_HINTS[subject] ?? CAREER_HINTS.general}`,
+  };
+}
+
 // ─── Multi-Agent Runner ───────────────────────────────────────────────────────
 
 export interface MultiAgentParams {
@@ -354,11 +405,13 @@ export async function runMultiAgent(params: MultiAgentParams): Promise<AgentResu
     Promise.resolve(reviewAgent(brain)),
     Promise.resolve(researchAgent(ragHits, brain.topic)),
     Promise.resolve(learningCoachAgent(brain, s)),
-    // Phase 7: new agents — only add hints, không thay đổi output cũ
     Promise.resolve(reflectionAgent(brain)),
     Promise.resolve(selfCorrectionAgent(brain, s)),
     Promise.resolve(criticAgent(mode, brain)),
     Promise.resolve(plannerAgent(brain, s)),
+    // Module 14 Advanced Agents
+    Promise.resolve(motivationAgent(brain)),
+    Promise.resolve(careerAgent(brain, s)),
   ];
 
   if (userId) {

@@ -37,6 +37,8 @@ const AGENT_ICONS: Record<string, string> = {
   self_correction: '🔧',
   critic:          '⚖️',
   planner:         '🗺️',
+  motivation:      '🌟',
+  career:          '🎓',
 };
 
 function providerKey(label?: string) {

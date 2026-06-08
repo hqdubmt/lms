@@ -57,6 +57,7 @@ import { ieltsCoachRoutes } from './modules/ai/ielts-coach.routes';
 import { adaptiveRoutes } from './modules/ai/adaptive.routes';
 import { teacherAiRoutes } from './modules/instructor/teacher-ai.routes';
 import { platformRoutes } from './modules/ai/platform.routes';
+import { courseGeneratorRoutes } from './modules/ai/course-generator.routes';
 
 const NUM_WORKERS = Math.min(os.cpus().length, parseInt(process.env.CLUSTER_WORKERS || '2'));
 
@@ -171,6 +172,7 @@ if (cluster.isPrimary) {
     await app.register(adaptiveRoutes, { prefix: '/ai' });
     await app.register(teacherAiRoutes, { prefix: '/instructor' });
     await app.register(platformRoutes, { prefix: '/ai' });
+    await app.register(courseGeneratorRoutes, { prefix: '/ai' });
 
     app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
