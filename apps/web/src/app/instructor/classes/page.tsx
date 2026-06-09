@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Users, Plus, Trash2, X, Loader2, UserPlus,
-  ChevronRight, BookOpen, RefreshCw,
+  ChevronRight, BookOpen, RefreshCw, ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ interface ClassItem {
 
 export default function InstructorClassesPage() {
   useRequireAuth('INSTRUCTOR');
+  const router = useRouter();
 
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,10 +147,16 @@ export default function InstructorClassesPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
+                  onClick={() => router.push(`/instructor/classes/${cls.id}/students`)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium"
+                >
+                  <Users className="h-3.5 w-3.5" /> Quản lý HS
+                </button>
+                <button
                   onClick={() => { setAddTarget(cls); setEmailText(''); setAddResult(null); }}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium"
                 >
-                  <UserPlus className="h-3.5 w-3.5" /> Thêm học sinh
+                  <UserPlus className="h-3.5 w-3.5" /> Thêm HS
                 </button>
                 <button
                   onClick={() => handleDelete(cls.id)}
@@ -157,7 +165,6 @@ export default function InstructorClassesPage() {
                 >
                   {deleting === cls.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 </button>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
           ))}

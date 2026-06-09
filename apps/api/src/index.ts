@@ -56,6 +56,7 @@ import { pronunciationRoutes } from './modules/pronunciation/pronunciation.route
 import { ieltsCoachRoutes } from './modules/ai/ielts-coach.routes';
 import { adaptiveRoutes } from './modules/ai/adaptive.routes';
 import { teacherAiRoutes } from './modules/instructor/teacher-ai.routes';
+import { instructorStudentMgmtRoutes } from './modules/instructor/instructor-student-mgmt.routes';
 import { platformRoutes } from './modules/ai/platform.routes';
 import { courseGeneratorRoutes } from './modules/ai/course-generator.routes';
 import { metricsRoutes } from './modules/admin/metrics.routes';
@@ -177,6 +178,7 @@ if (cluster.isPrimary) {
     await app.register(ieltsCoachRoutes, { prefix: '/ai' });
     await app.register(adaptiveRoutes, { prefix: '/ai' });
     await app.register(teacherAiRoutes, { prefix: '/instructor' });
+    await app.register(instructorStudentMgmtRoutes, { prefix: '/instructor' });
     await app.register(platformRoutes, { prefix: '/ai' });
     await app.register(courseGeneratorRoutes, { prefix: '/ai' });
     await app.register(metricsRoutes);
