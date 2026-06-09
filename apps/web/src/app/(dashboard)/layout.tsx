@@ -85,6 +85,7 @@ const INSTRUCTOR_EXTRA_GROUP = {
         { href: '/instructor/copilot',        label: 'Copilot AI',     icon: Bot,       exact: false as const },
         { href: '/ai-course',                 label: 'Tạo khóa học AI', icon: Sparkles,  exact: false as const },
         { href: '/instructor/convert',        label: 'Convert MD',     icon: FileType2,  exact: false as const },
+        { href: '/instructor/classes',         label: 'Quản lý lớp',    icon: Users,     exact: false as const },
         { href: '/instructor/analytics',      label: 'Phân tích lớp',  icon: BarChart2, exact: false as const },
         { href: '/instructor/ai-students',    label: 'AI Học sinh',    icon: Brain,      exact: false as const },
         { href: '/instructor/announcements',  label: 'Thông báo',      icon: Bell,       exact: false as const },

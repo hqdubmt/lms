@@ -136,15 +136,40 @@ export async function classAnalyticsRoutes(app: FastifyInstance) {
     });
   });
 
+  // GET /instructor/classes/list — danh sách lớp của instructor
+  app.get('/classes/list', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const classes = await prisma.class.findMany({
+      where: { createdBy: sub },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, name: true, description: true, createdAt: true,
+        _count: { select: { members: true, courses: true } },
+      },
+    });
+    return reply.send(classes);
+  });
+
   // POST /instructor/classes — tạo lớp mới
   app.post('/classes', { preHandler: requireInstructor }, async (req, reply) => {
     const { sub } = req.user as { sub: string };
-    const { name } = req.body as { name?: string };
+    const { name, description } = req.body as { name?: string; description?: string };
     if (!name?.trim()) return reply.status(400).send({ error: 'Tên lớp không được trống' });
     const cls = await prisma.class.create({
-      data: { name: name.trim(), createdBy: sub },
+      data: { name: name.trim(), description: description?.trim() || null, createdBy: sub },
     });
     return reply.status(201).send(cls);
+  });
+
+  // DELETE /instructor/classes/:classId — xoá lớp
+  app.delete('/classes/:classId', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { classId } = req.params as { classId: string };
+    const cls = await prisma.class.findFirst({ where: { id: classId, createdBy: sub } });
+    if (!cls) return reply.status(404).send({ error: 'Không tìm thấy lớp' });
+    await prisma.classMember.deleteMany({ where: { classId } });
+    await prisma.class.delete({ where: { id: classId } });
+    return reply.send({ ok: true });
   });
 
   // POST /instructor/classes/:classId/members — thêm học sinh vào lớp (theo email)
