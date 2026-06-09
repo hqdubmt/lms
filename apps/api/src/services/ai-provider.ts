@@ -128,7 +128,7 @@ async function callGeminiForJSON(
   }
 }
 
-async function geminiChat(messages: ChatMessage[], maxTokens = 1024): Promise<string> {
+async function geminiChat(messages: ChatMessage[], maxTokens = 1024, timeoutMs = 60_000): Promise<string> {
   const key = getGeminiKey();
   if (!key) throw new Error('Gemini không khả dụng');
 
@@ -148,7 +148,7 @@ async function geminiChat(messages: ChatMessage[], maxTokens = 1024): Promise<st
         contents: convo,
         generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutMs),
     },
   );
   if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
@@ -370,13 +370,14 @@ function buildProviderOrder(prefer?: ProviderPref): ProviderPref[] {
 
 export async function aiChatOnce(
   messages: ChatMessage[],
-  opts?: { prefer?: ProviderPref; maxTokens?: number },
+  opts?: { prefer?: ProviderPref; maxTokens?: number; timeoutMs?: number },
 ): Promise<string> {
   const maxTokens = opts?.maxTokens ?? 1024;
+  const timeoutMs = opts?.timeoutMs ?? (maxTokens > 4096 ? 120_000 : 60_000);
   for (const provider of buildProviderOrder(opts?.prefer)) {
     try {
       if (provider === 'groq' && getGroqClient()) return await groqChat(messages, maxTokens);
-      if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages, maxTokens);
+      if (provider === 'gemini' && getGeminiKey()) return await geminiChat(messages, maxTokens, timeoutMs);
       if (provider === 'ollama') return await ollamaChat(messages); // luôn thử
     } catch { /* thử provider tiếp theo */ }
   }

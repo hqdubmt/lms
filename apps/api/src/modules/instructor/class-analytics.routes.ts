@@ -26,7 +26,13 @@ export async function classAnalyticsRoutes(app: FastifyInstance) {
     });
 
     if (classes.length === 0) {
-      return reply.send({ classes: [], summary: null });
+      return reply.send({
+        class: null,
+        allClasses: [],
+        summary: { totalStudents: 0, avgProgress: 0, avgQuizScore: null, enrolledCourses: 0 },
+        students: [],
+        weakTopics: [],
+      });
     }
 
     const targetClass = q.classId
@@ -127,6 +133,55 @@ export async function classAnalyticsRoutes(app: FastifyInstance) {
       },
       students: studentStats,
       weakTopics: topWeakTopics,
+    });
+  });
+
+  // POST /instructor/classes — tạo lớp mới
+  app.post('/classes', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { name } = req.body as { name?: string };
+    if (!name?.trim()) return reply.status(400).send({ error: 'Tên lớp không được trống' });
+    const cls = await prisma.class.create({
+      data: { name: name.trim(), createdBy: sub },
+    });
+    return reply.status(201).send(cls);
+  });
+
+  // POST /instructor/classes/:classId/members — thêm học sinh vào lớp (theo email)
+  app.post('/classes/:classId/members', { preHandler: requireInstructor }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { classId } = req.params as { classId: string };
+    const { emails } = req.body as { emails?: string[] };
+
+    const cls = await prisma.class.findFirst({ where: { id: classId, createdBy: sub } });
+    if (!cls) return reply.status(404).send({ error: 'Không tìm thấy lớp' });
+    if (!emails?.length) return reply.status(400).send({ error: 'Danh sách email trống' });
+
+    const users = await prisma.user.findMany({
+      where: { email: { in: emails.map(e => e.trim().toLowerCase()) } },
+      select: { id: true, email: true, name: true },
+    });
+
+    const existing = await prisma.classMember.findMany({
+      where: { classId, userId: { in: users.map(u => u.id) } },
+      select: { userId: true },
+    });
+    const existingIds = new Set(existing.map(m => m.userId));
+    const toAdd = users.filter(u => !existingIds.has(u.id));
+
+    if (toAdd.length > 0) {
+      await prisma.classMember.createMany({
+        data: toAdd.map(u => ({ classId, userId: u.id })),
+        skipDuplicates: true,
+      });
+    }
+
+    const notFound = emails.filter(e => !users.find(u => u.email === e.trim().toLowerCase()));
+    return reply.send({
+      added: toAdd.length,
+      alreadyIn: existing.length,
+      notFound,
+      users: toAdd,
     });
   });
 

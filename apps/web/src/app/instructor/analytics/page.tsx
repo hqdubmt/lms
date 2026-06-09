@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   BarChart2, Users, TrendingDown, RefreshCw, Loader2,
-  ChevronDown, AlertTriangle, CheckCircle2, BookOpen, Target,
+  ChevronDown, AlertTriangle, CheckCircle2, BookOpen, Target, Plus, X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -72,6 +72,9 @@ export default function InstructorAnalyticsPage() {
   const [data, setData] = useState<ClassAnalytics | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | undefined>();
   const [showClassMenu, setShowClassMenu] = useState(false);
+  const [showCreateClass, setShowCreateClass] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const load = async (classId?: string) => {
     setLoading(true);
@@ -97,6 +100,18 @@ export default function InstructorAnalyticsPage() {
     load(id);
   };
 
+  const handleCreateClass = async () => {
+    if (!newClassName.trim()) return;
+    setCreating(true);
+    try {
+      await api.post('/instructor/classes', { name: newClassName.trim() });
+      setNewClassName('');
+      setShowCreateClass(false);
+      await load();
+    } catch { /* ignore */ }
+    finally { setCreating(false); }
+  };
+
   if (loading && !data) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">
@@ -117,7 +132,7 @@ export default function InstructorAnalyticsPage() {
         </div>
         <div className="flex items-center gap-3">
           {/* Class picker */}
-          {data && data.allClasses.length > 1 && (
+          {data && data.class && data.allClasses.length > 1 && (
             <div className="relative">
               <button
                 onClick={() => setShowClassMenu(v => !v)}
@@ -146,6 +161,12 @@ export default function InstructorAnalyticsPage() {
             </div>
           )}
           <button
+            onClick={() => setShowCreateClass(true)}
+            className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Tạo lớp
+          </button>
+          <button
             onClick={() => load(selectedClassId)}
             className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
           >
@@ -154,10 +175,41 @@ export default function InstructorAnalyticsPage() {
         </div>
       </div>
 
-      {!data || data.summary.totalStudents === 0 ? (
+      {/* Modal tạo lớp */}
+      {showCreateClass && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-lg">Tạo lớp mới</h3>
+              <button onClick={() => setShowCreateClass(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <input
+              value={newClassName}
+              onChange={e => setNewClassName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateClass()}
+              placeholder="Tên lớp (VD: Lớp 10A1)"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowCreateClass(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Huỷ</button>
+              <button
+                onClick={handleCreateClass}
+                disabled={creating || !newClassName.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                Tạo lớp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!data || !data.summary || data.summary.totalStudents === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-muted-foreground">
           <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p>Lớp chưa có học sinh nào</p>
+          <p>{!data?.class ? 'Bạn chưa có lớp học nào' : 'Lớp chưa có học sinh nào'}</p>
         </div>
       ) : (
         <>

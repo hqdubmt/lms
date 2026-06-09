@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Bot, Users, Brain, TrendingDown, RefreshCw, Loader2,
-  Flame, CheckCircle2, AlertTriangle, ChevronDown,
+  Flame, CheckCircle2, AlertTriangle, ChevronDown, UserPlus, X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -71,6 +71,10 @@ export default function TeacherAiStudentsPage() {
   const [loading, setLoading] = useState(true);
   const [classId, setClassId] = useState('');
   const [subject, setSubject] = useState('general');
+  const [showAddStudent, setShowAddStudent] = useState(false);
+  const [emailText, setEmailText] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addResult, setAddResult] = useState<{ added: number; notFound: string[] } | null>(null);
 
   const load = async (cId = classId, sub = subject) => {
     setLoading(true);
@@ -89,6 +93,22 @@ export default function TeacherAiStudentsPage() {
   const handleClass = (id: string) => { setClassId(id); load(id, subject); };
   const handleSubject = (sub: string) => { setSubject(sub); load(classId, sub); };
 
+  const handleAddStudents = async () => {
+    const emails = emailText.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean);
+    if (!emails.length || !classId) return;
+    setAdding(true);
+    try {
+      const res = await api.post<{ added: number; notFound: string[] }>(
+        `/instructor/classes/${classId}/members`,
+        { emails },
+      );
+      setAddResult(res);
+      setEmailText('');
+      await load(classId, subject);
+    } catch { /* ignore */ }
+    finally { setAdding(false); }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
@@ -101,14 +121,64 @@ export default function TeacherAiStudentsPage() {
             Theo dõi tiến độ AI của học sinh trong lớp
           </p>
         </div>
-        <button
-          onClick={() => load()}
-          className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
-        >
-          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-          Làm mới
-        </button>
+        <div className="flex gap-2">
+          {classId && (
+            <button
+              onClick={() => { setShowAddStudent(true); setAddResult(null); }}
+              className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <UserPlus className="h-4 w-4" /> Thêm học sinh
+            </button>
+          )}
+          <button
+            onClick={() => load()}
+            className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            Làm mới
+          </button>
+        </div>
       </div>
+
+      {/* Modal thêm học sinh */}
+      {showAddStudent && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-lg">Thêm học sinh vào lớp</h3>
+              <button onClick={() => setShowAddStudent(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground">Nhập email học sinh, mỗi dòng hoặc cách nhau bởi dấu phẩy</p>
+            <textarea
+              value={emailText}
+              onChange={e => setEmailText(e.target.value)}
+              rows={5}
+              placeholder="student1@school.edu&#10;student2@school.edu"
+              className="w-full border rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none font-mono"
+              autoFocus
+            />
+            {addResult && (
+              <div className={cn('text-sm p-3 rounded-lg', addResult.added > 0 ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600')}>
+                Đã thêm {addResult.added} học sinh.
+                {addResult.notFound.length > 0 && (
+                  <p className="text-red-600 mt-1">Không tìm thấy: {addResult.notFound.join(', ')}</p>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAddStudent(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Đóng</button>
+              <button
+                onClick={handleAddStudents}
+                disabled={adding || !emailText.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {adding && <Loader2 className="h-4 w-4 animate-spin" />}
+                Thêm vào lớp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Class + Subject selectors */}
       <div className="flex flex-wrap gap-3">

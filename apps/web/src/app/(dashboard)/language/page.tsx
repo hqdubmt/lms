@@ -140,6 +140,49 @@ export default function LanguagePage() {
         </Link>
       )}
 
+      {/* Language Coach + IELTS + Pronunciation */}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Link href="/language/pronunciation">
+          <Card className="bg-gradient-to-r from-blue-50 to-sky-50 border-blue-200 hover:shadow-md transition-shadow cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <Volume2 className="h-8 w-8 text-blue-600 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold">Luyện phát âm</div>
+                <div className="text-sm text-muted-foreground">IPA · Luyện nói · Chấm điểm</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-blue-500 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/language/coach">
+          <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200 hover:shadow-md transition-shadow cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <GraduationCap className="h-8 w-8 text-emerald-600 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold">Language Coach AI</div>
+                <div className="text-sm text-muted-foreground">Writing · Listening · Speaking · Conversation</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-emerald-500 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/language/ielts">
+          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 hover:shadow-md transition-shadow cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <Star className="h-8 w-8 text-blue-600 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold flex items-center gap-2">
+                  IELTS Coach AI
+                  <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Beta</span>
+                </div>
+                <div className="text-sm text-muted-foreground">Writing Task 1 & 2 · Speaking Parts 1–3</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-blue-500 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
       {/* Vocab Sets - Folder-first navigation */}
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -230,49 +273,6 @@ export default function LanguagePage() {
           </div>
         )}
       </section>
-
-      {/* Language Coach + IELTS + Pronunciation */}
-      <div className="grid sm:grid-cols-3 gap-3">
-        <Link href="/language/pronunciation">
-          <Card className="bg-gradient-to-r from-blue-50 to-sky-50 border-blue-200 hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardContent className="p-4 flex items-center gap-4">
-              <Volume2 className="h-8 w-8 text-blue-600 shrink-0" />
-              <div className="flex-1">
-                <div className="font-semibold">Luyện phát âm</div>
-                <div className="text-sm text-muted-foreground">IPA · Luyện nói · Chấm điểm</div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-blue-500 shrink-0" />
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/language/coach">
-          <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200 hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardContent className="p-4 flex items-center gap-4">
-              <GraduationCap className="h-8 w-8 text-emerald-600 shrink-0" />
-              <div className="flex-1">
-                <div className="font-semibold">Language Coach AI</div>
-                <div className="text-sm text-muted-foreground">Writing · Listening · Speaking · Conversation</div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-emerald-500 shrink-0" />
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/language/ielts">
-          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardContent className="p-4 flex items-center gap-4">
-              <Star className="h-8 w-8 text-blue-600 shrink-0" />
-              <div className="flex-1">
-                <div className="font-semibold flex items-center gap-2">
-                  IELTS Coach AI
-                  <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Beta</span>
-                </div>
-                <div className="text-sm text-muted-foreground">Writing Task 1 & 2 · Speaking Parts 1–3</div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-blue-500 shrink-0" />
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
 
       {/* Analytics + Leaderboard */}
       <div className="grid sm:grid-cols-2 gap-3">

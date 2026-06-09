@@ -42,11 +42,11 @@ function WritingCoach() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {(['en', 'vi', 'ja', 'ko', 'fr', 'de'] as const).map(l => (
+        {(['en', 'vi', 'ja', 'ko', 'fr', 'de', 'zh'] as const).map(l => (
           <button key={l} onClick={() => setLanguage(l)}
             className={cn('text-xs px-3 py-1 rounded-full border font-medium transition-all',
               language === l ? 'bg-primary text-white border-primary' : 'border-gray-200 text-muted-foreground hover:bg-gray-50')}>
-            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German' } as Record<string, string>)[l]}
+            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German', zh: 'Tiếng Trung' } as Record<string, string>)[l]}
           </button>
         ))}
       </div>
@@ -164,11 +164,11 @@ function ListeningCoach() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {(['en', 'vi', 'ja', 'ko', 'fr', 'de'] as const).map(l => (
+        {(['en', 'vi', 'ja', 'ko', 'fr', 'de', 'zh'] as const).map(l => (
           <button key={l} onClick={() => setLanguage(l)}
             className={cn('text-xs px-3 py-1 rounded-full border font-medium transition-all',
               language === l ? 'bg-primary text-white border-primary' : 'border-gray-200 text-muted-foreground hover:bg-gray-50')}>
-            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German' } as Record<string, string>)[l]}
+            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German', zh: 'Tiếng Trung' } as Record<string, string>)[l]}
           </button>
         ))}
       </div>
@@ -272,11 +272,11 @@ function ConversationCoach() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {(['en', 'vi', 'ja', 'ko', 'fr', 'de'] as const).map(l => (
+        {(['en', 'vi', 'ja', 'ko', 'fr', 'de', 'zh'] as const).map(l => (
           <button key={l} onClick={() => setLanguage(l)}
             className={cn('text-xs px-3 py-1 rounded-full border font-medium transition-all',
               language === l ? 'bg-primary text-white border-primary' : 'border-gray-200 text-muted-foreground hover:bg-gray-50')}>
-            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German' } as Record<string, string>)[l]}
+            {({ en: 'English', vi: 'Tiếng Việt', ja: 'Japanese', ko: 'Korean', fr: 'French', de: 'German', zh: 'Tiếng Trung' } as Record<string, string>)[l]}
           </button>
         ))}
       </div>
