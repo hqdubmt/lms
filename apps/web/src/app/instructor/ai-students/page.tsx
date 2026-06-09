@@ -95,16 +95,23 @@ export default function TeacherAiStudentsPage() {
 
   const handleAddStudents = async () => {
     const emails = emailText.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean);
-    if (!emails.length || !classId) return;
+    if (!emails.length) return;
     setAdding(true);
     try {
+      let targetClassId = classId;
+      // Nếu chưa có lớp, tự động tạo lớp mặc định
+      if (!targetClassId) {
+        const created = await api.post<{ id: string }>('/instructor/classes', { name: 'Học sinh của tôi' });
+        targetClassId = created.id;
+        setClassId(created.id);
+      }
       const res = await api.post<{ added: number; notFound: string[] }>(
-        `/instructor/classes/${classId}/members`,
+        `/instructor/classes/${targetClassId}/members`,
         { emails },
       );
       setAddResult(res);
       setEmailText('');
-      await load(classId, subject);
+      await load(targetClassId, subject);
     } catch { /* ignore */ }
     finally { setAdding(false); }
   };
@@ -122,14 +129,12 @@ export default function TeacherAiStudentsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {classId && (
-            <button
-              onClick={() => { setShowAddStudent(true); setAddResult(null); }}
-              className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <UserPlus className="h-4 w-4" /> Thêm học sinh
-            </button>
-          )}
+          <button
+            onClick={() => { setShowAddStudent(true); setAddResult(null); }}
+            className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <UserPlus className="h-4 w-4" /> Thêm học sinh
+          </button>
           <button
             onClick={() => load()}
             className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
