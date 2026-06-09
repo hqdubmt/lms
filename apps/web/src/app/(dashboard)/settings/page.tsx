@@ -586,32 +586,33 @@ function NotificationsTab() {
 
 // ─── Apps Tab ────────────────────────────────────────────────────────────────
 
-const APP_VERSION = 'v1.6.0';
+const MOBILE_VERSION = 'v1.8.0';
+const DESKTOP_VERSION = 'v1.9.0';
 
 const APPS = [
   {
     id: 'android',
     label: 'Android',
-    desc: `Tương thích Android 7.0 trở lên · ${APP_VERSION}`,
+    desc: `Tương thích Android 7.0 trở lên · ${MOBILE_VERSION}`,
     icon: Smartphone,
     iconBg: 'bg-green-50',
     iconColor: 'text-green-600',
     btnColor: 'bg-green-600 hover:bg-green-700',
-    href: `/downloads/masterlms-v1.6.0.apk`,
+    href: `/downloads/masterlms-v1.8.0.apk`,
     badge: 'APK',
     note: 'Cho phép cài từ nguồn không rõ trong Cài đặt → Bảo mật trước khi cài đặt.',
   },
   {
     id: 'desktop',
     label: 'Desktop (Linux)',
-    desc: `Ứng dụng máy tính · ${APP_VERSION} · Electron`,
+    desc: `Ứng dụng máy tính · ${DESKTOP_VERSION} · Electron`,
     icon: Monitor,
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     btnColor: 'bg-blue-600 hover:bg-blue-700',
-    href: `/downloads/MasterLMS-1.6.0.AppImage`,
+    href: `/downloads/MasterLMS-1.9.0.AppImage`,
     badge: 'AppImage',
-    note: 'Hoặc tải file .deb: /downloads/masterlms-desktop_1.6.0_amd64.deb',
+    note: 'Hoặc tải file .deb: /downloads/masterlms-desktop_1.9.0_amd64.deb',
   },
 ];
 
@@ -635,7 +636,7 @@ function AppsTab() {
               </div>
               <a
                 href={app.href}
-                download={app.id === 'android' ? `MasterLMS-${APP_VERSION}-android.apk` : undefined}
+                download={app.id === 'android' ? `MasterLMS-${MOBILE_VERSION}-android.apk` : undefined}
                 target={app.id === 'android' ? undefined : '_blank'}
                 rel="noreferrer"
                 className={`flex items-center gap-2 px-4 py-2.5 ${app.btnColor} text-white text-sm font-semibold rounded-xl transition-colors shrink-0`}
@@ -651,7 +652,7 @@ function AppsTab() {
       <Section title="Hướng dẫn cài đặt Android" desc="Các bước cài đặt file APK trên điện thoại Android">
         <ol className="space-y-3 text-sm text-gray-700">
           {[
-            `Nhấn nút "Tải về" ở trên để tải file MasterLMS-${APP_VERSION}-android.apk`,
+            `Nhấn nút "Tải về" ở trên để tải file MasterLMS-${MOBILE_VERSION}-android.apk`,
             'Mở Cài đặt → Bảo mật → Cho phép cài ứng dụng từ nguồn không rõ',
             'Mở file APK vừa tải và nhấn Cài đặt',
             'Sau khi cài xong, mở ứng dụng và nhập địa chỉ máy chủ của trường',
