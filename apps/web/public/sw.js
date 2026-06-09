@@ -1,5 +1,5 @@
 // MasterLMS Service Worker — Phase 17 PWA
-const CACHE_NAME = 'masterlms-v1';
+const CACHE_NAME = 'masterlms-v3';
 const OFFLINE_URL = '/offline';
 
 // Static assets to pre-cache
@@ -43,7 +43,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets (_next/static, fonts, images): cache-first
+  // JS/CSS chunks (_next/static/chunks): network-first, cache fallback
+  // Chunks have content-hash in filename so stale cache = wrong version → always try network first
+  if (url.pathname.startsWith('/_next/static/chunks/')) {
+    event.respondWith(
+      fetch(request).then((response) => {
+        if (response.ok) {
+          caches.open(CACHE_NAME).then(c => c.put(request, response.clone()));
+        }
+        return response;
+      }).catch(() => caches.match(request).then(r => r ?? new Response('', { status: 404 })))
+    );
+    return;
+  }
+
+  // Other static assets (fonts, images, manifests): cache-first
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/fonts/') ||
@@ -57,7 +71,7 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then(c => c.put(request, response.clone()));
           }
           return response;
-        }).catch(() => cached ?? new Response('', { status: 404 }));
+        }).catch(() => new Response('', { status: 404 }));
       })
     );
     return;
