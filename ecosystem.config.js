@@ -14,6 +14,7 @@ module.exports = {
       kill_timeout: 5000,
       env: {
         NODE_ENV: 'production',
+        CLUSTER_WORKERS: '8',
       },
       error_file: '/home/hqdu/.pm2/logs/lms-api-error.log',
       out_file: '/home/hqdu/.pm2/logs/lms-api-out.log',

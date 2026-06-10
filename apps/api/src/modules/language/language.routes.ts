@@ -196,11 +196,13 @@ export async function languageRoutes(app: FastifyInstance) {
 
   app.get('/stats', { preHandler: requireAuth }, async (req) => {
     const { sub } = req.user as { sub: string };
-    const stats = await prisma.langUserStats.findUnique({ where: { userId: sub } });
-    const reviewCount = await prisma.vocabItemProgress.count({
-      where: { userId: sub, nextReview: { lte: new Date() }, isLearned: false },
+    return getOrSet(`lang:stats:${sub}`, 30, async () => {
+      const stats = await prisma.langUserStats.findUnique({ where: { userId: sub } });
+      const reviewCount = await prisma.vocabItemProgress.count({
+        where: { userId: sub, nextReview: { lte: new Date() }, isLearned: false },
+      });
+      return { ...(stats || { xp: 0, level: 1, streak: 0, longestStreak: 0, wordsLearned: 0, exercisesDone: 0 }), reviewsDue: reviewCount };
     });
-    return { ...(stats || { xp: 0, level: 1, streak: 0, longestStreak: 0, wordsLearned: 0, exercisesDone: 0 }), reviewsDue: reviewCount };
   });
 
   app.get('/leaderboard', { preHandler: requireAuth }, async () => {

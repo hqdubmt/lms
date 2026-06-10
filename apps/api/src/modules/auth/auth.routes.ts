@@ -13,6 +13,7 @@ import {
 import { requireAuth } from '../../middleware/auth';
 import { env } from '../../config/env';
 import { redis } from '../../services/redis';
+import { getOrSet } from '../../services/cache';
 
 const REFRESH_COOKIE_OPTS = {
   httpOnly: true,
@@ -175,16 +176,17 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/me', { preHandler: requireAuth }, async (req) => {
     const { sub } = req.user as { sub: string };
     const { prisma } = await import('../../services/prisma');
-    const user = await prisma.user.findUniqueOrThrow({
-      where: { id: sub },
-      select: {
-        id: true, email: true, name: true, username: true,
-        avatarUrl: true, bio: true, role: true,
-        isVerified: true, twoFAEnabled: true,
-        createdAt: true,
-      },
-    });
-    return user;
+    return getOrSet(`me:${sub}`, 60, () =>
+      prisma.user.findUniqueOrThrow({
+        where: { id: sub },
+        select: {
+          id: true, email: true, name: true, username: true,
+          avatarUrl: true, bio: true, role: true,
+          isVerified: true, twoFAEnabled: true,
+          createdAt: true,
+        },
+      })
+    );
   });
 
   // ─── SESSION MANAGEMENT ───────────────────────────────────────────────────

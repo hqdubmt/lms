@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { getDnaProfile, updateDna, getDnaV1, recordTopicEvent } from '../../services/learning-dna';
 import { getBrain } from '../../services/conversation-brain';
+import { getOrSet } from '../../services/cache';
 
 const syncSchema = z.object({
   subject:        z.string().default('general'),
@@ -49,7 +50,7 @@ export async function learningDnaRoutes(app: FastifyInstance) {
   app.get('/learning-dna', { preHandler: requireAuth }, async (req, reply) => {
     const user = (req as any).user as { id: string; sub: string };
     const userId = user.id ?? user.sub;
-    return reply.send(await getDnaProfile(userId));
+    return reply.send(await getOrSet(`dna:${userId}`, 30, () => getDnaProfile(userId)));
   });
 
   // ── Legacy: sync from brain ────────────────────────────────────────────────

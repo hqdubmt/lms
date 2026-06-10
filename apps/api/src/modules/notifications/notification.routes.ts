@@ -1,20 +1,23 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../../services/prisma';
 import { requireAuth } from '../../middleware/auth';
+import { getOrSet } from '../../services/cache';
 
 export async function notificationRoutes(app: FastifyInstance) {
   // GET /notifications — lấy 30 thông báo gần nhất
   app.get('/', { preHandler: requireAuth }, async (req) => {
     const { sub } = req.user as { sub: string };
-    const [items, unread] = await Promise.all([
-      prisma.notification.findMany({
-        where: { userId: sub },
-        orderBy: { createdAt: 'desc' },
-        take: 30,
-      }),
-      prisma.notification.count({ where: { userId: sub, isRead: false } }),
-    ]);
-    return { items, unread };
+    return getOrSet(`notif:${sub}`, 30, async () => {
+      const [items, unread] = await Promise.all([
+        prisma.notification.findMany({
+          where: { userId: sub },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        }),
+        prisma.notification.count({ where: { userId: sub, isRead: false } }),
+      ]);
+      return { items, unread };
+    });
   });
 
   // PATCH /notifications/read-all

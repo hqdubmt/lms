@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../../services/prisma';
 import { requireAuth, requireInstructor } from '../../middleware/auth';
+import { getOrSet } from '../../services/cache';
 import { ollamaChat } from '../../services/ollama';
 import { getBrain, updateBrain, updateMastery } from '../../services/conversation-brain';
 import { syncLearningStateFromBrain } from '../../services/learning-state';
@@ -28,6 +29,21 @@ export async function quizRoutes(app: FastifyInstance) {
       where.isPublic = true;
     }
     if (topic) where.topic = { contains: topic, mode: 'insensitive' };
+
+    // Cache public list for STUDENT role; skip for personalized/filtered queries
+    const isCacheable = role === 'STUDENT' && mine !== '1' && !topic;
+    if (isCacheable) {
+      return getOrSet('quiz:list:public', 60, () =>
+        prisma.quizSet.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            author: { select: { id: true, name: true, avatarUrl: true } },
+            _count: { select: { questions: true, attempts: true } },
+          },
+        })
+      );
+    }
 
     return prisma.quizSet.findMany({
       where,
