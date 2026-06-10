@@ -1,24 +1,20 @@
-import { Bot, Minimize2, Maximize2, X, Brain, CalendarDays } from 'lucide-react';
+import { Bot, Minimize2, Maximize2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ChatHeaderProps {
   label: string;
   color: string;
   minimized: boolean;
-  showBrain: boolean;
-  showPlanner: boolean;
   aiOk: boolean | null;
   aiLabel: string;
   streaming?: boolean;
   onToggleMinimize: () => void;
-  onToggleBrain: (e: React.MouseEvent) => void;
-  onTogglePlanner: (e: React.MouseEvent) => void;
   onClose: (e: React.MouseEvent) => void;
 }
 
 export function ChatHeader({
-  label, color, minimized, showBrain, showPlanner, aiOk, aiLabel, streaming = false,
-  onToggleMinimize, onToggleBrain, onTogglePlanner, onClose,
+  label, color, minimized, aiOk, aiLabel, streaming = false,
+  onToggleMinimize, onClose,
 }: ChatHeaderProps) {
   return (
     <div className="shrink-0">
@@ -28,7 +24,7 @@ export function ChatHeader({
     >
       <Bot className={cn('h-5 w-5 text-white shrink-0', streaming && 'animate-pulse')} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-white">AI Trợ lý · {label}</div>
+        <div className="text-sm font-semibold text-white">AI Gia Sư · {label}</div>
         {!minimized && (
           <div className="text-xs text-white/70">
             {streaming
@@ -48,30 +44,6 @@ export function ChatHeader({
         )}
       </div>
       <div className="flex items-center gap-1">
-        {!minimized && (
-          <>
-            <button
-              onClick={onTogglePlanner}
-              className={cn(
-                'h-6 w-6 rounded-lg flex items-center justify-center transition-colors',
-                showPlanner ? 'bg-white/30 text-white' : 'hover:bg-white/20 text-white/80 hover:text-white',
-              )}
-              title="Kế hoạch học tập"
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={onToggleBrain}
-              className={cn(
-                'h-6 w-6 rounded-lg flex items-center justify-center transition-colors',
-                showBrain ? 'bg-white/30 text-white' : 'hover:bg-white/20 text-white/80 hover:text-white',
-              )}
-              title="Tiến trình học tập"
-            >
-              <Brain className="h-3.5 w-3.5" />
-            </button>
-          </>
-        )}
         <button
           onClick={e => { e.stopPropagation(); onToggleMinimize(); }}
           className="h-6 w-6 rounded-lg hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition-colors"
@@ -87,7 +59,6 @@ export function ChatHeader({
       </div>
     </div>
 
-    {/* Streaming progress bar — indeterminate shimmer */}
     {streaming && !minimized && (
       <div className="h-[2px] w-full bg-white/20 overflow-hidden relative">
         <div

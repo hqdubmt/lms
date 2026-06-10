@@ -1,4 +1,4 @@
-import { BookOpen, PenLine, CheckSquare, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones, MicVocal, TrendingUp } from 'lucide-react';
+import { BookOpen, PenLine, HelpCircle, Languages, Sparkles, Volume2, Mic, Headphones, MicVocal, RefreshCw } from 'lucide-react';
 import type { ElementType } from 'react';
 import type { Subject, Mode } from './types';
 
@@ -9,23 +9,19 @@ export const SUBJECT_META: Record<Subject, { label: string; color: string; hint:
   general:  { label: 'Học tập',    color: 'from-primary to-primary/70',   hint: 'Hỏi bất cứ điều gì về bài học...' },
 };
 
-export const MODES: { id: Mode; label: string; icon: ElementType }[] = [
-  { id: 'tutor',    label: 'Giải thích', icon: BookOpen    },
-  { id: 'exercise', label: 'Bài tập',    icon: PenLine     },
-  { id: 'homework', label: 'Chấm bài',   icon: CheckSquare },
-  { id: 'quiz',     label: 'Quiz',       icon: HelpCircle  },
-  { id: 'adaptive', label: 'Cá nhân',    icon: TrendingUp  },
-  { id: 'voice',    label: 'Giọng nói',  icon: Mic         },
-];
-
 export const MODE_HINTS: Record<Mode, string> = {
   tutor:    'Hỏi để hiểu kiến thức...',
   exercise: 'Yêu cầu tạo bài tập...',
-  homework: 'Gửi bài làm để chấm...',
   quiz:     'Yêu cầu kiểm tra nhanh...',
-  adaptive: 'AI cá nhân hóa theo điểm yếu...',
   voice:    'Nhấn micro để nói chuyện...',
 };
+
+export const QUICK_ACTIONS: Array<{ label: string; icon: ElementType; prompt: string; mode: Mode }> = [
+  { label: 'Giải thích',         icon: BookOpen,   prompt: 'Giải thích: ',              mode: 'tutor'    },
+  { label: 'Tạo bài tập',        icon: PenLine,    prompt: 'Tạo bài tập về: ',          mode: 'exercise' },
+  { label: 'Kiểm tra kiến thức', icon: HelpCircle, prompt: 'Kiểm tra kiến thức: ',      mode: 'quiz'     },
+  { label: 'Ôn tập',             icon: RefreshCw,  prompt: 'Cho em ôn tập kiến thức: ', mode: 'tutor'    },
+];
 
 export const LANG_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; prompt: string }> = [
   { label: 'Dịch',       icon: Languages,  prompt: 'Dịch câu sau sang tiếng Anh: ' },
@@ -41,7 +37,7 @@ export const LANG_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; promp
 export const MATH_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; prompt: string }> = [
   { label: 'Giải bài',   icon: PenLine,    prompt: 'Giải bài toán: ' },
   { label: 'Giải thích', icon: BookOpen,   prompt: 'Giải thích công thức: ' },
-  { label: 'Bài tập',    icon: CheckSquare, prompt: 'Cho em bài tập về: ' },
+  { label: 'Bài tập',    icon: HelpCircle,  prompt: 'Cho em bài tập về: ' },
   { label: 'Quiz',       icon: HelpCircle, prompt: 'Tạo quiz toán về: ' },
 ];
 
@@ -53,7 +49,6 @@ export const VIET_QUICK_ACTIONS: Array<{ label: string; icon: ElementType; promp
 ];
 
 export const INTENT_PATTERNS: Array<{ pattern: RegExp; mode: Mode }> = [
-  { pattern: /chấm bài|sửa bài|chấm điểm|bài làm của/i,                 mode: 'homework' }, // 1
-  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i,                 mode: 'quiz' },     // 2
-  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i,                     mode: 'exercise' }, // 3
+  { pattern: /quiz|trắc nghiệm|kiểm tra nhanh|test\b/i, mode: 'quiz'     },
+  { pattern: /bài tập|cho.*bài|tập làm|luyện tập/i,     mode: 'exercise' },
 ];

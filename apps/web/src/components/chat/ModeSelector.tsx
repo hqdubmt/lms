@@ -1,31 +1,29 @@
 import { cn } from '@/lib/utils';
-import { MODES } from './constants';
+import { QUICK_ACTIONS } from './constants';
 import type { Mode } from './types';
 
-interface ModeSelectorProps {
-  mode: Mode;
-  onModeChange: (mode: Mode) => void;
+interface QuickActionsProps {
+  onSetInput: (text: string) => void;
+  onSetMode: (mode: Mode) => void;
 }
 
-export function ModeSelector({ mode, onModeChange }: ModeSelectorProps) {
+export function QuickActions({ onSetInput, onSetMode }: QuickActionsProps) {
   return (
-    <div className="flex border-b border-gray-100 shrink-0 bg-gray-50">
-      {MODES.map(m => {
-        const Icon = m.icon;
-        const active = mode === m.id;
+    <div className="flex gap-1.5 px-3 py-2 border-t border-gray-100 bg-gray-50 shrink-0 overflow-x-auto">
+      {QUICK_ACTIONS.map(action => {
+        const Icon = action.icon;
         return (
           <button
-            key={m.id}
-            onClick={() => onModeChange(m.id)}
+            key={action.label}
+            onClick={() => { onSetMode(action.mode); onSetInput(action.prompt); }}
             className={cn(
-              'flex-1 flex flex-col items-center gap-0.5 py-2 text-xs font-medium transition-colors',
-              active
-                ? 'text-primary border-b-2 border-primary bg-white'
-                : 'text-gray-400 hover:text-gray-600',
+              'flex items-center gap-1 shrink-0 text-xs font-medium',
+              'bg-white border border-gray-200 hover:border-primary hover:text-primary',
+              'rounded-full px-2.5 py-1 transition-colors shadow-sm whitespace-nowrap',
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
-            {m.label}
+            <Icon className="h-3 w-3" />
+            {action.label}
           </button>
         );
       })}

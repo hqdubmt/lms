@@ -96,6 +96,11 @@ function tutorAgent(brain: BrainState, mode: string, subject: Subject, message: 
     parts.push(`${rubrics[subject] ?? rubrics.general} Bắt buộc có **Điểm: X/10** ở cuối phản hồi.`);
   }
 
+  // Response format: luôn có đủ 3 phần (trừ quiz/homework)
+  if (mode !== 'quiz' && mode !== 'homework') {
+    parts.push('Luôn trả lời theo cấu trúc: **📖 Giải thích** (ngắn gọn, rõ ràng) → **💡 Ví dụ** (ít nhất 1 ví dụ cụ thể) → **✏️ Bài tập** (1 bài tập nhỏ để học sinh thực hành ngay).');
+  }
+
   if (!parts.length) return null;
   return { agent: 'tutor', hint: `[Tutor Agent] ${parts.join(' ')}` };
 }

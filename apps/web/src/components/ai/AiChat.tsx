@@ -13,16 +13,11 @@ import { useChatStream } from '@/hooks/chat/useChatStream';
 import { useMic } from '@/hooks/chat/useMic';
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
-import { ModeSelector } from '@/components/chat/ModeSelector';
-import { BrainPanel } from '@/components/chat/BrainPanel';
+import { QuickActions } from '@/components/chat/ModeSelector';
 import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { VoicePanel } from '@/components/chat/VoicePanel';
-import { LangQuickBar } from '@/components/chat/LangQuickBar';
-import { HomeworkPanel } from '@/components/chat/HomeworkPanel';
-import { AdaptivePanel } from '@/components/chat/AdaptivePanel';
-import { StudyPlanPanel } from '@/components/chat/StudyPlanPanel';
-import { useHomework } from '@/hooks/chat/useHomework';
+import { EmptyState } from '@/components/chat/EmptyState';
 import { getAchievements, getXPData } from '@/services/gamification';
 
 import type { Message, Mode, Subject } from '@/components/chat/types';
@@ -33,8 +28,6 @@ export function AiChat() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [showBrain, setShowBrain] = useState(false);
-  const [showPlanner, setShowPlanner] = useState(false);
   const [mode, setMode] = useState<Mode>('tutor');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -73,9 +66,6 @@ export function AiChat() {
     onResult: t => setInput(prev => prev ? `${prev} ${t}` : t),
   });
 
-  const { homeworkResult, homeworkLoading, homeworkError, submitHomework, clearHomeworkResult } =
-    useHomework({ subject });
-
   useEffect(() => {
     if (open && !minimized) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -86,7 +76,6 @@ export function AiChat() {
     if (open && !minimized) inputRef.current?.focus();
   }, [open, minimized]);
 
-  // Check for newly unlocked achievements after each message
   useEffect(() => {
     if (brainKey === 0) return;
     const timer = setTimeout(async () => {
@@ -104,7 +93,6 @@ export function AiChat() {
     return () => clearTimeout(timer);
   }, [brainKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Check for XP level-up after each message
   useEffect(() => {
     if (brainKey === 0) return;
     const timer = setTimeout(async () => {
@@ -122,7 +110,6 @@ export function AiChat() {
   }, [brainKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = useCallback(() => {
-    // Remove the last AI error message, find the last user message, re-send with correct history
     const sliced = messages.slice(0, -1);
     const lastUser = [...sliced].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
@@ -176,7 +163,7 @@ export function AiChat() {
         {achievementToast}
         <button
           onClick={() => setOpen(true)}
-          title="AI Trợ lý học tập"
+          title="AI Gia Sư"
           className={cn(
             'fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-50',
             'h-14 w-14 rounded-2xl shadow-lg flex items-center justify-center',
@@ -203,46 +190,21 @@ export function AiChat() {
       'fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-50',
       'flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-100',
       'w-[360px] sm:w-[400px] transition-all duration-200',
-      minimized ? 'h-[52px]' : 'h-[560px]',
+      minimized ? 'h-[52px]' : 'h-[580px]',
     )}>
       <ChatHeader
         label={meta.label}
         color={meta.color}
         minimized={minimized}
-        showBrain={showBrain}
-        showPlanner={showPlanner}
         aiOk={aiOk}
         aiLabel={aiLabel}
         streaming={streaming}
         onToggleMinimize={() => setMinimized(m => !m)}
-        onToggleBrain={e => { e.stopPropagation(); setShowBrain(b => !b); setShowPlanner(false); }}
-        onTogglePlanner={e => { e.stopPropagation(); setShowPlanner(p => !p); setShowBrain(false); }}
         onClose={e => { e.stopPropagation(); setOpen(false); handleStop(); }}
       />
 
       {!minimized && (
         <>
-          {showBrain && (
-            <div className="border-b border-gray-100 bg-gray-50 shrink-0 max-h-48 overflow-y-auto">
-              <BrainPanel
-                key={brainKey}
-                subject={subject}
-                onSendMessage={text => { setShowBrain(false); sendMessage(text); }}
-              />
-            </div>
-          )}
-
-          {showPlanner && (
-            <div className="shrink-0 max-h-44 overflow-y-auto">
-              <StudyPlanPanel
-                subject={subject}
-                onSendMessage={text => { setShowPlanner(false); sendMessage(text); }}
-              />
-            </div>
-          )}
-
-          <ModeSelector mode={mode} onModeChange={setMode} />
-
           {voiceMode ? (
             <VoicePanel
               subject={subject}
@@ -253,56 +215,47 @@ export function AiChat() {
             />
           ) : (
             <>
-              <MessageList
-                messages={messages}
-                streaming={streaming}
-                subject={subject}
-                mode={mode}
-                avatarColor={meta.color}
-                ttsLang={ttsLang}
-                historyLoading={historyLoading}
-                label={meta.label}
-                color={meta.color}
-                bottomRef={bottomRef}
-                onSendMessage={sendMessage}
-                onSetInput={setInput}
-                onRetry={handleRetry}
-              />
-
-              {/* Language Tutor quick actions — persistent bar */}
-              {subject === 'language' && messages.length > 0 && (
-                <LangQuickBar onSetInput={setInput} />
-              )}
-
-              {/* Adaptive Learning — show panel when mode is adaptive */}
-              {mode === 'adaptive' && (
-                <AdaptivePanel
-                  subject={subject}
-                  onSendMessage={text => sendMessage(text)}
-                />
-              )}
-
-              {/* Homework 2.0+ — rubric panel */}
-              {mode === 'homework' && (
-                <HomeworkPanel
+              {messages.length === 0 ? (
+                <EmptyState
+                  label={meta.label}
                   color={meta.color}
-                  loading={homeworkLoading}
-                  result={homeworkResult}
-                  error={homeworkError}
-                  onSubmit={submitHomework}
-                  onClear={clearHomeworkResult}
+                  hint={meta.hint}
+                  subject={subject}
+                  historyLoading={historyLoading}
+                  onSetInput={text => { setInput(text); setTimeout(() => inputRef.current?.focus(), 50); }}
+                  onSetMode={setMode}
+                />
+              ) : (
+                <MessageList
+                  messages={messages}
+                  streaming={streaming}
+                  subject={subject}
+                  mode={mode}
+                  avatarColor={meta.color}
+                  ttsLang={ttsLang}
+                  historyLoading={historyLoading}
+                  label={meta.label}
+                  color={meta.color}
+                  bottomRef={bottomRef}
+                  onSendMessage={sendMessage}
+                  onSetInput={setInput}
+                  onRetry={handleRetry}
                 />
               )}
 
-              {/* Live stream counter */}
               {streaming && streamChars > 0 && (
-                <div className="px-3 pb-0.5 flex items-center gap-1.5">
+                <div className="px-3 pb-0.5 flex items-center gap-1.5 shrink-0">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
                   <span className="text-[10px] text-muted-foreground">
                     {streamChars} ký tự · đang nhận...
                   </span>
                 </div>
               )}
+
+              <QuickActions
+                onSetInput={text => { setInput(text); setTimeout(() => inputRef.current?.focus(), 50); }}
+                onSetMode={setMode}
+              />
 
               <ChatInput
                 input={input}

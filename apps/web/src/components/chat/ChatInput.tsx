@@ -1,5 +1,5 @@
-import type { RefObject } from 'react';
-import { Send, X, Mic, MicOff, RotateCcw } from 'lucide-react';
+import { useRef, type RefObject } from 'react';
+import { Send, X, Mic, MicOff, RotateCcw, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MODE_HINTS } from './constants';
 import type { Mode, Subject } from './types';
@@ -42,6 +42,8 @@ export function ChatInput({
   hasMessages, inputRef, subjectOverride, onInputChange, onSend, onStop,
   onMic, onClearHistory, onSubjectOverride,
 }: ChatInputProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -58,6 +60,15 @@ export function ChatInput({
       return;
     }
     onInputChange(value);
+  };
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const prefix = input.trim() ? `${input.trim()} ` : '';
+    onInputChange(`${prefix}[📎 ${file.name}] `);
+    e.target.value = '';
+    inputRef.current?.focus();
   };
 
   return (
@@ -89,6 +100,15 @@ export function ChatInput({
           style={{ lineHeight: '1.5' }}
         />
         <div className="flex flex-col gap-1 shrink-0">
+          {!streaming && (
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="h-9 w-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+              title="Đính kèm tệp"
+            >
+              <Paperclip className="h-4 w-4 text-gray-600" />
+            </button>
+          )}
           {micAvailable && !streaming && (
             <button
               onClick={onMic}
@@ -133,6 +153,8 @@ export function ChatInput({
           <RotateCcw className="h-3 w-3" />Xoá hội thoại
         </button>
       )}
+
+      <input ref={fileRef} type="file" className="hidden" onChange={handleFile} />
     </div>
   );
 }

@@ -67,7 +67,7 @@ export interface Message {
 }
 
 export type Subject = 'math' | 'language' | 'viet' | 'general';
-export type Mode = 'tutor' | 'exercise' | 'homework' | 'quiz' | 'voice' | 'adaptive';
+export type Mode = 'tutor' | 'exercise' | 'quiz' | 'voice';
 
 
 export interface SpeakingResult {
