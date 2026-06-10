@@ -176,6 +176,8 @@ export default function MathPage() {
           { href: '/math/game/formula-hunt', icon: Target, label: 'Formula Hunt', desc: 'Săn công thức', color: 'bg-indigo-500' },
           { href: '/math/game/boss-battle', icon: Trophy, label: 'Boss Battle', desc: 'Chiến đấu Boss', color: 'bg-red-600' },
           { href: '/math/game/adventure', icon: Brain, label: 'Adventure Map', desc: 'Bản đồ học tập', color: 'bg-teal-600' },
+          { href: '/math/game/flash-quiz', icon: Zap, label: 'Trắc Nghiệm', desc: 'Chớp nhoáng', color: 'bg-blue-500' },
+          { href: '/math/game/formula-fill', icon: Target, label: 'Điền Công Thức', desc: 'Điền chỗ trống', color: 'bg-violet-600' },
           { href: '/math/leaderboard', icon: Trophy, label: 'Bảng xếp hạng', desc: 'Top học viên', color: 'bg-amber-600' },
           { href: '/math/profile', icon: TrendingUp, label: 'Hồ sơ học tập', desc: 'Điểm mạnh / yếu', color: 'bg-emerald-600' },
         ].map((a) => (

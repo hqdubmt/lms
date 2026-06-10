@@ -1915,4 +1915,193 @@ export async function mathRoutes(app: FastifyInstance) {
 
     return { correct, total, bossDefeated, damageDealt, bossHp: boss.hp, xpEarned };
   });
+
+  // ─── GAME: MATH FLASH QUIZ (Trắc nghiệm chớp nhoáng) ────────────────────
+  app.get('/game/flash-quiz', { preHandler: requireAuth }, async (req) => {
+    const { count, grade, subject } = req.query as { count?: string; grade?: string; subject?: string };
+    const n = Math.min(20, Math.max(5, parseInt(count || '10')));
+
+    const topicFilter: any = { isPublic: true };
+    if (grade) topicFilter.grade = parseInt(grade);
+    if (subject) topicFilter.subject = subject;
+
+    const pool = await prisma.mathConcept.findMany({
+      where: { topic: topicFilter },
+      take: n * 6,
+      orderBy: { id: 'asc' },
+      select: { id: true, name: true, definition: true, formula: true, example: true },
+    });
+
+    if (pool.length < 4) {
+      const fallback = await prisma.mathConcept.findMany({
+        where: { topic: { isPublic: true } },
+        take: n * 6,
+        select: { id: true, name: true, definition: true, formula: true, example: true },
+      });
+      if (fallback.length < 4) throw { statusCode: 404, message: 'Không đủ khái niệm để tạo câu hỏi' };
+      pool.push(...fallback);
+    }
+
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, n);
+
+    const questions = shuffled.map((c) => {
+      const correctAnswer = c.formula ? `${c.formula}` : c.definition.slice(0, 120);
+      const others = pool.filter((x) => x.id !== c.id);
+      const distractors = [...others].sort(() => Math.random() - 0.5).slice(0, 3).map((x) =>
+        x.formula ? `${x.formula}` : x.definition.slice(0, 120)
+      );
+      const options = [...distractors, correctAnswer].sort(() => Math.random() - 0.5);
+      return { id: c.id, name: c.name, example: c.example, options, correctAnswer };
+    });
+
+    return { questions };
+  });
+
+  app.post('/game/flash-quiz/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const { answers, streak } = z.object({
+      answers: z.array(z.object({
+        questionId: z.string(),
+        answer: z.string(),
+        correct: z.boolean(),
+        timeMs: z.number().optional(),
+      })),
+      streak: z.number().default(0),
+    }).parse(req.body);
+
+    const correct = answers.filter((a) => a.correct).length;
+    const total = answers.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const xpEarned = correct * 5 + (streak >= 5 ? Math.floor(streak / 5) * 5 : 0) + (score === 100 ? 30 : 0);
+
+    if (xpEarned > 0) {
+      await addXP(sub, xpEarned);
+      await prisma.mathUserStats.upsert({
+        where: { userId: sub },
+        create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+        update: { exercisesDone: { increment: 1 } },
+      });
+    }
+
+    return { correct, total, score, xpEarned };
+  });
+
+  // ─── GAME: ĐIỀN CÔNG THỨC (Formula Fill) ────────────────────────────────
+  app.get('/game/formula-fill', { preHandler: requireAuth }, async (req) => {
+    const { count, grade, subject } = req.query as { count?: string; grade?: string; subject?: string };
+    const n = Math.min(15, Math.max(5, parseInt(count || '10')));
+
+    const topicFilter: any = { isPublic: true };
+    if (grade) topicFilter.grade = parseInt(grade);
+    if (subject) topicFilter.subject = subject;
+
+    // Prefer concepts with formulas or examples that have numbers
+    const items = await prisma.mathConcept.findMany({
+      where: {
+        topic: topicFilter,
+        OR: [{ formula: { not: null } }, { example: { not: null } }],
+      },
+      take: n * 5,
+      orderBy: { id: 'asc' },
+      select: { id: true, name: true, definition: true, formula: true, example: true, solution: true },
+    });
+
+    const questions: any[] = [];
+    const shuffled = [...items].sort(() => Math.random() - 0.5);
+
+    for (const c of shuffled) {
+      if (questions.length >= n) break;
+
+      if (c.formula && c.formula.includes('=')) {
+        // Blank out rhs of formula after =
+        const eqIdx = c.formula.indexOf('=');
+        const lhs = c.formula.slice(0, eqIdx + 1);
+        const rhs = c.formula.slice(eqIdx + 1).trim();
+        if (rhs.length > 0 && rhs.length <= 60) {
+          questions.push({
+            id: c.id,
+            sentence: `${lhs} ______`,
+            hint: c.definition.slice(0, 100),
+            answer: rhs,
+            note: c.name,
+          });
+          continue;
+        }
+      }
+
+      if (c.example) {
+        // Blank out the last number in the example
+        const numMatch = c.example.match(/\d+(?:[.,]\d+)?/g);
+        if (numMatch && numMatch.length > 0) {
+          const lastNum = numMatch[numMatch.length - 1];
+          const lastIdx = c.example.lastIndexOf(lastNum);
+          const blanked = c.example.slice(0, lastIdx) + '______' + c.example.slice(lastIdx + lastNum.length);
+          if (blanked !== c.example) {
+            questions.push({
+              id: c.id,
+              sentence: blanked,
+              hint: c.name + (c.formula ? ` — ${c.formula}` : ''),
+              answer: lastNum,
+              note: c.definition.slice(0, 80),
+            });
+          }
+        }
+      }
+    }
+
+    if (questions.length < 3) {
+      // fallback: any public concepts with formula
+      const fallback = await prisma.mathConcept.findMany({
+        where: { topic: { isPublic: true }, formula: { not: null } },
+        take: 50,
+        select: { id: true, name: true, definition: true, formula: true, example: true },
+      });
+      for (const c of fallback.sort(() => Math.random() - 0.5)) {
+        if (questions.length >= n) break;
+        if (questions.some((q) => q.id === c.id)) continue;
+        if (!c.formula || !c.formula.includes('=')) continue;
+        const eqIdx = c.formula.indexOf('=');
+        const rhs = c.formula.slice(eqIdx + 1).trim();
+        if (rhs.length > 0 && rhs.length <= 60) {
+          questions.push({ id: c.id, sentence: `${c.formula.slice(0, eqIdx + 1)} ______`, hint: c.definition.slice(0, 100), answer: rhs, note: c.name });
+        }
+      }
+    }
+
+    if (questions.length === 0) throw { statusCode: 404, message: 'Không đủ công thức để tạo bài tập. Hãy thêm công thức vào các chủ đề.' };
+    return { questions };
+  });
+
+  app.post('/game/formula-fill/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { answers } = z.object({
+      answers: z.array(z.object({
+        questionId: z.string(),
+        typed: z.string(),
+        answer: z.string(),
+      })),
+    }).parse(req.body);
+
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, '').replace(/[×x]/g, '*').replace(/÷/g, '/');
+    const results = answers.map((a) => {
+      const correct = norm(a.typed) === norm(a.answer);
+      return { id: a.questionId, correct, typed: a.typed, expected: a.answer };
+    });
+
+    const correct = results.filter((r) => r.correct).length;
+    const total = results.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const xpEarned = correct * 8 + (score === 100 ? 30 : 0);
+
+    if (xpEarned > 0) {
+      await addXP(sub, xpEarned);
+      await prisma.mathUserStats.upsert({
+        where: { userId: sub },
+        create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+        update: { exercisesDone: { increment: 1 } },
+      });
+    }
+
+    return reply.send({ results, correct, total, score, xpEarned });
+  });
 }
