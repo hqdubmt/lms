@@ -282,12 +282,44 @@ export default function LanguagePage() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-lg">Bài tập</h2>
+          {exercises.length > 0 && (
+            <Link href="/language/exercises"
+              className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:underline">
+              Xem tất cả &amp; phân loại <ChevronRight className="h-3 w-3" />
+            </Link>
+          )}
         </div>
+
+        {/* Skill quick-filter summary */}
+        {exercises.length > 0 && (() => {
+          const TYPE_TO_SKILL: Record<string, string> = { DICTATION: 'listening', WORD_ORDER: 'speaking', MULTIPLE_CHOICE: 'reading', MATCHING: 'reading', FILL_BLANK: 'writing' };
+          const SKILL_META = [
+            { key: 'listening', label: 'Nghe',  color: 'bg-blue-50 text-blue-700 border-blue-200' },
+            { key: 'speaking',  label: 'Nói',   color: 'bg-green-50 text-green-700 border-green-200' },
+            { key: 'reading',   label: 'Đọc',   color: 'bg-amber-50 text-amber-700 border-amber-200' },
+            { key: 'writing',   label: 'Viết',  color: 'bg-rose-50 text-rose-700 border-rose-200' },
+          ];
+          return (
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {SKILL_META.map(s => {
+                const count = exercises.filter(e => (TYPE_TO_SKILL[e.type] ?? 'reading') === s.key).length;
+                return (
+                  <Link key={s.key} href={`/language/exercises?skill=${s.key}`}
+                    className={`rounded-xl border p-2.5 text-center hover:shadow-sm transition ${s.color}`}>
+                    <p className="text-lg font-black">{count}</p>
+                    <p className="text-[10px] font-semibold mt-0.5">{s.label}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {exercises.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-muted-foreground">Chưa có bài tập nào.</CardContent></Card>
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
-            {exercises.map((ex) => {
+            {exercises.slice(0, 4).map((ex) => {
               const Icon = EXERCISE_ICONS[ex.type] || Brain;
               return (
                 <Link key={ex.id} href={`/language/exercise/${ex.id}`}>
@@ -312,6 +344,13 @@ export default function LanguagePage() {
               );
             })}
           </div>
+        )}
+
+        {exercises.length > 4 && (
+          <Link href="/language/exercises"
+            className="mt-3 flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-violet-300 text-sm font-semibold text-violet-600 hover:bg-violet-50 transition">
+            Xem thêm {exercises.length - 4} bài tập · Lọc theo kỹ năng, độ tuổi, game AI
+          </Link>
         )}
       </section>
 
