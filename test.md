@@ -82,7 +82,7 @@ Chỉ đánh giá mức độ hoàn thành.
 
 * [x] MinIO
 * [x] PostgreSQL Metadata
-* [ ] Qdrant Vector
+* [x] Qdrant Vector
 
 ---
 
@@ -104,7 +104,7 @@ Chỉ đánh giá mức độ hoàn thành.
 ## Features
 
 * [x] Voice Input
-* [x] File Upload
+* [ ] File Upload
 * [x] SSE Streaming
 
 ## Quality
@@ -232,9 +232,9 @@ Chỉ đánh giá mức độ hoàn thành.
 
 # 11. MONITORING
 
-* [ ] Prometheus
-* [ ] Grafana
-* [ ] Loki
+* [x] Prometheus
+* [x] Grafana
+* [x] Loki
 * [x] Provider Monitor
 * [x] Agent Monitor
 
@@ -264,7 +264,7 @@ Auth: 91 / 100
 
 LMS: 100 / 100
 
-AI Chatbox: 100 / 100
+AI Chatbox: 85 / 100
 
 Games: 100 / 100
 
@@ -274,7 +274,7 @@ Dashboard: 100 / 100
 
 Mobile: 100 / 100
 
-Monitoring: 40 / 100
+Monitoring: 100 / 100
 
 ---
 
