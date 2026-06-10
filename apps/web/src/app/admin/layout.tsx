@@ -8,7 +8,7 @@ import {
   LayoutDashboard, BookOpen, Users, GraduationCap,
   LogOut, ChevronRight, School, Menu, X, ChevronLeft, Globe, Calculator, BookType,
   Image as ImageIcon, Palette, HardDrive, FileType2, Bot, Library, ChevronDown, BarChart2, Bell,
-  Building2,
+  Building2, Settings,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -25,28 +25,36 @@ function isGroup(e: NavEntry): e is NavGroup {
 
 const navItems: NavEntry[] = [
   { href: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
-  { href: '/admin/courses', label: 'Khóa học', icon: BookOpen },
-  { href: '/admin/classes', label: 'Lớp học', icon: School },
-  { href: '/admin/users', label: 'Người dùng', icon: Users },
-  { href: '/admin/language', label: 'Ngoại ngữ', icon: Globe },
-  { href: '/admin/math', label: 'Toán học', icon: Calculator },
-  { href: '/admin/viet', label: 'Tiếng Việt', icon: BookType },
-  { href: '/admin/media', label: 'Thư viện', icon: ImageIcon },
-  { href: '/admin/branding', label: 'Thương hiệu', icon: Palette },
-  { href: '/admin/backup', label: 'Backup', icon: HardDrive },
-  { href: '/admin/ai-analytics', label: 'AI Analytics', icon: BarChart2 },
-  { href: '/admin/enterprise', label: 'Enterprise', icon: Building2 },
-  { href: '/instructor/announcements', label: 'Thông báo', icon: Bell },
   {
-    type: 'group',
-    label: 'Tài liệu',
-    icon: Library,
+    type: 'group', label: 'Tài liệu', icon: Library,
     items: [
-      { href: '/admin/documents', label: 'Tài liệu', icon: Library },
-      { href: '/admin/copilot', label: 'Copilot', icon: Bot },
-      { href: '/admin/convert', label: 'Convert MD', icon: FileType2 },
+      { href: '/admin/documents', label: 'Documents',  icon: Library },
+      { href: '/admin/copilot',   label: 'Copilot',    icon: Bot },
+      { href: '/admin/convert',   label: 'Convert MD', icon: FileType2 },
     ],
   },
+  { href: '/admin/ai-analytics', label: 'AI Analytics', icon: BarChart2 },
+  {
+    type: 'group', label: 'Nội dung', icon: BookOpen,
+    items: [
+      { href: '/admin/courses',  label: 'Khóa học',   icon: BookOpen },
+      { href: '/admin/media',    label: 'Thư viện',   icon: ImageIcon },
+      { href: '/admin/language', label: 'Ngoại ngữ',  icon: Globe },
+      { href: '/admin/math',     label: 'Toán học',   icon: Calculator },
+      { href: '/admin/viet',     label: 'Tiếng Việt', icon: BookType },
+    ],
+  },
+  {
+    type: 'group', label: 'Hệ thống', icon: Settings,
+    items: [
+      { href: '/admin/users',    label: 'Người dùng',  icon: Users },
+      { href: '/admin/classes',  label: 'Lớp học',     icon: School },
+      { href: '/admin/branding', label: 'Thương hiệu', icon: Palette },
+      { href: '/admin/backup',   label: 'Backup',      icon: HardDrive },
+    ],
+  },
+  { href: '/admin/enterprise',         label: 'Marketplace', icon: Building2 },
+  { href: '/instructor/announcements', label: 'Thông báo',   icon: Bell },
 ];
 
 const COLLAPSED_KEY = 'admin_sidebar_collapsed';

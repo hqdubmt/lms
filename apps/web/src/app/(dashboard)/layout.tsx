@@ -5,11 +5,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-    Home, BookOpen, MonitorPlay, Settings, GraduationCap, LogOut, ChevronRight,
+    Home, BookOpen, Settings, GraduationCap, LogOut, ChevronRight,
     Bell, Video, BookMarked, X, Menu, ChevronLeft, Globe, Calculator, BookType,
-    Image as ImageIcon, Gamepad2, Brain, Bot, FileType2, ClipboardList, CheckCircle2, SendHorizonal, UserCheck,
-    Calendar, RotateCcw, Award, Target, Zap, Megaphone, Users, BarChart2,
-    Map, HeartHandshake, Briefcase, Sparkles, Trophy, ShoppingBag, Cpu,
+    Gamepad2, Brain, Bot, CheckCircle2, SendHorizonal, UserCheck,
+    Calendar, RotateCcw, Award, Zap, Megaphone, Users, BarChart2,
+    Map, TrendingUp,
 } from 'lucide-react';
 import { useAuthStore, useHydrated } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
@@ -34,62 +34,49 @@ const BASE_NAV_GROUPS = [
     {
         label: 'HỌC TẬP',
         items: [
-            { href: '/dashboard',      label: 'Trang chủ',  icon: Home,          exact: true },
-            { href: '/courses',        label: 'Khoá học',   icon: BookOpen },
-            { href: '/marketplace',    label: 'Marketplace', icon: ShoppingBag },
-            { href: '/media',          label: 'Thư viện',   icon: ImageIcon },
-            { href: '/language',       label: 'Ngoại ngữ',  icon: Globe },
-            { href: '/math',           label: 'Toán học',   icon: Calculator },
-            { href: '/viet',           label: 'Tiếng Việt', icon: BookType },
-            { href: '/quiz',           label: 'Quiz Game',  icon: Gamepad2 },
-            { href: '/game',           label: 'Mini Games', icon: Zap },
-            { href: '/leaderboard',    label: 'Xếp hạng',   icon: Trophy },
-            { href: '/schedule',       label: 'Phòng học',  icon: MonitorPlay },
-            { href: '/todo',           label: 'Công việc',  icon: ClipboardList },
+            { href: '/dashboard',  label: 'Trang chủ',  icon: Home,       exact: true },
+            { href: '/courses',    label: 'Khoá học',   icon: BookOpen },
+            { href: '/language',   label: 'Ngoại ngữ',  icon: Globe },
+            { href: '/math',       label: 'Toán học',   icon: Calculator },
+            { href: '/viet',       label: 'Tiếng Việt', icon: BookType },
         ],
     },
     {
-        label: 'AI',
-        collapsible: true,
-        groupIcon: Zap,
+        label: 'LUYỆN TẬP',
         items: [
-            { href: '/learning',                   label: 'Tiến độ AI',    icon: Brain,      exact: true },
-            { href: '/learning/coach',             label: 'Study Coach',   icon: Target },
-            { href: '/learning/revision',          label: 'Ôn tập',        icon: RotateCcw },
-            { href: '/learning/timeline',          label: 'Timeline',      icon: Calendar },
-            { href: '/learning/report-card',       label: 'Bảng điểm AI',  icon: Award },
-            { href: '/learning/knowledge-graph',   label: 'Knowledge Map', icon: Brain },
-            { href: '/analytics',                  label: 'Phân tích',     icon: BarChart2 },
-            { href: '/parent-report',              label: 'Báo cáo PH',    icon: Users },
-            { href: '/learning/path',              label: 'Lộ trình AI',   icon: Map },
-            { href: '/learning/teacher',           label: 'AI Teacher',    icon: GraduationCap },
-            { href: '/learning/mentor',            label: 'AI Mentor',     icon: HeartHandshake },
-            { href: '/learning/career',            label: 'Career Advisor', icon: Briefcase },
-            { href: '/ecosystem',                  label: 'AI Ecosystem',   icon: Cpu },
+            { href: '/quiz',  label: 'Quiz Game',  icon: Gamepad2 },
+            { href: '/game',  label: 'Mini Games', icon: Zap },
+        ],
+    },
+    {
+        label: 'AI & TIẾN BỘ',
+        collapsible: true,
+        groupIcon: Brain,
+        items: [
+            { href: '/learning',          label: 'Tiến bộ',   icon: TrendingUp, exact: true },
+            { href: '/learning/coach',    label: 'AI Gia sư', icon: Bot },
+            { href: '/learning/path',     label: 'Lộ trình',  icon: Map },
+            { href: '/learning/revision', label: 'Ôn tập',    icon: RotateCcw },
         ],
     },
 ];
 
 const INSTRUCTOR_HREF_MAP: Record<string, string> = {
-    '/language':     '/instructor/language',
-    '/math':         '/instructor/math',
-    '/viet':         '/instructor/viet',
-    '/media':        '/instructor/media',
-    '/quiz':         '/instructor/quiz',
+    '/language':  '/instructor/language',
+    '/math':      '/instructor/math',
+    '/viet':      '/instructor/viet',
+    '/quiz':      '/instructor/quiz',
 };
 
 const INSTRUCTOR_EXTRA_GROUP = {
-    label: 'SOẠN BÀI',
+    label: 'QUẢN LÝ',
     collapsible: true,
     groupIcon: Bot,
     items: [
-        { href: '/instructor/copilot',        label: 'Copilot AI',     icon: Bot,       exact: false as const },
-        { href: '/ai-course',                 label: 'Tạo khóa học AI', icon: Sparkles,  exact: false as const },
-        { href: '/instructor/convert',        label: 'Convert MD',     icon: FileType2,  exact: false as const },
-        { href: '/instructor/classes',         label: 'Quản lý lớp',    icon: Users,     exact: false as const },
-        { href: '/instructor/analytics',      label: 'Phân tích lớp',  icon: BarChart2, exact: false as const },
-        { href: '/instructor/ai-students',    label: 'AI Học sinh',    icon: Brain,      exact: false as const },
-        { href: '/instructor/announcements',  label: 'Thông báo',      icon: Bell,       exact: false as const },
+        { href: '/instructor/copilot',       label: 'Copilot AI', icon: Bot,      exact: false as const },
+        { href: '/instructor/classes',       label: 'Lớp học',    icon: Users,    exact: false as const },
+        { href: '/instructor/analytics',     label: 'Báo cáo',    icon: BarChart2, exact: false as const },
+        { href: '/instructor/announcements', label: 'Thông báo',  icon: Bell,     exact: false as const },
     ],
 };
 
@@ -784,19 +771,19 @@ function MobileBottomNav({ pathname, unreadNotifs, liveCount, onUnreadChange, ro
     const isInstructor = role === 'INSTRUCTOR' || role === 'ADMIN';
 
     const subjectItems = isInstructor ? [
-        { href: '/instructor/language', label: 'Ngoại Ngữ', icon: Globe,       color: 'bg-purple-50 text-purple-600' },
-        { href: '/instructor/math',     label: 'Toán học',   icon: Calculator,  color: 'bg-blue-50 text-blue-600' },
-        { href: '/instructor/viet',     label: 'Tiếng Việt', icon: BookType,    color: 'bg-green-50 text-green-600' },
+        { href: '/instructor/language', label: 'Ngoại Ngữ',  icon: Globe,      color: 'bg-blue-50 text-blue-700' },
+        { href: '/instructor/math',     label: 'Toán học',    icon: Calculator, color: 'bg-violet-50 text-violet-700' },
+        { href: '/instructor/viet',     label: 'Tiếng Việt',  icon: BookType,   color: 'bg-red-50 text-red-700' },
     ] : [
-        { href: '/language', label: 'Ngoại Ngữ', icon: Globe,       color: 'bg-purple-50 text-purple-600' },
-        { href: '/math',     label: 'Toán học',   icon: Calculator,  color: 'bg-blue-50 text-blue-600' },
-        { href: '/viet',     label: 'Tiếng Việt', icon: BookType,    color: 'bg-green-50 text-green-600' },
+        { href: '/language', label: 'Ngoại Ngữ',  icon: Globe,      color: 'bg-blue-50 text-blue-700' },
+        { href: '/math',     label: 'Toán học',    icon: Calculator, color: 'bg-violet-50 text-violet-700' },
+        { href: '/viet',     label: 'Tiếng Việt',  icon: BookType,   color: 'bg-red-50 text-red-700' },
     ];
 
     const mainItems = [
-        { href: '/dashboard',                    label: 'Trang chủ', icon: Home,          exact: true  },
-        { href: isInstructor ? '/instructor/quiz' : '/quiz', label: 'Quiz Game',  icon: Gamepad2,      exact: false },
-        { href: '/todo',                          label: 'Công việc', icon: ClipboardList, exact: false },
+        { href: '/dashboard',                                label: 'Trang chủ', icon: Home,       exact: true  },
+        { href: isInstructor ? '/instructor/quiz' : '/quiz', label: 'Luyện tập', icon: Gamepad2,   exact: false },
+        { href: '/learning',                                 label: 'Tiến bộ',   icon: TrendingUp, exact: false },
     ];
 
     const subjectBasePaths = isInstructor

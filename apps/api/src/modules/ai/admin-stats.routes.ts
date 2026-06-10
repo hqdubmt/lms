@@ -101,11 +101,10 @@ export async function adminStatsRoutes(app: FastifyInstance) {
       },
       agents: {
         today: {
-          tutor:          agentDash.tutor.find(d => d.date === today) ?? null,
-          math:           agentDash.math.find(d => d.date === today) ?? null,
-          quiz:           agentDash.quiz.find(d => d.date === today) ?? null,
-          homework:       agentDash.homework.find(d => d.date === today) ?? null,
-          knowledge_graph: agentDash.knowledge_graph.find(d => d.date === today) ?? null,
+          tutor:    agentDash.tutor.find(d => d.date === today) ?? null,
+          review:   agentDash.review.find(d => d.date === today) ?? null,
+          planner:  agentDash.planner.find(d => d.date === today) ?? null,
+          language: agentDash.language.find(d => d.date === today) ?? null,
         },
       },
       generatedAt: new Date().toISOString(),
@@ -153,11 +152,10 @@ export async function adminStatsRoutes(app: FastifyInstance) {
     return reply.send({
       agents: agentDash,
       today: {
-        tutor:           agentDash.tutor.find(d => d.date === today) ?? null,
-        math:            agentDash.math.find(d => d.date === today) ?? null,
-        quiz:            agentDash.quiz.find(d => d.date === today) ?? null,
-        homework:        agentDash.homework.find(d => d.date === today) ?? null,
-        knowledge_graph: agentDash.knowledge_graph.find(d => d.date === today) ?? null,
+        tutor:    agentDash.tutor.find(d => d.date === today) ?? null,
+        review:   agentDash.review.find(d => d.date === today) ?? null,
+        planner:  agentDash.planner.find(d => d.date === today) ?? null,
+        language: agentDash.language.find(d => d.date === today) ?? null,
       },
       days,
       generatedAt: new Date().toISOString(),

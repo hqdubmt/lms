@@ -27,8 +27,6 @@ export interface BrainState {
   level: LearningLevel;
   mistakes: MistakeRecord[];
   mastery: Record<string, number>; // concept slug → 0.0–1.0
-  mode: string;
-  summary: string | null;
   messageCount: number;
 }
 
@@ -38,8 +36,6 @@ const DEFAULT_BRAIN: BrainState = {
   level: 'basic',
   mistakes: [],
   mastery: {},
-  mode: 'tutor',
-  summary: null,
   messageCount: 0,
 };
 
@@ -192,7 +188,6 @@ export function extractMistakes(aiResponse: string): MistakeRecord[] {
 
 export function buildBrainContext(brain: BrainState): string {
   const parts: string[] = [];
-  if (brain.summary) parts.push(`Tóm tắt trước: ${brain.summary}`);
   if (brain.topic) parts.push(`Chủ đề: ${brain.topic}`);
   if (brain.goal) parts.push(`Mục tiêu: ${brain.goal}`);
   if (brain.level !== 'basic') {
@@ -218,11 +213,3 @@ export function buildBrainContext(brain: BrainState): string {
   return parts.join('\n');
 }
 
-export function buildSummary(brain: BrainState, lastUserMsg: string): string {
-  const parts: string[] = [];
-  if (brain.topic) parts.push(`Đang học: ${brain.topic}`);
-  const worstMistake = brain.mistakes.sort((a, b) => b.count - a.count)[0];
-  if (worstMistake) parts.push(`Hay mắc: ${worstMistake.type}`);
-  if (lastUserMsg) parts.push(`Câu hỏi cuối: ${lastUserMsg.slice(0, 80)}`);
-  return parts.join('. ');
-}

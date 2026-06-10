@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   BookOpen, Calendar, Clock, Play, ChevronRight,
   TrendingUp, Award, Video, ExternalLink,
-  Bell, Search, ArrowRight,
+  Bell, Search, ArrowRight, Brain, ClipboardList, Sparkles, Zap,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api';
@@ -23,6 +23,14 @@ interface EnrolledCourse {
     totalLessons: number; totalDuration: number;
     instructor: { name: string };
   };
+}
+
+interface Todo {
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  dueDate?: string | null;
 }
 
 interface LiveSession {
@@ -224,17 +232,21 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const [enrolled, setEnrolled] = useState<EnrolledCourse[]>([]);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get<any>('/users/enrollments').catch(() => []),
       api.get<LiveSession[]>('/users/schedule').catch(() => []),
-    ]).then(([enrollData, scheduleData]) => {
+      api.get<any>('/todos').catch(() => ({ items: [] })),
+    ]).then(([enrollData, scheduleData, todoData]) => {
       const enrollList = Array.isArray(enrollData) ? enrollData : enrollData?.enrollments ?? [];
       const schedList = Array.isArray(scheduleData) ? scheduleData : [];
+      const todoList: Todo[] = (todoData?.items ?? (Array.isArray(todoData) ? todoData : []));
       setEnrolled(enrollList);
       setSessions(schedList.filter((s: LiveSession) => s.status !== 'ENDED'));
+      setTodos(todoList.filter((t: Todo) => t.status !== 'DONE').slice(0, 5));
     }).finally(() => setLoading(false));
   }, []);
 
@@ -325,11 +337,15 @@ export default function DashboardPage() {
           <div className="relative z-10 mt-5 flex gap-3 flex-wrap">
             <Link href="/courses"
               className="flex items-center gap-2 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
-              <BookOpen className="h-4 w-4" />Khoá học của tôi
+              <BookOpen className="h-4 w-4" />Khoá học
             </Link>
-            <Link href="/schedule"
+            <Link href="/learning/coach"
               className="flex items-center gap-2 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
-              <Calendar className="h-4 w-4" />Lịch học
+              <Brain className="h-4 w-4" />AI Gia sư
+            </Link>
+            <Link href="/quiz"
+              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
+              <Zap className="h-4 w-4" />Luyện tập
             </Link>
           </div>
         </div>
@@ -407,35 +423,144 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* ── Upcoming Sessions ── */}
+        {/* ── Hôm nay học gì / Lịch học ── */}
+        {(loading || upcomingSessions.length > 0) && (
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold">Hôm nay học gì</h2>
+                <p className="text-xs text-muted-foreground">Buổi học trực tuyến sắp tới</p>
+              </div>
+              <Link href="/learning"
+                className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+                Lộ trình <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2].map((i) => <Skeleton key={i} className="h-20" />)}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingSessions.map((s) => (
+                  <SessionRow key={s.id} session={s} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Bài tập cần làm ── */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-bold">Lịch học sắp tới</h2>
-              <p className="text-xs text-muted-foreground">Buổi học trực tuyến</p>
+              <h2 className="text-lg font-bold">Bài tập cần làm</h2>
+              <p className="text-xs text-muted-foreground">Nhiệm vụ chưa hoàn thành</p>
             </div>
-            <Link href="/schedule"
+            <Link href="/learning"
               className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-              Xem lịch <ArrowRight className="h-4 w-4" />
+              Xem tất cả <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           {loading ? (
-            <div className="space-y-3">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-20" />)}
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14" />)}
             </div>
-          ) : upcomingSessions.length === 0 ? (
+          ) : todos.length === 0 ? (
             <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-12 text-center">
-              <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="font-medium text-muted-foreground">Không có buổi học nào sắp tới</p>
+              <ClipboardList className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="font-medium text-muted-foreground">Không có bài tập nào cần làm</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {upcomingSessions.map((s) => (
-                <SessionRow key={s.id} session={s} />
+            <div className="space-y-2">
+              {todos.map((t) => (
+                <div key={t.id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 px-4 py-3 hover:shadow-sm transition-shadow">
+                  <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${t.priority === 2 ? 'bg-red-500' : t.priority === 1 ? 'bg-amber-400' : 'bg-gray-300'}`} />
+                  <span className="flex-1 text-sm font-medium truncate">{t.title}</span>
+                  {t.dueDate && (
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {new Date(t.dueDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           )}
+        </section>
+
+        {/* ── AI đề xuất ── */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="h-5 w-5 text-teal-500" />
+            <h2 className="text-lg font-bold">AI đề xuất</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Link href="/learning/coach"
+              className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all group">
+              <div className="h-10 w-10 rounded-xl bg-teal-50 flex items-center justify-center shrink-0 group-hover:bg-teal-100 transition-colors">
+                <Brain className="h-5 w-5 text-teal-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">AI Gia sư</p>
+                <p className="text-xs text-muted-foreground">Hỏi AI bất kỳ điều gì</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-300 ml-auto group-hover:text-teal-500 transition-colors" />
+            </Link>
+            <Link href="/learning/revision"
+              className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all group">
+              <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 group-hover:bg-indigo-100 transition-colors">
+                <TrendingUp className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Ôn tập thông minh</p>
+                <p className="text-xs text-muted-foreground">Ôn lại điểm yếu</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-300 ml-auto group-hover:text-indigo-500 transition-colors" />
+            </Link>
+            <Link href="/learning/path"
+              className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md transition-all group">
+              <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 group-hover:bg-purple-100 transition-colors">
+                <Sparkles className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Lộ trình AI</p>
+                <p className="text-xs text-muted-foreground">Kế hoạch học cá nhân</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-300 ml-auto group-hover:text-purple-500 transition-colors" />
+            </Link>
+          </div>
+        </section>
+
+        {/* ── Tiến độ học tập ── */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold">Tiến độ học tập</h2>
+            <Link href="/learning"
+              className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+              Chi tiết <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { href: '/language', label: 'Ngoại ngữ', color: '#2563EB', bg: 'bg-blue-50', text: 'text-blue-700' },
+              { href: '/math',     label: 'Toán học',  color: '#7C3AED', bg: 'bg-purple-50', text: 'text-purple-700' },
+              { href: '/viet',     label: 'Tiếng Việt', color: '#DC2626', bg: 'bg-red-50', text: 'text-red-700' },
+            ].map((subject) => (
+              <Link key={subject.href} href={subject.href}
+                className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-all group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-semibold">{subject.label}</span>
+                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500" />
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: '40%', background: subject.color }} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">Tiếp tục học →</p>
+              </Link>
+            ))}
+          </div>
         </section>
 
         {/* ── Bottom padding ── */}

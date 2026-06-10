@@ -10,7 +10,7 @@ import { searchConcepts, getIndexStats, rewriteQuery } from '../../services/rag'
 import {
   getBrain, updateBrain, updateMastery, deleteBrain,
   extractTopic, detectLevel, extractMistakes,
-  buildBrainContext, buildSummary,
+  buildBrainContext,
 } from '../../services/conversation-brain';
 import { buildResponseStrategy, strategyToPrompt } from '../../services/response-strategy';
 import { orchestrate } from '../../services/orchestrator';
@@ -220,13 +220,11 @@ export async function aiRoutes(app: FastifyInstance) {
     }
 
     // ── Phase 3 — Multi-Agent System ──────────────────────────────────────────
-    const agentResults = await runMultiAgent({
+    const agentResults = runMultiAgent({
       subject,
       mode: effectiveMode,
       brain,
       message: lastUserMsg,
-      ragHits: ragSources.length,
-      userId: sub,
     });
 
     const systemParts = [basePrompt, strategyPrompt];
@@ -292,15 +290,11 @@ export async function aiRoutes(app: FastifyInstance) {
         const topic = extractTopic(lastUserMsg) ?? brain.topic;
         const level = detectLevel(lastUserMsg, brain.level);
         const mistakes = effectiveMode === 'homework' ? extractMistakes(aiFullContent) : [];
-        const summary = newCount > 8 ? buildSummary({ ...brain, topic, level, mistakes: brain.mistakes }, lastUserMsg) : brain.summary;
-
         const mergedMistakes = [...brain.mistakes, ...mistakes].slice(-6);
         updateBrain(sub, subject, {
           topic,
           level,
-          mode: effectiveMode,
           mistakes,
-          summary,
           messageCount: newCount,
           goal: brain.goal ?? (newCount === 1 ? lastUserMsg.slice(0, 100) : undefined),
         }).catch(() => {});
@@ -370,18 +364,8 @@ export async function aiRoutes(app: FastifyInstance) {
         recordProviderCall(usedProvider, { latencyMs: Date.now() - streamBeginAt, tokens: approxTokens, success: true }).catch(() => {});
 
         // ── Module 8: Agent Monitor (async) ──────────────────────────────────
-        if (agentResults.length > 0) {
-          for (const r of agentResults) {
-            const agentName = r.agent.toLowerCase().replace(/ /g, '_') as MonitoredAgent;
-            const knownAgents: MonitoredAgent[] = [
-              'tutor', 'math', 'quiz', 'homework', 'knowledge_graph',
-              'reflection', 'self_correction', 'critic', 'planner',
-              'motivation', 'career', 'language', 'learning_coach',
-            ];
-            if (knownAgents.includes(agentName)) {
-              recordAgentCall(agentName, 0, true).catch(() => {});
-            }
-          }
+        for (const r of agentResults) {
+          recordAgentCall(r.agent as MonitoredAgent, 0, true).catch(() => {});
         }
       }
     } catch {

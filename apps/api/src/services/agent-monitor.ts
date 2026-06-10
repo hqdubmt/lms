@@ -9,20 +9,7 @@ import { redis } from './redis';
 const ENABLED = process.env.ENABLE_AGENT_MONITOR !== 'false';
 const TTL = 30 * 24 * 3600;
 
-export type MonitoredAgent =
-  | 'tutor'
-  | 'math'
-  | 'quiz'
-  | 'homework'
-  | 'knowledge_graph'
-  | 'reflection'
-  | 'self_correction'
-  | 'critic'
-  | 'planner'
-  | 'motivation'
-  | 'career'
-  | 'language'
-  | 'learning_coach';
+export type MonitoredAgent = 'tutor' | 'review' | 'planner' | 'language';
 
 export interface AgentStats {
   agent: MonitoredAgent;
@@ -80,18 +67,10 @@ export async function getAgentDashboard(
   days = 7,
 ): Promise<Record<MonitoredAgent, AgentStats[]>> {
   if (!ENABLED) {
-    return {
-      tutor: [], math: [], quiz: [], homework: [], knowledge_graph: [],
-      reflection: [], self_correction: [], critic: [], planner: [],
-      motivation: [], career: [], language: [], learning_coach: [],
-    };
+    return { tutor: [], review: [], planner: [], language: [] };
   }
 
-  const agents: MonitoredAgent[] = [
-    'tutor', 'math', 'quiz', 'homework', 'knowledge_graph',
-    'reflection', 'self_correction', 'critic', 'planner',
-    'motivation', 'career', 'language', 'learning_coach',
-  ];
+  const agents: MonitoredAgent[] = ['tutor', 'review', 'planner', 'language'];
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     dates.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
