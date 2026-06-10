@@ -586,33 +586,34 @@ function NotificationsTab() {
 
 // ─── Apps Tab ────────────────────────────────────────────────────────────────
 
-const MOBILE_VERSION = 'v1.9.0';
-const DESKTOP_VERSION = 'v2.0.0';
+const MOBILE_VERSION = 'v2.0.0';
+const DESKTOP_VERSION = 'v2.1.0';
 
 const APPS = [
   {
     id: 'android',
     label: 'Android',
-    desc: `Tương thích Android 7.0 trở lên · ${MOBILE_VERSION} · Mini Games, Battle Quiz, Guild`,
+    desc: `Tương thích Android 7.0 trở lên · ${MOBILE_VERSION} · Mini Games, Battle Quiz, Guild, Tiếng Việt`,
     icon: Smartphone,
     iconBg: 'bg-green-50',
     iconColor: 'text-green-600',
     btnColor: 'bg-green-600 hover:bg-green-700',
-    href: `/downloads/masterlms-v1.9.0.apk`,
+    href: `/downloads/masterlms-v2.0.0.apk`,
     badge: 'APK',
     note: 'Cho phép cài từ nguồn không rõ trong Cài đặt → Bảo mật trước khi cài đặt.',
   },
   {
     id: 'desktop',
     label: 'Desktop (Linux)',
-    desc: `Ứng dụng máy tính · ${DESKTOP_VERSION} · Mini Games, Battle Quiz, Guild`,
+    desc: `Ứng dụng máy tính · ${DESKTOP_VERSION} · Mini Games, Battle Quiz, Guild, Tiếng Việt`,
     icon: Monitor,
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     btnColor: 'bg-blue-600 hover:bg-blue-700',
-    href: `/downloads/MasterLMS-2.0.0.AppImage`,
+    href: `/downloads/MasterLMS-2.1.0.AppImage`,
     badge: 'AppImage',
-    note: 'Hoặc tải file .deb: /downloads/masterlms-desktop_2.0.0_amd64.deb',
+    note: 'Hoặc tải file .deb: masterlms-desktop_2.1.0_amd64.deb',
+    deb: `/downloads/masterlms-desktop_2.1.0_amd64.deb`,
   },
 ];
 
@@ -632,7 +633,13 @@ function AppsTab() {
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-500">{app.badge}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{app.desc}</p>
-                {app.note && <p className="text-[11px] text-amber-600 mt-1.5 leading-relaxed">{app.note}</p>}
+                {app.note && (
+                  <p className="text-[11px] text-amber-600 mt-1.5 leading-relaxed">
+                    {(app as any).deb
+                      ? <>Hoặc tải file .deb: <a href={(app as any).deb} className="underline hover:text-amber-700" target="_blank" rel="noreferrer">masterlms-desktop_2.1.0_amd64.deb</a></>
+                      : app.note}
+                  </p>
+                )}
               </div>
               <a
                 href={app.href}
