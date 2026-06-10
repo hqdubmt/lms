@@ -9,6 +9,7 @@
  */
 
 import type { BrainState } from './conversation-brain';
+import type { DnaV1 } from './learning-dna';
 
 export type AgentType = 'tutor' | 'review' | 'planner' | 'language';
 
@@ -106,21 +107,26 @@ function tutorAgent(brain: BrainState, mode: string, subject: Subject, message: 
 }
 
 // ─── Review Agent ─────────────────────────────────────────────────────────────
-// Phân tích lỗi sai của học sinh
+// Phân tích lỗi sai của học sinh + DNA weak topics
 
-function reviewAgent(brain: BrainState): AgentResult | null {
-  if (brain.mistakes.length < 3) return null;
-  const types = [...new Set(brain.mistakes.slice(-4).map(m => m.type))];
+function reviewAgent(brain: BrainState, dna?: DnaV1): AgentResult | null {
+  const brainTypes = brain.mistakes.length >= 3
+    ? [...new Set(brain.mistakes.slice(-4).map(m => m.type))]
+    : [];
+  const dnaWeak = dna?.weakTopics.slice(0, 2) ?? [];
+  const combined = [...new Set([...brainTypes, ...dnaWeak])];
+
+  if (combined.length === 0) return null;
   return {
     agent: 'review',
-    hint: `[Review Agent] Học sinh hay mắc lỗi: ${types.join(', ')}. Chủ động nhắc nhở và giải thích để tránh tái phạm trong phản hồi này.`,
+    hint: `[Review Agent] Học sinh hay mắc lỗi / chủ đề yếu: ${combined.join(', ')}. Chủ động nhắc nhở và giải thích để tránh tái phạm trong phản hồi này.`,
   };
 }
 
 // ─── Planner Agent ────────────────────────────────────────────────────────────
-// Đề xuất bước học tiếp + coaching tiến độ
+// Đề xuất bước học tiếp + coaching tiến độ + DNA
 
-function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
+function plannerAgent(brain: BrainState, subject: Subject, dna?: DnaV1): AgentResult | null {
   const entries = Object.entries(brain.mastery);
   const weak = entries.filter(([, v]) => v < 0.5).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([k]) => k);
   const near = entries.filter(([, v]) => v >= 0.5 && v < 0.8).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([k]) => k);
@@ -133,12 +139,25 @@ function plannerAgent(brain: BrainState, subject: Subject): AgentResult | null {
   };
 
   const parts: string[] = [];
+
+  // DNA weak topics — ưu tiên cao hơn brain mastery
+  if (dna?.weakTopics.length) {
+    parts.push(`DNA yếu: ${dna.weakTopics.slice(0, 2).join(', ')} — cần ôn tập`);
+  }
+
   if (weak.length > 0) parts.push(`Ưu tiên ôn tập: ${weak.join(', ')}`);
   if (near.length > 0) parts.push(`Gần thành thạo: ${near.join(', ')} — chỉ cần thêm luyện tập`);
   if (brain.messageCount > 0 && brain.messageCount % 5 === 0) {
     parts.push(`Học sinh đã học ${brain.messageCount} lần — nên tổng kết kiến thức đã học`);
   }
-  if (weak.length > 0 || near.length > 0) {
+
+  // Gợi ý môn yêu thích nếu đang học khác
+  if (dna?.favoriteSubject && dna.favoriteSubject !== subject) {
+    const subjectName = { language: 'Ngoại ngữ', math: 'Toán', viet: 'Tiếng Việt' }[dna.favoriteSubject];
+    parts.push(`Học sinh học tốt nhất ở môn ${subjectName}`);
+  }
+
+  if (weak.length > 0 || near.length > 0 || dna?.weakTopics.length) {
     parts.push(`Lộ trình: ${SUBJECT_PATH[subject]}`);
   }
 
@@ -195,16 +214,17 @@ export interface MultiAgentParams {
   mode: string;
   brain: BrainState;
   message: string;
+  dna?: DnaV1;
 }
 
 export function runMultiAgent(params: MultiAgentParams): AgentResult[] {
-  const { subject, mode, brain, message } = params;
+  const { subject, mode, brain, message, dna } = params;
   const s = subject as Subject;
 
   const results: Array<AgentResult | null> = [
     tutorAgent(brain, mode, s, message),
-    reviewAgent(brain),
-    plannerAgent(brain, s),
+    reviewAgent(brain, dna),
+    plannerAgent(brain, s, dna),
     languageAgent(s, message, brain),
   ];
 

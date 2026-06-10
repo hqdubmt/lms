@@ -59,9 +59,23 @@ const aiFeedbackSchema = new mongoose.Schema({
 });
 aiFeedbackSchema.index({ userId: 1, messageId: 1 }, { unique: true });
 
-// Learning DNA schema — Phase 15
+// Learning DNA schema — V1 (bna.md)
 const learningDnaSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
+  // V1 fields
+  topicScores: [{
+    topic: { type: String, required: true },
+    subject: { type: String, required: true },
+    score: { type: Number, default: 0 },
+    interactions: { type: Number, default: 0 },
+    _id: false,
+  }],
+  langCount: { type: Number, default: 0 },
+  mathCount: { type: Number, default: 0 },
+  vietCount: { type: Number, default: 0 },
+  quizTotal: { type: Number, default: 0 },
+  quizCorrect: { type: Number, default: 0 },
+  // Legacy fields (kept for backward compat)
   style: { type: String, enum: ['visual', 'reading', 'practice', 'mixed'], default: 'mixed' },
   preferDetail: { type: Boolean, default: false },
   preferExamples: { type: Boolean, default: true },

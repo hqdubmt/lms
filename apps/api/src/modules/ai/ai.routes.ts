@@ -27,6 +27,7 @@ import { awardXP } from '../../services/xp-gamification';
 import { recordTimelineEvent } from '../../services/timeline';
 import { analyzeKnowledgeGap } from '../../services/knowledge-gap';
 import { getDifficultyLevel } from '../../services/adaptive-learning';
+import { getDnaV1, buildDnaV1Hint } from '../../services/learning-dna';
 
 const CHAT_SESSION_TTL = 7 * 24 * 3600;
 const MAX_HISTORY_MESSAGES = 20;
@@ -155,8 +156,11 @@ export async function aiRoutes(app: FastifyInstance) {
     const intent = detectIntent(lastUserMsg);
     const effectiveMode = intent.primary !== 'tutor' ? intent.primary : mode;
 
-    // ── Conversation Brain ───────────────────────────────────────────────────
-    const brain = await getBrain(sub, subject);
+    // ── Conversation Brain + DNA V1 ──────────────────────────────────────────
+    const [brain, dna] = await Promise.all([
+      getBrain(sub, subject),
+      getDnaV1(sub).catch(() => null),
+    ]);
 
     // ── AI Orchestrator ──────────────────────────────────────────────────────
     const ragSubject = (subject === 'language' || subject === 'viet') ? subject : 'math';
@@ -225,10 +229,14 @@ export async function aiRoutes(app: FastifyInstance) {
       mode: effectiveMode,
       brain,
       message: lastUserMsg,
+      dna: dna ?? undefined,
     });
+
+    const dnaHint = dna ? buildDnaV1Hint(dna) : '';
 
     const systemParts = [basePrompt, strategyPrompt];
     if (brainContext) systemParts.push(`\nTrạng thái học tập:\n${brainContext}`);
+    if (dnaHint) systemParts.push(`\n${dnaHint}`);
     if (ragContextBlock) systemParts.push(`\nNội dung giáo trình liên quan:\n${ragContextBlock}`);
     if (langResult) systemParts.push(`\nYêu cầu format phản hồi: ${langResult.hint}`);
     if (adaptiveBlock) systemParts.push(adaptiveBlock);

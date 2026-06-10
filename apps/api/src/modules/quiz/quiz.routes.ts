@@ -4,6 +4,7 @@ import { requireAuth, requireInstructor } from '../../middleware/auth';
 import { ollamaChat } from '../../services/ollama';
 import { getBrain, updateBrain, updateMastery } from '../../services/conversation-brain';
 import { syncLearningStateFromBrain } from '../../services/learning-state';
+import { recordTopicEvent } from '../../services/learning-dna';
 
 function topicToSubject(topic: string): string {
   const t = topic.toLowerCase();
@@ -198,7 +199,7 @@ export async function quizRoutes(app: FastifyInstance) {
       data: { quizSetId: id, userId: sub, score, answers: graded as any, timeTaken },
     });
 
-    // Async: sync quiz result → AI brain → learning state
+    // Async: sync quiz result → AI brain → learning state → DNA V1
     const subject = topicToSubject(quiz.topic);
     (async () => {
       try {
@@ -210,6 +211,13 @@ export async function quizRoutes(app: FastifyInstance) {
         }
         const brain = await getBrain(sub, subject);
         await syncLearningStateFromBrain(sub, subject, brain);
+
+        // DNA V1: ghi từng câu đúng/sai theo topic
+        if (subject !== 'general') {
+          for (const g of graded) {
+            await recordTopicEvent(sub, subject, quiz.topic, g.isCorrect ? 'quiz_correct' : 'quiz_wrong');
+          }
+        }
       } catch { /* fire-and-forget */ }
     })();
 
