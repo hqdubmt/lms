@@ -26,6 +26,10 @@ export type AchievementId =
   | 'HOMEWORK_HERO'
   | 'MATH_MASTER'
   | 'LANGUAGE_EXPERT'
+  // PSv1 achievements
+  | 'FIRST_LESSON'
+  | 'PERFECT_QUIZ'
+  | 'VOCABULARY_MASTER'
   // Game achievements (game.md)
   | 'MATH_ROOKIE'
   | 'SPEED_MATH_PRO'
@@ -57,6 +61,9 @@ const ACHIEVEMENT_DEFS: Record<AchievementId, { label: string; description: stri
   HOMEWORK_HERO:   { label: 'Homework Hero',      description: 'Nộp 10 bài tập về nhà' },
   MATH_MASTER:        { label: 'Math Master',          description: 'Đạt thành thạo ≥80% trong Toán học' },
   LANGUAGE_EXPERT:   { label: 'Language Expert',      description: 'Đạt thành thạo ≥80% trong Ngoại ngữ' },
+  FIRST_LESSON:      { label: 'Bài học đầu tiên',     description: 'Hoàn thành bài học đầu tiên' },
+  PERFECT_QUIZ:      { label: 'Perfect Quiz',         description: 'Đạt 100% điểm trong bài kiểm tra' },
+  VOCABULARY_MASTER: { label: 'Vocabulary Master',    description: 'Trả lời đúng 100 từ vựng' },
   MATH_ROOKIE:       { label: 'Math Rookie',           description: 'Hoàn thành trò chơi Speed Math lần đầu' },
   SPEED_MATH_PRO:    { label: 'Speed Math Pro',        description: 'Đạt 100% trong Speed Math' },
   VOCAB_HUNTER:      { label: 'Vocabulary Hunter',     description: 'Hoàn thành 10 lần Vocabulary Hunter' },
@@ -124,6 +131,9 @@ export async function checkAndUnlockAchievements(
     currentStreak?: number;
     topMastery?: number;
     subject?: string;
+    lessonCount?: number;
+    perfectQuiz?: boolean;
+    vocabCorrect?: number;
   },
 ): Promise<AchievementId[]> {
   if (!ENABLED) return [];
@@ -150,6 +160,9 @@ export async function checkAndUnlockAchievements(
   check('HOMEWORK_HERO',   (context.homeworkCount ?? 0) >= 10);
   check('MATH_MASTER',     context.subject === 'math' && (context.topMastery ?? 0) >= 0.8);
   check('LANGUAGE_EXPERT', context.subject === 'language' && (context.topMastery ?? 0) >= 0.8);
+  check('FIRST_LESSON',    (context.lessonCount ?? 0) >= 1);
+  check('PERFECT_QUIZ',    !!(context.perfectQuiz));
+  check('VOCABULARY_MASTER', (context.vocabCorrect ?? 0) >= 100);
 
   if (newlyUnlocked.length > 0) {
     await redis.set(achievementKey(userId), JSON.stringify(store), 'EX', TTL);

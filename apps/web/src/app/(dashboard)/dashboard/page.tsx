@@ -5,13 +5,37 @@ import Link from 'next/link';
 import {
   BookOpen, Calendar, Clock, Play, ChevronRight,
   TrendingUp, Award, Video, ExternalLink,
-  Bell, Search, ArrowRight, Brain, ClipboardList, Sparkles, Zap,
+  Bell, Search, ArrowRight, Brain, ClipboardList, Sparkles, Zap, Flame, Star,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/lib/api';
 import { formatDuration } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Recommendation {
+  subject: string;
+  topic: string;
+  reason: string;
+  nextAction: string;
+}
+
+interface SubjectMastery {
+  subject: string;
+  label: string;
+  score: number;
+  masteryLevel: string;
+}
+
+interface ProgressData {
+  xp: number;
+  level: number;
+  levelName: string;
+  xpToNextLevel: number;
+  streak: number;
+  bestStreak: number;
+  mastery: Record<string, number>;
+}
 
 interface EnrolledCourse {
   id: string;
@@ -233,6 +257,9 @@ export default function DashboardPage() {
   const [enrolled, setEnrolled] = useState<EnrolledCourse[]>([]);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [mastery, setMastery] = useState<SubjectMastery[]>([]);
+  const [progress, setProgress] = useState<ProgressData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -240,13 +267,19 @@ export default function DashboardPage() {
       api.get<any>('/users/enrollments').catch(() => []),
       api.get<LiveSession[]>('/users/schedule').catch(() => []),
       api.get<any>('/todos').catch(() => ({ items: [] })),
-    ]).then(([enrollData, scheduleData, todoData]) => {
+      api.get<Recommendation>('/learning/recommendation').catch(() => null),
+      api.get<{ subjects: SubjectMastery[] }>('/learning/mastery').catch(() => null),
+      api.get<ProgressData>('/learning/progress').catch(() => null),
+    ]).then(([enrollData, scheduleData, todoData, recData, masteryData, progressData]) => {
       const enrollList = Array.isArray(enrollData) ? enrollData : enrollData?.enrollments ?? [];
       const schedList = Array.isArray(scheduleData) ? scheduleData : [];
       const todoList: Todo[] = (todoData?.items ?? (Array.isArray(todoData) ? todoData : []));
       setEnrolled(enrollList);
       setSessions(schedList.filter((s: LiveSession) => s.status !== 'ENDED'));
       setTodos(todoList.filter((t: Todo) => t.status !== 'DONE').slice(0, 5));
+      if (recData) setRecommendation(recData);
+      if (masteryData?.subjects) setMastery(masteryData.subjects);
+      if (progressData) setProgress(progressData);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -350,7 +383,76 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Stats ── */}
+        {/* ── PSv1 Progress Stats: Level / XP / Streak ── */}
+        {loading ? (
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)}
+          </div>
+        ) : progress ? (
+          <div className="grid grid-cols-3 gap-3">
+            {/* Level */}
+            <div className="bg-white rounded-2xl border border-indigo-100 p-4 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  <Star className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Cấp độ</p>
+                  <p className="text-lg font-bold leading-tight">Lv.{progress.level}</p>
+                </div>
+              </div>
+              <p className="text-xs font-medium text-indigo-600 mt-1">{progress.levelName}</p>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-500 rounded-full"
+                  style={{
+                    width: progress.xpToNextLevel === 0 ? '100%' :
+                      `${Math.min(100, 100 - (progress.xpToNextLevel / (progress.xpToNextLevel + progress.xp % 150)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">{progress.xpToNextLevel > 0 ? `${progress.xpToNextLevel} XP lên level` : 'Max level'}</p>
+            </div>
+
+            {/* XP */}
+            <div className="bg-white rounded-2xl border border-amber-100 p-4 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center">
+                  <Zap className="h-5 w-5 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Điểm XP</p>
+                  <p className="text-lg font-bold leading-tight">{progress.xp.toLocaleString()}</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Tổng XP tích lũy</p>
+              <Link href="/learning/flow" className="text-[10px] text-amber-600 font-medium hover:underline mt-auto">
+                Xem hệ thống XP →
+              </Link>
+            </div>
+
+            {/* Streak */}
+            <div className="bg-white rounded-2xl border border-orange-100 p-4 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-xl bg-orange-50 flex items-center justify-center">
+                  <Flame className="h-5 w-5 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Streak</p>
+                  <p className="text-lg font-bold leading-tight">{progress.streak} ngày</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Kỷ lục: {progress.bestStreak} ngày</p>
+              {progress.streak >= 3 && (
+                <span className="text-[10px] text-orange-600 font-semibold">
+                  {progress.streak >= 30 ? '🔥 +100 XP/ngày' : progress.streak >= 7 ? '🔥 +20 XP/ngày' : '🔥 +10 XP/ngày'}
+                </span>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── Stats (khóa học) ── */}
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
@@ -423,33 +525,52 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* ── Hôm nay học gì / Lịch học ── */}
-        {(loading || upcomingSessions.length > 0) && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold">Hôm nay học gì</h2>
-                <p className="text-xs text-muted-foreground">Buổi học trực tuyến sắp tới</p>
-              </div>
-              <Link href="/learning"
-                className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-                Lộ trình <ArrowRight className="h-4 w-4" />
-              </Link>
+        {/* ── Hôm nay học gì — từ Recommendation Engine ── */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-bold">Hôm nay học gì</h2>
+              <p className="text-xs text-muted-foreground">AI đề xuất dựa trên tiến độ của bạn</p>
             </div>
+            <Link href="/learning"
+              className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+              Lộ trình <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
 
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2].map((i) => <Skeleton key={i} className="h-20" />)}
+          {loading ? (
+            <Skeleton className="h-24" />
+          ) : recommendation ? (
+            <div className="bg-white rounded-2xl border border-indigo-100 p-5 flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <Brain className="h-6 w-6 text-indigo-600" />
               </div>
-            ) : (
-              <div className="space-y-3">
-                {upcomingSessions.map((s) => (
-                  <SessionRow key={s.id} session={s} />
-                ))}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm">{recommendation.topic}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{recommendation.reason}</p>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-medium">
+                    {recommendation.nextAction}
+                  </span>
+                </div>
               </div>
-            )}
-          </section>
-        )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 py-10 text-center">
+              <Brain className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Bắt đầu học để nhận đề xuất từ AI</p>
+            </div>
+          )}
+
+          {/* Live sessions (nếu có) */}
+          {upcomingSessions.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {upcomingSessions.map((s) => (
+                <SessionRow key={s.id} session={s} />
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* ── Bài tập cần làm ── */}
         <section>
@@ -542,25 +663,39 @@ export default function DashboardPage() {
               Chi tiết <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { href: '/language', label: 'Ngoại ngữ', color: '#2563EB', bg: 'bg-blue-50', text: 'text-blue-700' },
-              { href: '/math',     label: 'Toán học',  color: '#7C3AED', bg: 'bg-purple-50', text: 'text-purple-700' },
-              { href: '/viet',     label: 'Tiếng Việt', color: '#DC2626', bg: 'bg-red-50', text: 'text-red-700' },
-            ].map((subject) => (
-              <Link key={subject.href} href={subject.href}
-                className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-all group">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold">{subject.label}</span>
-                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500" />
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: '40%', background: subject.color }} />
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">Tiếp tục học →</p>
-              </Link>
-            ))}
-          </div>
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { key: 'language', href: '/language', label: 'Ngoại ngữ', color: '#2563EB' },
+                { key: 'math',     href: '/math',     label: 'Toán học',  color: '#7C3AED' },
+                { key: 'viet',     href: '/viet',     label: 'Tiếng Việt', color: '#DC2626' },
+              ].map((subject) => {
+                const m = mastery.find((s) => s.subject === subject.key);
+                const score = m?.score ?? 0;
+                const level = m?.masteryLevel ?? 'Beginner';
+                return (
+                  <Link key={subject.href} href={subject.href}
+                    className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-all group">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold">{subject.label}</span>
+                      <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500" />
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${score}%`, background: subject.color }} />
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">{level}</span>
+                      <span className="font-semibold" style={{ color: subject.color }}>{score}%</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* ── Bottom padding ── */}
