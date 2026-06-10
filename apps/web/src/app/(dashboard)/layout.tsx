@@ -54,6 +54,7 @@ const BASE_NAV_GROUPS = [
         groupIcon: Brain,
         items: [
             { href: '/learning',          label: 'Tiến bộ',   icon: TrendingUp, exact: true },
+            { href: '/learning/flow',     label: 'Learning Flow', icon: Map },
             { href: '/learning/coach',    label: 'AI Gia sư', icon: Bot },
             { href: '/learning/path',     label: 'Lộ trình',  icon: Map },
             { href: '/learning/revision', label: 'Ôn tập',    icon: RotateCcw },

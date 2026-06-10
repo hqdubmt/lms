@@ -154,6 +154,18 @@ export default function LanguagePage() {
             </CardContent>
           </Card>
         </Link>
+        <Link href="/language/game/sentence-builder">
+          <Card className="bg-gradient-to-r from-amber-500 to-orange-500 border-0 text-white hover:opacity-95 transition-opacity cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <PlayCircle className="h-9 w-9 shrink-0" />
+              <div className="flex-1">
+                <div className="font-bold text-base">Sentence Builder</div>
+                <div className="text-sm opacity-90">Sắp xếp từ thành câu đúng. Luyện ngữ pháp!</div>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
         <Link href="/language/game/pronunciation-challenge">
           <Card className="bg-gradient-to-r from-pink-500 to-rose-600 border-0 text-white hover:opacity-95 transition-opacity cursor-pointer h-full">
             <CardContent className="p-4 flex items-center gap-4">

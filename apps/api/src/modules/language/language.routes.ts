@@ -1944,4 +1944,74 @@ ${convoText.slice(0, 1200)}`;
 
     return reply.send({ ...scoreData, avgScore, xpEarned, turns: userTurns });
   });
+
+  // ─── SENTENCE BUILDER GAME ────────────────────────────────────────────────
+  // ch.md: Sentence Builder — sắp xếp từ thành câu đúng
+
+  app.get('/game/sentence-builder', { preHandler: requireAuth }, async (req) => {
+    const { lang, count = '8', setId } = req.query as { lang?: string; count?: string; setId?: string };
+    const take = Math.min(parseInt(count, 10), 15);
+
+    const where: any = { isPublic: true };
+    if (lang) where.language = lang;
+    if (setId) where.setId = setId;
+
+    const items = await prisma.vocabItem.findMany({
+      where: { ...where, example: { not: null } },
+      take: take * 3,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, word: true, translation: true, example: true },
+    });
+
+    const usable = items.filter(i => {
+      const ws = (i.example ?? '').split(' ').filter(w => w.trim().length > 0);
+      return ws.length >= 3;
+    }).slice(0, take);
+
+    const questions = usable.map((item, i) => {
+      const words = (item.example ?? '').split(' ').filter(w => w.trim().length > 0);
+      const shuffled = [...words].sort(() => Math.random() - 0.5);
+      return {
+        id: `sb${i}`,
+        hint: item.translation ?? item.word,
+        keyword: item.word,
+        words: shuffled,
+        answer: words,
+      };
+    });
+
+    return { questions, timeLimit: 180 };
+  });
+
+  app.post('/game/sentence-builder/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      answers: z.record(z.array(z.string())),
+      questions: z.array(z.object({ id: z.string(), answer: z.array(z.string()) })),
+    }).parse(req.body);
+
+    let correct = 0;
+    const results = body.questions.map(q => {
+      const given = (body.answers[q.id] ?? []).join(' ').toLowerCase().trim();
+      const expected = q.answer.join(' ').toLowerCase().trim();
+      const isCorrect = given === expected;
+      if (isCorrect) correct++;
+      return { id: q.id, correct: isCorrect, expected: q.answer.join(' '), given: (body.answers[q.id] ?? []).join(' ') };
+    });
+
+    const total = body.questions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 12;
+    if (score === 100) xpEarned += 50;
+    if (score >= 80) xpEarned += 20;
+
+    await addXP(sub, xpEarned);
+    await prisma.langUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return reply.send({ results, correct, total, score, xpEarned });
+  });
 }

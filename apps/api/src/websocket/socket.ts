@@ -5,16 +5,19 @@ import { redis } from '../services/redis';
 import { Message } from '../services/mongo';
 import { prisma } from '../services/prisma';
 import { env } from '../config/env';
+import { awardXP } from '../services/xp-gamification';
 import type { FastifyInstance } from 'fastify';
 
 // ── Battle Quiz helpers ───────────────────────────────────────────
 function rnd(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function shuffle<T>(a: T[]): T[] { return a.sort(() => Math.random() - 0.5); }
+function shuffle<T>(a: T[]): T[] { return [...a].sort(() => Math.random() - 0.5); }
 
+type BattleSubject = 'math' | 'language' | 'viet';
 interface BattleQuestion { q: string; options: string[]; answer: number; }
 interface BattlePlayer { userId: string; name: string; score: number; }
 interface BattleRoom {
   id: string; code: string;
+  subject: BattleSubject;
   players: BattlePlayer[];
   questions: BattleQuestion[];
   currentQ: number;
@@ -23,7 +26,7 @@ interface BattleRoom {
   xpAwarded: boolean;
 }
 
-function generateBattleQuestions(count = 10): BattleQuestion[] {
+function generateMathQuestions(count = 10): BattleQuestion[] {
   return Array.from({ length: count }, () => {
     const op = ['+', '-', '×', '÷'][Math.floor(Math.random() * 4)];
     let a: number, b: number, ans: number, q: string;
@@ -35,6 +38,72 @@ function generateBattleQuestions(count = 10): BattleQuestion[] {
     const options = shuffle([ans, ...wrongs]);
     return { q, options: options.map(String), answer: options.indexOf(ans) };
   });
+}
+
+async function generateLanguageQuestions(count = 10): Promise<BattleQuestion[]> {
+  const total = await prisma.vocabItem.count();
+  if (total < 4) return generateMathQuestions(count);
+
+  const skip = Math.max(0, Math.floor(Math.random() * (total - count * 4)));
+  const pool = await prisma.vocabItem.findMany({
+    take: Math.min(count * 4, total),
+    skip,
+    select: { word: true, translation: true },
+  });
+
+  if (pool.length < 4) return generateMathQuestions(count);
+
+  const questions: BattleQuestion[] = [];
+  const shuffled = shuffle(pool);
+  for (let i = 0; i + 3 < shuffled.length && questions.length < count; i += 4) {
+    const correct = shuffled[i];
+    const wrongs = [shuffled[i+1].translation, shuffled[i+2].translation, shuffled[i+3].translation];
+    const options = shuffle([correct.translation, ...wrongs]);
+    questions.push({
+      q: `"${correct.word}" nghĩa là gì?`,
+      options,
+      answer: options.indexOf(correct.translation),
+    });
+  }
+
+  while (questions.length < count) questions.push(...generateMathQuestions(1));
+  return questions.slice(0, count);
+}
+
+async function generateVietQuestions(count = 10): Promise<BattleQuestion[]> {
+  const total = await prisma.vietItem.count();
+  if (total < 4) return generateMathQuestions(count);
+
+  const skip = Math.max(0, Math.floor(Math.random() * (total - count * 4)));
+  const pool = await prisma.vietItem.findMany({
+    take: Math.min(count * 4, total),
+    skip,
+    select: { word: true, meaning: true },
+  });
+
+  if (pool.length < 4) return generateMathQuestions(count);
+
+  const questions: BattleQuestion[] = [];
+  const shuffled = shuffle(pool);
+  for (let i = 0; i + 3 < shuffled.length && questions.length < count; i += 4) {
+    const correct = shuffled[i];
+    const wrongs = [shuffled[i+1].meaning, shuffled[i+2].meaning, shuffled[i+3].meaning];
+    const options = shuffle([correct.meaning, ...wrongs]);
+    questions.push({
+      q: `"${correct.word}" có nghĩa là gì?`,
+      options,
+      answer: options.indexOf(correct.meaning),
+    });
+  }
+
+  while (questions.length < count) questions.push(...generateMathQuestions(1));
+  return questions.slice(0, count);
+}
+
+async function generateQuestions(subject: BattleSubject, count = 10): Promise<BattleQuestion[]> {
+  if (subject === 'language') return generateLanguageQuestions(count);
+  if (subject === 'viet') return generateVietQuestions(count);
+  return generateMathQuestions(count);
 }
 
 const BATTLE_KEY = (id: string) => `battle:room:${id}`;
@@ -74,7 +143,8 @@ export function setupSocket(app: FastifyInstance) {
 
   io.on('connection', async (socket) => {
     const user = (socket as any).user as { sub: string; role: string; name?: string; avatarUrl?: string };
-    const dbUser = await prisma.user.findUnique({ where: { id: user.sub }, select: { avatarUrl: true } });
+    const dbUser = await prisma.user.findUnique({ where: { id: user.sub }, select: { name: true, avatarUrl: true } });
+    user.name = dbUser?.name ?? user.name;
     user.avatarUrl = dbUser?.avatarUrl ?? undefined;
     console.log(`Socket connected: ${user.sub}`);
 
@@ -117,19 +187,22 @@ export function setupSocket(app: FastifyInstance) {
     });
 
     // ── Battle Quiz ───────────────────────────────────────────────
-    socket.on('battle:create', async () => {
+    socket.on('battle:create', async ({ subject = 'math' }: { subject?: BattleSubject } = {}) => {
+      const validSubject: BattleSubject = ['math', 'language', 'viet'].includes(subject) ? subject : 'math';
       const code = Math.random().toString(36).substring(2, 7).toUpperCase();
       const roomId = randomUUID();
+      const questions = await generateQuestions(validSubject, BATTLE_Q_TOTAL);
       const room: BattleRoom = {
         id: roomId, code,
+        subject: validSubject,
         players: [{ userId: user.sub, name: user.name || 'Player 1', score: 0 }],
-        questions: generateBattleQuestions(BATTLE_Q_TOTAL),
+        questions,
         currentQ: 0, answers: {}, state: 'waiting', xpAwarded: false,
       };
       await saveBattleRoom(room);
       await redis.set(BATTLE_CODE_KEY(code), roomId, 'EX', BATTLE_TTL);
       socket.join(`battle:${roomId}`);
-      socket.emit('battle:created', { roomId, code });
+      socket.emit('battle:created', { roomId, code, subject: validSubject });
     });
 
     socket.on('battle:join', async ({ code }: { code: string }) => {
@@ -148,7 +221,7 @@ export function setupSocket(app: FastifyInstance) {
       if (room.players.length === 2) {
         room.state = 'playing';
         await saveBattleRoom(room);
-        io.to(`battle:${roomId}`).emit('battle:start', { roomId, players: room.players, total: BATTLE_Q_TOTAL });
+        io.to(`battle:${roomId}`).emit('battle:start', { roomId, players: room.players, total: BATTLE_Q_TOTAL, subject: room.subject });
         setTimeout(async () => {
           const r = await getBattleRoom(roomId);
           if (!r) return;
@@ -193,18 +266,19 @@ export function setupSocket(app: FastifyInstance) {
           const sorted = [...room.players].sort((a, b) => b.score - a.score);
           const winner = sorted[0].score > sorted[1].score ? sorted[0].userId : null;
           await saveBattleRoom(room);
+          const xpGain: Array<{ userId: string; xp: number }> = [];
           for (const p of room.players) {
             const xp = p.userId === winner ? 80 : winner === null ? 50 : 30;
-            await redis.zincrby('xp:global:leaderboard', xp, p.userId);
+            await awardXP(p.userId, 'battle_quiz', xp);
+            xpGain.push({ userId: p.userId, xp });
           }
           io.to(`battle:${roomId}`).emit('battle:q_result', qResult);
           setTimeout(() => {
-            const winner2 = sorted[0].score > sorted[1].score ? sorted[0].userId : null;
             io.to(`battle:${roomId}`).emit('battle:end', {
-              winner: winner2,
+              winner,
               scores: Object.fromEntries(room.players.map(p => [p.userId, p.score])),
               players: room.players,
-              xpGain: room.players.map(p => ({ userId: p.userId, xp: p.userId === winner2 ? 80 : winner2 === null ? 50 : 30 })),
+              xpGain,
             });
           }, 2500);
         }
@@ -222,9 +296,19 @@ export function setupSocket(app: FastifyInstance) {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       redis.srem('online_users', user.sub);
       io.emit('user:offline', user.sub);
+
+      // Notify battle room if player disconnects mid-game
+      const battleRooms = Array.from(socket.rooms).filter(r => r.startsWith('battle:'));
+      for (const roomKey of battleRooms) {
+        const roomId = roomKey.replace('battle:', '');
+        const room = await getBattleRoom(roomId);
+        if (room && room.state === 'playing') {
+          socket.to(roomKey).emit('battle:opponent_left', { userId: user.sub });
+        }
+      }
     });
   });
 

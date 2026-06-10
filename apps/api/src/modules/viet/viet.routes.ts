@@ -1832,4 +1832,95 @@ Trả về JSON (KHÔNG markdown):
 
     return reply.send({ ...grading, total, xpEarned });
   });
+
+  // ─── GHÉP TỪ GAME ────────────────────────────────────────────────────────
+  // ch.md: Ghép Từ — ghép âm tiết thành từ đúng
+
+  app.get('/game/ghep-tu', { preHandler: requireAuth }, async (req) => {
+    const { count = '10' } = req.query as { count?: string };
+    const take = Math.min(parseInt(count, 10), 15);
+
+    const items = await prisma.vietItem.findMany({
+      where: { set: { isPublic: true } },
+      take: take * 4,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, word: true, meaning: true },
+    });
+
+    // Chỉ dùng từ có 2-4 âm tiết
+    const usable = items
+      .filter(i => {
+        const parts = i.word.trim().split(/\s+/);
+        return parts.length >= 2 && parts.length <= 4;
+      })
+      .slice(0, take);
+
+    if (usable.length === 0) {
+      // Fallback với từ ghép tiếng Việt cơ bản
+      const fallback = [
+        { id: 'f1', word: 'học sinh', meaning: 'Người đang đi học' },
+        { id: 'f2', word: 'giáo viên', meaning: 'Người dạy học' },
+        { id: 'f3', word: 'sách giáo khoa', meaning: 'Sách dùng để học' },
+        { id: 'f4', word: 'bài tập', meaning: 'Bài để luyện tập' },
+        { id: 'f5', word: 'lớp học', meaning: 'Nơi học bài' },
+      ].slice(0, take);
+      const questions = fallback.map((item, i) => {
+        const syllables = item.word.split(/\s+/);
+        // Thêm âm tiết nhiễu từ các từ khác
+        const distractors = fallback
+          .filter(x => x.id !== item.id)
+          .flatMap(x => x.word.split(/\s+/))
+          .sort(() => Math.random() - 0.5)
+          .slice(0, syllables.length);
+        const options = [...syllables, ...distractors].sort(() => Math.random() - 0.5);
+        return { id: `gt${i}`, meaning: item.meaning, answer: syllables, options };
+      });
+      return { questions, timeLimit: 120 };
+    }
+
+    const questions = usable.map((item, i) => {
+      const syllables = item.word.trim().split(/\s+/);
+      const distractors = usable
+        .filter(x => x.id !== item.id)
+        .flatMap(x => x.word.split(/\s+/))
+        .sort(() => Math.random() - 0.5)
+        .slice(0, syllables.length);
+      const options = [...syllables, ...distractors].sort(() => Math.random() - 0.5);
+      return { id: `gt${i}`, meaning: item.meaning, answer: syllables, options };
+    });
+
+    return { questions, timeLimit: 120 };
+  });
+
+  app.post('/game/ghep-tu/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      answers: z.record(z.array(z.string())),
+      questions: z.array(z.object({ id: z.string(), answer: z.array(z.string()) })),
+    }).parse(req.body);
+
+    let correct = 0;
+    const results = body.questions.map(q => {
+      const given = (body.answers[q.id] ?? []).join(' ').toLowerCase().trim();
+      const expected = q.answer.join(' ').toLowerCase().trim();
+      const isCorrect = given === expected;
+      if (isCorrect) correct++;
+      return { id: q.id, correct: isCorrect, expected: q.answer.join(' '), given: (body.answers[q.id] ?? []).join(' ') };
+    });
+
+    const total = body.questions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 10;
+    if (score === 100) xpEarned += 50;
+    if (score >= 80) xpEarned += 20;
+
+    await addXP(sub, xpEarned);
+    await prisma.vietUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return reply.send({ results, correct, total, score, xpEarned });
+  });
 }
