@@ -1,7 +1,7 @@
 {
   "name": "masterlms-desktop",
-  "version": "1.9.0",
-  "description": "MasterLMS Desktop - Quản lý học sinh toàn diện, IELTS Coach AI, Tiếng Trung, Tạo khoá học AI · AI Tutor OS v2 (Groq/Gemini/Claude/OpenAI/Ollama)",
+  "version": "2.0.0",
+  "description": "MasterLMS Desktop - Mini Games 4 giai đoạn, Battle Quiz Multiplayer, Guild, Leaderboard Pro · AI Tutor OS v2 (Groq/Gemini/Claude/OpenAI/Ollama)",
   "main": "main.js",
   "author": {
     "name": "MasterLMS",

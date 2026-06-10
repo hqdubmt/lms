@@ -72,4 +72,55 @@ export async function xpGamificationRoutes(app: FastifyInstance) {
 
     return reply.send({ entries: result, myRank });
   });
+
+  // GET /ai/leaderboard/subject?subject=math|lang|viet&limit=20
+  app.get('/leaderboard/subject', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { subject = 'math', limit: limitStr = '20' } = req.query as Record<string, string>;
+    const limit = Math.min(50, parseInt(limitStr, 10));
+
+    type Row = { rank: number; userId: string; name: string; avatarUrl: string | null; totalXP: number; isMe: boolean };
+
+    const buildResult = async (rows: Array<{ userId: string; xp: number }>): Promise<{ entries: Row[]; myRank: number | null }> => {
+      const uids = rows.map(r => r.userId);
+      const users = await prisma.user.findMany({
+        where: { id: { in: uids } },
+        select: { id: true, name: true, avatarUrl: true },
+      });
+      const uMap = Object.fromEntries(users.map(u => [u.id, u]));
+      const myIdx = rows.findIndex(r => r.userId === sub);
+      return {
+        entries: rows.map((r, i) => ({
+          rank: i + 1,
+          userId: r.userId,
+          name: uMap[r.userId]?.name ?? 'Ẩn danh',
+          avatarUrl: uMap[r.userId]?.avatarUrl ?? null,
+          totalXP: r.xp,
+          isMe: r.userId === sub,
+        })),
+        myRank: myIdx >= 0 ? myIdx + 1 : null,
+      };
+    };
+
+    if (subject === 'math') {
+      const rows = await prisma.mathUserStats.findMany({
+        take: limit, orderBy: { xp: 'desc' }, select: { userId: true, xp: true },
+      });
+      return reply.send(await buildResult(rows));
+    }
+    if (subject === 'lang') {
+      const rows = await prisma.langUserStats.findMany({
+        take: limit, orderBy: { xp: 'desc' }, select: { userId: true, xp: true },
+      });
+      return reply.send(await buildResult(rows));
+    }
+    if (subject === 'viet') {
+      const rows = await prisma.vietUserStats.findMany({
+        take: limit, orderBy: { xp: 'desc' }, select: { userId: true, xp: true },
+      });
+      return reply.send(await buildResult(rows));
+    }
+
+    return reply.status(400).send({ error: 'subject phải là math, lang, hoặc viet' });
+  });
 }

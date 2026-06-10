@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   BookOpen, Zap, Flame, Trophy, Star, ChevronRight,
-  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen, TrendingUp, GraduationCap, Volume2,
+  Plus, Brain, Globe, PlayCircle, Settings, FolderOpen, TrendingUp, GraduationCap, Volume2, Search, Mic, Bot,
 } from 'lucide-react';
 import { EXERCISE_ICONS, EXERCISE_TYPE_LABEL as EXERCISE_LABEL, LANG_NAMES } from '@/constants/language';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -139,6 +139,47 @@ export default function LanguagePage() {
           </Card>
         </Link>
       )}
+
+      {/* Mini Games */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Link href="/language/game/vocab-hunter">
+          <Card className="bg-gradient-to-r from-emerald-500 to-teal-600 border-0 text-white hover:opacity-95 transition-opacity cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <Search className="h-9 w-9 shrink-0" />
+              <div className="flex-1">
+                <div className="font-bold text-base">Vocabulary Hunter</div>
+                <div className="text-sm opacity-90">Đọc nghĩa — chọn từ đúng. Tích lũy XP!</div>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/language/game/pronunciation-challenge">
+          <Card className="bg-gradient-to-r from-pink-500 to-rose-600 border-0 text-white hover:opacity-95 transition-opacity cursor-pointer h-full">
+            <CardContent className="p-4 flex items-center gap-4">
+              <Mic className="h-9 w-9 shrink-0" />
+              <div className="flex-1">
+                <div className="font-bold text-base">Pronunciation Challenge</div>
+                <div className="text-sm opacity-90">Nghe → nói → AI chấm điểm phát âm!</div>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <Link href="/language/game/ai-conversation">
+        <Card className="bg-gradient-to-r from-indigo-500 to-violet-600 border-0 text-white hover:opacity-95 transition-opacity cursor-pointer">
+          <CardContent className="p-4 flex items-center gap-4">
+            <Bot className="h-9 w-9 shrink-0" />
+            <div className="flex-1">
+              <div className="font-bold text-base">AI Conversation</div>
+              <div className="text-sm opacity-90">AI đóng vai · hội thoại thực tế · nhận điểm Fluency</div>
+            </div>
+            <ChevronRight className="h-5 w-5 shrink-0" />
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Language Coach + IELTS + Pronunciation */}
       <div className="grid sm:grid-cols-3 gap-3">

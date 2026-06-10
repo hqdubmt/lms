@@ -42,6 +42,7 @@ const BASE_NAV_GROUPS = [
             { href: '/math',           label: 'Toán học',   icon: Calculator },
             { href: '/viet',           label: 'Tiếng Việt', icon: BookType },
             { href: '/quiz',           label: 'Quiz Game',  icon: Gamepad2 },
+            { href: '/game',           label: 'Mini Games', icon: Zap },
             { href: '/leaderboard',    label: 'Xếp hạng',   icon: Trophy },
             { href: '/schedule',       label: 'Phòng học',  icon: MonitorPlay },
             { href: '/todo',           label: 'Công việc',  icon: ClipboardList },

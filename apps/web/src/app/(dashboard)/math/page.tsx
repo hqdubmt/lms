@@ -172,6 +172,10 @@ export default function MathPage() {
           { href: '/math/review', icon: Brain, label: 'Ôn tập SRS', desc: stats?.reviewsDue ? `${stats.reviewsDue} khái niệm` : 'Tất cả ổn!', color: 'bg-blue-600', hot: (stats?.reviewsDue ?? 0) > 0 },
           { href: '/math/topics', icon: BookOpen, label: 'Chủ đề', desc: `${topics.length} chủ đề`, color: 'bg-indigo-600' },
           { href: '/math/exercises', icon: Target, label: 'Bài tập', desc: `${exercises.length} bài tập`, color: 'bg-violet-600' },
+          { href: '/math/game/speed-math', icon: Zap, label: 'Speed Math', desc: '60s tính nhanh', color: 'bg-orange-500' },
+          { href: '/math/game/formula-hunt', icon: Target, label: 'Formula Hunt', desc: 'Săn công thức', color: 'bg-indigo-500' },
+          { href: '/math/game/boss-battle', icon: Trophy, label: 'Boss Battle', desc: 'Chiến đấu Boss', color: 'bg-red-600' },
+          { href: '/math/game/adventure', icon: Brain, label: 'Adventure Map', desc: 'Bản đồ học tập', color: 'bg-teal-600' },
           { href: '/math/leaderboard', icon: Trophy, label: 'Bảng xếp hạng', desc: 'Top học viên', color: 'bg-amber-600' },
           { href: '/math/profile', icon: TrendingUp, label: 'Hồ sơ học tập', desc: 'Điểm mạnh / yếu', color: 'bg-emerald-600' },
         ].map((a) => (

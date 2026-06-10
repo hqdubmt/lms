@@ -21,6 +21,7 @@ import { env } from '../../config/env';
 import crypto from 'crypto';
 import { serveTTS } from '../../services/tts';
 import { getOrSet, cacheDelPattern } from '../../services/cache';
+import { aiChatOnce } from '../../services/ai-provider';
 
 // ─── SM-2 Spaced Repetition ───────────────────────────────────────────────────
 function sm2(quality: number, repetitions: number, interval: number, easeFactor: number) {
@@ -1677,5 +1678,158 @@ export async function vietRoutes(app: FastifyInstance) {
   app.get('/rag/stats', { preHandler: requireInstructor }, async (_req, reply) => {
     const stats = await getIndexStats('viet');
     return reply.send(stats);
+  });
+
+  // ─── CHÍNH TẢ THẦN TỐC GAME ──────────────────────────────────────────────
+
+  const CHINH_TA_SENTENCES: Record<string, string[]> = {
+    easy: [
+      'Con mèo ngồi trên mái nhà.',
+      'Trời hôm nay trong xanh và đẹp.',
+      'Bạn ơi, đi học thôi nào.',
+      'Mẹ nấu cơm thơm ngon lắm.',
+      'Em học bài rất chăm chỉ.',
+      'Cây tre xanh mướt bên dòng sông.',
+      'Hoa đào nở rộ vào mùa xuân.',
+      'Bé chơi đùa vui vẻ ngoài sân.',
+      'Chị gái tôi rất hiền và tốt bụng.',
+      'Ông bà sống ở quê rất vui.',
+    ],
+    medium: [
+      'Những chiếc lá vàng rơi nhẹ theo từng cơn gió thu.',
+      'Học sinh cần rèn luyện thói quen đọc sách mỗi ngày.',
+      'Đất nước Việt Nam có nhiều danh lam thắng cảnh tuyệt đẹp.',
+      'Chăm chỉ học tập là chìa khóa dẫn đến thành công.',
+      'Trẻ em cần được chăm sóc và giáo dục đúng cách.',
+      'Bảo vệ môi trường là trách nhiệm của mỗi công dân.',
+      'Ngôn ngữ là công cụ giao tiếp quan trọng nhất của con người.',
+      'Mùa hè đến mang theo nắng vàng và tiếng ve kêu rộn ràng.',
+      'Người Việt Nam luôn trân trọng truyền thống văn hóa dân tộc.',
+      'Các em học sinh hãy cố gắng học tốt để xây dựng đất nước.',
+    ],
+    hard: [
+      'Tổ quốc Việt Nam anh hùng đã trải qua bao thăng trầm lịch sử để giành lại độc lập.',
+      'Nguyễn Du, đại thi hào của dân tộc, đã để lại cho đời kiệt tác Truyện Kiều bất hủ.',
+      'Sự nghiệp giáo dục và đào tạo là nền tảng để phát triển nguồn nhân lực chất lượng cao.',
+      'Văn học dân gian phản ánh tâm tư, tình cảm và triết lý sống của người Việt qua nhiều thế hệ.',
+      'Công nghệ thông tin đang thay đổi mạnh mẽ cách chúng ta học tập và làm việc trong thời đại mới.',
+    ],
+  };
+
+  app.get('/game/chinh-ta', { preHandler: requireAuth }, async (req) => {
+    const { level = 'easy', count = '10' } = req.query as { level?: string; count?: string };
+    const lvl = ['easy', 'medium', 'hard'].includes(level) ? level : 'easy';
+    const pool = CHINH_TA_SENTENCES[lvl];
+    const take = Math.min(parseInt(count, 10), pool.length);
+    const sentences = pool.sort(() => Math.random() - 0.5).slice(0, take);
+
+    return {
+      sentences: sentences.map((s, i) => ({ id: `ct${i}`, text: s })),
+      level: lvl,
+      ttsUrl: `/viet/tts?lang=vi-VN&text=`,
+    };
+  });
+
+  app.post('/game/chinh-ta/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      typed: z.record(z.string()),
+      sentences: z.array(z.object({ id: z.string(), text: z.string() })),
+      streak: z.number().int().min(0).default(0),
+    }).parse(req.body);
+
+    function normalize(s: string) {
+      return s.trim().toLowerCase().replace(/[.,!?]/g, '').replace(/\s+/g, ' ');
+    }
+
+    function similarity(a: string, b: string) {
+      const na = normalize(a), nb = normalize(b);
+      if (na === nb) return 1;
+      const la = na.split(' '), lb = nb.split(' ');
+      const matched = la.filter(w => lb.includes(w)).length;
+      return la.length > 0 ? matched / Math.max(la.length, lb.length) : 0;
+    }
+
+    const results = body.sentences.map(s => {
+      const typed = body.typed[s.id] ?? '';
+      const sim = similarity(s.text, typed);
+      const correct = sim >= 0.9;
+      return { id: s.id, correct, similarity: Math.round(sim * 100), expected: s.text, typed };
+    });
+
+    const correct = results.filter(r => r.correct).length;
+    const total = results.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 10;
+    if (body.streak >= 10) xpEarned += 50;
+    else if (body.streak >= 5) xpEarned += 20;
+    if (score === 100) xpEarned += 100;
+
+    await addXP(sub, xpEarned);
+    await prisma.vietUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return { results, correct, total, score, xpEarned };
+  });
+
+  // ─── NHÀ VĂN NHÍ GAME ────────────────────────────────────────────────────
+
+  const NHV_TOPICS = [
+    'Mùa hè', 'Gia đình', 'Trường học', 'Con vật yêu thích',
+    'Ước mơ của em', 'Mùa xuân', 'Ngày nghỉ lễ', 'Người thân yêu quý',
+    'Thiên nhiên', 'Một ngày đi chơi', 'Bữa cơm gia đình', 'Kỷ niệm đáng nhớ',
+  ];
+
+  app.get('/game/nhan-van-nhi/topics', { preHandler: requireAuth }, async () => {
+    const shuffled = NHV_TOPICS.sort(() => Math.random() - 0.5);
+    return { topics: shuffled.slice(0, 4) };
+  });
+
+  app.post('/game/nhan-van-nhi/grade', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      topic: z.string().min(1).max(100),
+      text: z.string().min(20).max(2000),
+    }).parse(req.body);
+
+    const prompt = `Bạn là giáo viên Tiếng Việt chấm bài viết của học sinh tiểu học/THCS.
+
+Chủ đề: "${body.topic}"
+Bài viết:
+"""
+${body.text}
+"""
+
+Hãy chấm theo 4 tiêu chí, mỗi tiêu chí từ 0–25 điểm:
+1. chinhTa: Lỗi chính tả (dấu hỏi/ngã, ch/tr, s/x...)
+2. nguPhap: Ngữ pháp, cấu trúc câu
+3. yTuong: Ý tưởng, nội dung phù hợp chủ đề
+4. dienDat: Diễn đạt, văn phong
+
+Trả về JSON (KHÔNG markdown):
+{"chinhTa":20,"nguPhap":18,"yTuong":22,"dienDat":19,"nhanXet":"Nhận xét ngắn 2-3 câu","goiY":"Gợi ý cải thiện 1-2 câu"}`;
+
+    let grading = { chinhTa: 15, nguPhap: 15, yTuong: 15, dienDat: 15, nhanXet: 'Bài viết khá tốt!', goiY: 'Hãy chú ý thêm dấu câu.' };
+
+    try {
+      const raw = await aiChatOnce([{ role: 'user', content: prompt }], { maxTokens: 300 });
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) grading = { ...grading, ...JSON.parse(match[0]) };
+    } catch { /* dùng default */ }
+
+    const total = Math.min(100, (grading.chinhTa ?? 15) + (grading.nguPhap ?? 15) + (grading.yTuong ?? 15) + (grading.dienDat ?? 15));
+    const xpEarned = Math.round(total * 0.8) + (total >= 90 ? 50 : total >= 70 ? 20 : 0);
+
+    await addXP(sub, xpEarned);
+    await prisma.vietUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return reply.send({ ...grading, total, xpEarned });
   });
 }

@@ -1704,4 +1704,215 @@ export async function mathRoutes(app: FastifyInstance) {
       report,
     });
   });
+
+  // ─── SPEED MATH GAME ─────────────────────────────────────────────────────
+
+  type SpeedMathQ = { id: string; expression: string; answer: number; options: number[] };
+
+  function generateSpeedMathQuestions(grade: number, count: number): SpeedMathQ[] {
+    const qs: SpeedMathQ[] = [];
+    const rng = () => Math.floor(Math.random() * 100);
+
+    for (let i = 0; i < count; i++) {
+      let a = rng(), b = rng(), expression = '', answer = 0;
+      const op = grade <= 3 ? ['+', '-'][i % 2] : ['+', '-', '*', '/'][i % 4];
+
+      if (op === '+') { expression = `${a} + ${b}`; answer = a + b; }
+      else if (op === '-') { a = Math.max(a, b); b = Math.min(a, b); expression = `${a} - ${b}`; answer = a - b; }
+      else if (op === '*') { a = Math.floor(Math.random() * 12) + 1; b = Math.floor(Math.random() * 12) + 1; expression = `${a} × ${b}`; answer = a * b; }
+      else { a = Math.floor(Math.random() * 12) + 1; b = Math.floor(Math.random() * 12) + 1; expression = `${a * b} ÷ ${b}`; answer = a; }
+
+      const wrongs = new Set<number>();
+      while (wrongs.size < 3) {
+        const delta = Math.floor(Math.random() * 10) - 5;
+        const w = answer + delta;
+        if (w !== answer && w >= 0) wrongs.add(w);
+      }
+      const options = [...wrongs, answer].sort(() => Math.random() - 0.5);
+      qs.push({ id: `q${i}`, expression, answer, options });
+    }
+    return qs;
+  }
+
+  app.get('/game/speed-math', { preHandler: requireAuth }, async (req) => {
+    const { grade = '6', count = '20' } = req.query as { grade?: string; count?: string };
+    const questions = generateSpeedMathQuestions(parseInt(grade, 10), Math.min(parseInt(count, 10), 30));
+    return { questions, timeLimit: 60 };
+  });
+
+  app.post('/game/speed-math/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      answers: z.record(z.number()),
+      questions: z.array(z.object({ id: z.string(), answer: z.number() })),
+      streak: z.number().int().min(0).default(0),
+      timeTaken: z.number().optional(),
+    }).parse(req.body);
+
+    let correct = 0;
+    for (const q of body.questions) {
+      if (body.answers[q.id] === q.answer) correct++;
+    }
+
+    const total = body.questions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 10;
+    if (body.streak >= 10) xpEarned += 50;
+    else if (body.streak >= 5) xpEarned += 20;
+    if (score === 100) xpEarned += 100;
+
+    await addXP(sub, xpEarned);
+    await prisma.mathUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return { correct, total, score, xpEarned, streak: body.streak };
+  });
+
+  // ─── FORMULA HUNT GAME ───────────────────────────────────────────────────
+
+  app.get('/game/formula-hunt', { preHandler: requireAuth }, async (req) => {
+    const { grade, subject, count = '10' } = req.query as { grade?: string; subject?: string; count?: string };
+    const take = Math.min(parseInt(count, 10), 20);
+
+    const where: any = { NOT: { formula: null } };
+    if (grade) where.topic = { grade: parseInt(grade, 10) };
+    if (subject) where.topic = { ...(where.topic ?? {}), subject };
+
+    const concepts = await prisma.mathConcept.findMany({
+      where,
+      take: take * 5,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, formula: true, definition: true },
+    });
+
+    const withFormula = concepts.filter(c => c.formula && c.formula.trim().length > 0);
+    if (withFormula.length < 4) {
+      return { questions: [], message: 'Chưa đủ công thức. Giáo viên cần thêm khái niệm có công thức.' };
+    }
+
+    const pool = withFormula.sort(() => Math.random() - 0.5).slice(0, take);
+
+    const questions = pool.map((c, i) => {
+      const others = withFormula.filter(x => x.id !== c.id).sort(() => Math.random() - 0.5).slice(0, 3);
+      const options = [...others.map(o => o.formula!), c.formula!].sort(() => Math.random() - 0.5);
+      return {
+        id: `fh${i}`,
+        conceptId: c.id,
+        prompt: c.name,
+        hint: c.definition.slice(0, 100),
+        answer: c.formula!,
+        options,
+      };
+    });
+
+    return { questions, timeLimit: 180 };
+  });
+
+  app.post('/game/formula-hunt/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      answers: z.record(z.string()),
+      questions: z.array(z.object({ id: z.string(), answer: z.string() })),
+      streak: z.number().int().min(0).default(0),
+    }).parse(req.body);
+
+    let correct = 0;
+    for (const q of body.questions) {
+      if ((body.answers[q.id] ?? '').trim() === q.answer.trim()) correct++;
+    }
+
+    const total = body.questions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 10;
+    if (body.streak >= 10) xpEarned += 50;
+    else if (body.streak >= 5) xpEarned += 20;
+    if (score === 100) xpEarned += 100;
+
+    await addXP(sub, xpEarned);
+    await prisma.mathUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return { correct, total, score, xpEarned };
+  });
+
+  // ─── MATH BOSS BATTLE ────────────────────────────────────────────────────
+
+  const BOSSES: Record<string, { name: string; emoji: string; hp: number; subjectKey: string }> = {
+    ARITHMETIC:  { name: 'Quái Vật Số Học',    emoji: '🔢', hp: 100, subjectKey: 'ARITHMETIC'  },
+    ALGEBRA:     { name: 'Ác Ma Đại Số',        emoji: '🧮', hp: 120, subjectKey: 'ALGEBRA'     },
+    GEOMETRY:    { name: 'Rồng Hình Học',        emoji: '📐', hp: 110, subjectKey: 'GEOMETRY'    },
+    STATISTICS:  { name: 'Tinh Linh Xác Suất',   emoji: '🎲', hp: 100, subjectKey: 'STATISTICS'  },
+  };
+
+  app.get('/game/boss-battle', { preHandler: requireAuth }, async (req) => {
+    const { subject = 'ARITHMETIC', grade } = req.query as { subject?: string; grade?: string };
+    const boss = BOSSES[subject] ?? BOSSES.ARITHMETIC;
+
+    const topicWhere: any = { subject: boss.subjectKey };
+    if (grade) topicWhere.grade = parseInt(grade, 10);
+
+    const topics = await prisma.mathTopic.findMany({
+      where: topicWhere,
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: { concepts: { take: 20 } },
+    });
+
+    const allConcepts = topics.flatMap(t => t.concepts);
+    if (allConcepts.length < 2) {
+      return {
+        boss, questions: [],
+        message: 'Chưa có đủ kiến thức. Giáo viên cần thêm chủ đề cho môn này.',
+      };
+    }
+
+    const questions = buildMathQuestions(allConcepts as any, 'MULTIPLE_CHOICE', 10);
+    if ('error' in (questions as any)) {
+      return { boss, questions: [], message: (questions as any).error };
+    }
+
+    return {
+      boss,
+      questions: (questions as any[]).map((q, i) => ({ id: `bb${i}`, ...q })),
+    };
+  });
+
+  app.post('/game/boss-battle/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      subject: z.string().default('ARITHMETIC'),
+      answers: z.record(z.string()),
+      questions: z.array(z.object({ id: z.string(), answer: z.string() })),
+    }).parse(req.body);
+
+    let correct = 0;
+    for (const q of body.questions) {
+      const given = String(body.answers[q.id] ?? '').toLowerCase().trim();
+      const expected = String(q.answer).toLowerCase().trim();
+      if (given === expected) correct++;
+    }
+
+    const total = body.questions.length;
+    const bossDefeated = correct >= Math.ceil(total * 0.7);
+    let xpEarned = correct * 10;
+    if (bossDefeated) xpEarned += 100;
+
+    await addXP(sub, xpEarned);
+    await prisma.mathUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    const boss = BOSSES[body.subject] ?? BOSSES.ARITHMETIC;
+    const damageDealt = Math.round((correct / total) * boss.hp);
+
+    return { correct, total, bossDefeated, damageDealt, bossHp: boss.hp, xpEarned };
+  });
 }

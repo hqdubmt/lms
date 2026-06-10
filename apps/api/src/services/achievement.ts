@@ -25,7 +25,17 @@ export type AchievementId =
   | 'QUIZ_100'
   | 'HOMEWORK_HERO'
   | 'MATH_MASTER'
-  | 'LANGUAGE_EXPERT';
+  | 'LANGUAGE_EXPERT'
+  // Game achievements (game.md)
+  | 'MATH_ROOKIE'
+  | 'SPEED_MATH_PRO'
+  | 'VOCAB_HUNTER'
+  | 'PRONUNCIATION_HERO'
+  | 'NHAN_VAN_NHI'
+  | 'VUA_CHINH_TA'
+  | 'CHUYEN_GIA_VAN_HOC'
+  | 'PERFECT_GAME'
+  | 'STREAK_FIRE';
 
 export interface Achievement {
   id: AchievementId;
@@ -45,8 +55,17 @@ const ACHIEVEMENT_DEFS: Record<AchievementId, { label: string; description: stri
   CHAT_100:        { label: '100 câu hỏi',        description: 'Gửi 100 tin nhắn cho AI Tutor' },
   QUIZ_100:        { label: 'Quiz Master',        description: 'Hoàn thành 100 bài quiz' },
   HOMEWORK_HERO:   { label: 'Homework Hero',      description: 'Nộp 10 bài tập về nhà' },
-  MATH_MASTER:     { label: 'Math Master',        description: 'Đạt thành thạo ≥80% trong Toán học' },
-  LANGUAGE_EXPERT: { label: 'Language Expert',   description: 'Đạt thành thạo ≥80% trong Ngoại ngữ' },
+  MATH_MASTER:        { label: 'Math Master',          description: 'Đạt thành thạo ≥80% trong Toán học' },
+  LANGUAGE_EXPERT:   { label: 'Language Expert',      description: 'Đạt thành thạo ≥80% trong Ngoại ngữ' },
+  MATH_ROOKIE:       { label: 'Math Rookie',           description: 'Hoàn thành trò chơi Speed Math lần đầu' },
+  SPEED_MATH_PRO:    { label: 'Speed Math Pro',        description: 'Đạt 100% trong Speed Math' },
+  VOCAB_HUNTER:      { label: 'Vocabulary Hunter',     description: 'Hoàn thành 10 lần Vocabulary Hunter' },
+  PRONUNCIATION_HERO:{ label: 'Pronunciation Hero',    description: 'Luyện phát âm 10 lần' },
+  NHAN_VAN_NHI:      { label: 'Nhà Văn Nhí',           description: 'Viết đoạn văn được AI chấm điểm' },
+  VUA_CHINH_TA:      { label: 'Vua Chính Tả',          description: 'Đạt 100% Chính Tả Thần Tốc' },
+  CHUYEN_GIA_VAN_HOC:{ label: 'Chuyên Gia Văn Học',   description: 'Hoàn thành 20 bài tập Tiếng Việt' },
+  PERFECT_GAME:      { label: 'Perfect!',              description: 'Đạt điểm tuyệt đối trong bất kỳ game nào' },
+  STREAK_FIRE:       { label: 'Streak x10',            description: 'Đạt chuỗi 10 câu đúng liên tiếp' },
 };
 
 export interface AchievementStore {

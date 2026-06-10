@@ -5,7 +5,7 @@ import { requireAuth, requireInstructor } from '../../middleware/auth';
 import * as XLSX from 'xlsx';
 import { extractText, structureLangWithAI } from '../../services/file-import';
 import { serveTTS } from '../../services/tts';
-import { callAIForJSON, isAnyAIAvailable } from '../../services/ai-provider';
+import { callAIForJSON, isAnyAIAvailable, aiChatOnce } from '../../services/ai-provider';
 import { embedText, upsertEntry, getIndexStats, isEmbedModelAvailable } from '../../services/rag';
 import { env } from '../../config/env';
 import { LANG_GOLD_DATASET, validateDataset, toFullParserText } from '../../data/lang-gold-dataset';
@@ -1709,4 +1709,239 @@ Return ONLY valid JSON array, one object per word in the same order:
     return reply.send({ deleted: sampleSets.length, sets: sampleSets.map(s => s.title) });
   });
 
+  // ─── VOCABULARY HUNTER GAME ───────────────────────────────────────────────
+
+  app.get('/game/vocab-hunter', { preHandler: requireAuth }, async (req) => {
+    const { lang, count = '10', setId } = req.query as { lang?: string; count?: string; setId?: string };
+    const take = Math.min(parseInt(count, 10), 20);
+
+    const where: any = { isPublic: true };
+    if (lang) where.language = lang;
+    if (setId) where.setId = setId;
+
+    const items = await prisma.vocabItem.findMany({
+      where,
+      take: take * 4,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, word: true, translation: true, imageUrl: true, example: true },
+    });
+
+    if (items.length < 4) return { questions: [] };
+
+    const shuffled = items.sort(() => Math.random() - 0.5).slice(0, take);
+    const questions = shuffled.map((item, i) => {
+      const others = items.filter(x => x.id !== item.id).sort(() => Math.random() - 0.5).slice(0, 3);
+      const options = [...others.map(o => o.word), item.word].sort(() => Math.random() - 0.5);
+      return {
+        id: `vq${i}`,
+        itemId: item.id,
+        translation: item.translation,
+        imageUrl: item.imageUrl ?? null,
+        example: item.example ?? null,
+        answer: item.word,
+        options,
+      };
+    });
+
+    return { questions, timeLimit: 120 };
+  });
+
+  app.post('/game/vocab-hunter/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      answers: z.record(z.string()),
+      questions: z.array(z.object({ id: z.string(), answer: z.string() })),
+      streak: z.number().int().min(0).default(0),
+    }).parse(req.body);
+
+    let correct = 0;
+    for (const q of body.questions) {
+      if ((body.answers[q.id] ?? '').toLowerCase().trim() === q.answer.toLowerCase().trim()) correct++;
+    }
+
+    const total = body.questions.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    let xpEarned = correct * 10;
+    if (body.streak >= 10) xpEarned += 50;
+    else if (body.streak >= 5) xpEarned += 20;
+    if (score === 100) xpEarned += 100;
+
+    await addXP(sub, xpEarned);
+    await prisma.langUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return { correct, total, score, xpEarned };
+  });
+
+  // ─── PRONUNCIATION CHALLENGE GAME ────────────────────────────────────────
+
+  const PRON_SENTENCES: Record<string, string[]> = {
+    en: [
+      'How are you today?',
+      'The weather is beautiful outside.',
+      'I would like a cup of coffee, please.',
+      'Can you help me find the nearest station?',
+      'She sells seashells by the seashore.',
+      'The quick brown fox jumps over the lazy dog.',
+      'Practice makes perfect.',
+      'I enjoy learning English every day.',
+      'What time does the next train leave?',
+      'Thank you very much for your help.',
+    ],
+    fr: [
+      'Bonjour, comment allez-vous?',
+      'Je voudrais un café, s\'il vous plaît.',
+      'Où est la bibliothèque?',
+      'Merci beaucoup pour votre aide.',
+      'Parlez-vous français?',
+    ],
+    ja: [
+      'おはようございます',
+      'ありがとうございます',
+      'すみません、駅はどこですか',
+      'よろしくお願いします',
+    ],
+    ko: [
+      '안녕하세요',
+      '감사합니다',
+      '도와주세요',
+      '잘 부탁드립니다',
+    ],
+  };
+
+  const PRON_LANG_MAP: Record<string, string> = { en: 'en-US', fr: 'fr-FR', ja: 'ja-JP', ko: 'ko-KR' };
+
+  app.get('/game/pronunciation-challenge', { preHandler: requireAuth }, async (req) => {
+    const { lang = 'en', count = '8' } = req.query as { lang?: string; count?: string };
+    const pool = PRON_SENTENCES[lang] ?? PRON_SENTENCES.en;
+    const take = Math.min(parseInt(count, 10), pool.length);
+    const sentences = pool.sort(() => Math.random() - 0.5).slice(0, take);
+    const ttsLang = PRON_LANG_MAP[lang] ?? 'en-US';
+
+    return {
+      sentences: sentences.map((s, i) => ({ id: `pc${i}`, text: s })),
+      lang,
+      ttsLang,
+    };
+  });
+
+  app.post('/game/pronunciation-challenge/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      scores: z.array(z.object({ id: z.string(), score: z.number().min(0).max(100) })),
+      totalSentences: z.number().int().min(1),
+    }).parse(req.body);
+
+    const avgScore = body.scores.length > 0
+      ? Math.round(body.scores.reduce((s, x) => s + x.score, 0) / body.scores.length)
+      : 0;
+
+    let xpEarned = Math.round(avgScore * 0.5) + body.scores.length * 5;
+    if (avgScore >= 90) xpEarned += 50;
+    else if (avgScore >= 70) xpEarned += 20;
+
+    await addXP(sub, xpEarned);
+    await prisma.langUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return reply.send({ avgScore, xpEarned, practiced: body.scores.length });
+  });
+
+  // ─── AI CONVERSATION GAME ────────────────────────────────────────────────
+
+  const ROLES: Record<string, { vi: string; systemPrefix: string }> = {
+    teacher:    { vi: 'Giáo viên',       systemPrefix: 'You are a friendly language teacher helping a student practice.' },
+    shopkeeper: { vi: 'Người bán hàng',  systemPrefix: 'You are a shopkeeper at a market. Customer wants to buy things.' },
+    tourist:    { vi: 'Khách du lịch',   systemPrefix: 'You are a tourist asking for directions and local tips.' },
+    friend:     { vi: 'Bạn bè',          systemPrefix: 'You are a friendly peer having a casual conversation.' },
+  };
+
+  const LANG_FULL: Record<string, string> = {
+    en: 'English', fr: 'French', ja: 'Japanese', ko: 'Korean',
+    vi: 'Vietnamese', de: 'German', zh: 'Chinese', es: 'Spanish',
+  };
+
+  app.post('/game/ai-conversation/chat', { preHandler: requireAuth }, async (req, reply) => {
+    const body = z.object({
+      role: z.enum(['teacher', 'shopkeeper', 'tourist', 'friend']).default('friend'),
+      language: z.enum(['en', 'fr', 'ja', 'ko', 'vi', 'de', 'zh', 'es']).default('en'),
+      messages: z.array(z.object({
+        role: z.enum(['user', 'ai']),
+        content: z.string().max(500),
+      })).min(1).max(30),
+    }).safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'Dữ liệu không hợp lệ' });
+
+    const { role, language, messages } = body.data;
+    const roleInfo = ROLES[role] ?? ROLES.friend;
+    const langName = LANG_FULL[language] ?? 'English';
+
+    const systemPrompt = `${roleInfo.systemPrefix}
+- Speak ONLY in ${langName}.
+- Keep responses short (1-3 sentences).
+- Stay in character at all times.
+- If the student makes a grammar error, gently model the correct form in your reply.
+- DO NOT break character or add meta-commentary.`;
+
+    const chatMessages = messages.map(m => ({
+      role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: m.content,
+    }));
+
+    try {
+      const reply_text = await aiChatOnce([
+        { role: 'system', content: systemPrompt },
+        ...chatMessages,
+      ], { maxTokens: 200 });
+      return reply.send({ reply: reply_text.trim() });
+    } catch {
+      return reply.status(503).send({ error: 'AI không khả dụng' });
+    }
+  });
+
+  app.post('/game/ai-conversation/score', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const body = z.object({
+      language: z.string().default('en'),
+      role: z.string().default('friend'),
+      messages: z.array(z.object({ role: z.enum(['user', 'ai']), content: z.string() })).min(2),
+    }).safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'Dữ liệu không hợp lệ' });
+
+    const { language, role, messages } = body.data;
+    const userTurns = messages.filter(m => m.role === 'user').length;
+    const convoText = messages.map(m => `${m.role === 'user' ? 'Student' : 'AI'}: ${m.content}`).join('\n');
+
+    const prompt = `Evaluate this ${LANG_FULL[language] ?? language} conversation (role: ${role}) and return JSON:
+{"fluency":7,"accuracy":7,"naturalness":7,"overall":"...(1 sentence)","encouragement":"..."}
+
+Conversation:
+${convoText.slice(0, 1200)}`;
+
+    let scoreData = { fluency: 7, accuracy: 7, naturalness: 7, overall: 'Good effort!', encouragement: 'Keep practicing!' };
+    try {
+      const raw = await aiChatOnce([{ role: 'user', content: prompt }], { maxTokens: 200 });
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) scoreData = { ...scoreData, ...JSON.parse(m[0]) };
+    } catch { /* default */ }
+
+    const avgScore = Math.round((scoreData.fluency + scoreData.accuracy + scoreData.naturalness) / 3 * 10);
+    let xpEarned = userTurns * 5 + Math.round(avgScore * 0.3);
+    if (avgScore >= 80) xpEarned += 30;
+
+    await addXP(sub, xpEarned);
+    await prisma.langUserStats.upsert({
+      where: { userId: sub },
+      create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+      update: { exercisesDone: { increment: 1 } },
+    });
+
+    return reply.send({ ...scoreData, avgScore, xpEarned, turns: userTurns });
+  });
 }
