@@ -48,7 +48,7 @@ export default function ChinhTaPage() {
       setMaxStreak(0);
       setResult(null);
       setRevealed(false);
-      setTtsBase(data.ttsUrl || '/viet/tts?lang=vi-VN&text=');
+      setTtsBase('/api/viet/tts?lang=vi-VN&text=');
       setState('playing');
     } finally {
       setLoading(false);
@@ -56,7 +56,6 @@ export default function ChinhTaPage() {
   };
 
   const playAudio = (text: string) => {
-    const url = `/api/proxy-tts?text=${encodeURIComponent(text)}&lang=vi-VN`;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = `${ttsBase}${encodeURIComponent(text)}`;

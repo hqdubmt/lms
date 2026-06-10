@@ -1717,8 +1717,9 @@ Return ONLY valid JSON array, one object per word in the same order:
     const { lang, count = '10', setId } = req.query as { lang?: string; count?: string; setId?: string };
     const take = Math.min(parseInt(count, 10), 20);
 
-    const where: any = { isPublic: true };
-    if (lang) where.language = lang;
+    const setFilter: any = { isPublic: true };
+    if (lang) setFilter.language = lang;
+    const where: any = { set: setFilter };
     if (setId) where.setId = setId;
 
     const items = await prisma.vocabItem.findMany({
@@ -1954,8 +1955,9 @@ ${convoText.slice(0, 1200)}`;
     const { lang, count = '8', setId } = req.query as { lang?: string; count?: string; setId?: string };
     const take = Math.min(parseInt(count, 10), 15);
 
-    const where: any = { isPublic: true };
-    if (lang) where.language = lang;
+    const setFilter: any = { isPublic: true };
+    if (lang) setFilter.language = lang;
+    const where: any = { set: setFilter };
     if (setId) where.setId = setId;
 
     const items = await prisma.vocabItem.findMany({
