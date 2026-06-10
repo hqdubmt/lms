@@ -75,12 +75,50 @@ async function doLogin(email, password) {
   } catch { return null; }
 }
 
+// Get admin token once (authenticated bucket, not IP bucket)
+async function getAdminToken() {
+  try {
+    const res = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@lms.com', password: 'admin123' }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await res.json().catch(() => ({}));
+    return d.accessToken ?? null;
+  } catch { return null; }
+}
+
+// Promote user to INSTRUCTOR role via admin API
+async function promoteToInstructor(userId, adminToken) {
+  try {
+    const res = await fetch(`${API}/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ role: 'INSTRUCTOR' }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return res.status === 200;
+  } catch { return false; }
+}
+
+// Get user ID from JWT payload
+function getUserId(token) {
+  try {
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).sub ?? null;
+  } catch { return null; }
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 async function setupUsers() {
   const total = N_TEACHERS + N_STUDENTS;
   console.log(hd(`SETUP: ${N_TEACHERS} teachers + ${N_STUDENTS} students`));
   console.log(dim(`  Stagger 250ms/user → ~${Math.ceil(total * 0.25)}s total setup`));
   const users = [];
+
+  // Admin token for promoting teachers
+  const adminToken = await getAdminToken();
+  if (!adminToken) console.log(`  ${fail_('Admin login failed — teachers sẽ không được promote')}`);
 
   for (let i = 0; i < total; i++) {
     const isTeacher = i < N_TEACHERS;
@@ -95,12 +133,25 @@ async function setupUsers() {
     const t0 = Date.now();
     await doRegister(email, pass, name);
     const token = await doLogin(email, pass);
+
+    // Promote teachers to INSTRUCTOR role
+    if (isTeacher && token && adminToken) {
+      const userId = getUserId(token);
+      if (userId) await promoteToInstructor(userId, adminToken);
+    }
+
+    // Re-login teachers to get a fresh token with updated role
+    let finalToken = token;
+    if (isTeacher && token && adminToken) {
+      finalToken = await doLogin(email, pass);
+    }
+
     const ms = Date.now() - t0;
 
-    users.push({ idx, role: isTeacher ? 'teacher' : 'student', email, token, name });
+    users.push({ idx, role: isTeacher ? 'teacher' : 'student', email, token: finalToken, name });
 
     if (i < 5 || i % 20 === 0)
-      process.stdout.write(`  ${token ? ok_(prefix + idx) : fail_(prefix + idx + ' (no token)')} ${dim(ms + 'ms')}\n`);
+      process.stdout.write(`  ${finalToken ? ok_(prefix + idx) : fail_(prefix + idx + ' (no token)')} ${dim(ms + 'ms')}\n`);
     else if (i === 5)
       process.stdout.write(`  ${dim('...(đang tạo)')}\n`);
   }
