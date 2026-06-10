@@ -24,7 +24,7 @@ const REFRESH_COOKIE_OPTS = {
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/register', {
-    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: 50, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const body = registerSchema.parse(req.body);
     const user = await register(body);
@@ -32,7 +32,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/login', {
-    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const body = loginSchema.parse(req.body);
     let user: Awaited<ReturnType<typeof login>>;

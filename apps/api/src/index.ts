@@ -112,13 +112,23 @@ if (cluster.isPrimary) {
 
     // Redis-backed rate limit: shared counter across all worker processes
     await app.register(rateLimit, {
-      max: 300,
+      max: 600,
       timeWindow: '1 minute',
       redis,
       keyGenerator: (req) => {
-        // Dùng user ID nếu đã auth (mỗi user có bucket riêng), fallback về IP
-        const user = (req as any).user as { sub?: string } | undefined;
-        return user?.sub ?? req.ip;
+        // req.user is not set yet at this hook (JWT verify happens in preHandler).
+        // Decode the JWT payload directly (no signature verify) to get user ID for rate-limit key.
+        // Full auth verification still happens in route preHandlers.
+        const auth = (req.headers as any).authorization as string | undefined;
+        if (auth?.startsWith('Bearer ')) {
+          try {
+            const payload = JSON.parse(
+              Buffer.from(auth.slice(7).split('.')[1], 'base64url').toString('utf8'),
+            ) as { sub?: string } | null;
+            if (payload?.sub) return `user:${payload.sub}`;
+          } catch { /* fall through to IP */ }
+        }
+        return `ip:${req.ip}`;
       },
       errorResponseBuilder: (_req, context) => ({
         statusCode: 429,
