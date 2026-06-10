@@ -61,18 +61,22 @@ async function doRegister(email, password, name) {
   } catch { return 0; }
 }
 
-async function doLogin(email, password) {
-  try {
-    const res = await fetch(`${API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      signal: AbortSignal.timeout(12000),
-    });
-    const d = await res.json().catch(() => ({}));
-    if (res.status === 200 || res.status === 201) return d.accessToken ?? null;
-    return null;
-  } catch { return null; }
+async function doLogin(email, password, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        signal: AbortSignal.timeout(12000),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 200 || res.status === 201) return d.accessToken ?? null;
+      if (res.status === 429 && attempt < retries) { await sleep(65000); continue; }
+      return null;
+    } catch { return null; }
+  }
+  return null;
 }
 
 // Get admin token once (authenticated bucket, not IP bucket)

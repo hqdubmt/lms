@@ -32,7 +32,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/login', {
-    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: 150, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const body = loginSchema.parse(req.body);
     let user: Awaited<ReturnType<typeof login>>;
