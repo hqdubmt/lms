@@ -1923,4 +1923,165 @@ Trả về JSON (KHÔNG markdown):
 
     return reply.send({ results, correct, total, score, xpEarned });
   });
+
+  // ─── GAME: FLASH QUIZ (Trắc nghiệm chớp nhoáng) ─────────────────────────
+  app.get('/game/flash-quiz', { preHandler: requireAuth }, async (req) => {
+    const { count, grade, category } = req.query as { count?: string; grade?: string; category?: string };
+    const n = Math.min(20, Math.max(5, parseInt(count || '10')));
+
+    const setFilter: any = { isPublic: true };
+    if (grade) setFilter.grade = parseInt(grade);
+    if (category) setFilter.category = category;
+
+    const pool = await prisma.vietItem.findMany({
+      where: { set: setFilter },
+      take: n * 6,
+      orderBy: { id: 'asc' },
+      select: { id: true, word: true, meaning: true, example: true },
+    });
+
+    if (pool.length < 4) {
+      // fallback to any public items
+      const fallback = await prisma.vietItem.findMany({
+        where: { set: { isPublic: true } },
+        take: n * 6,
+        select: { id: true, word: true, meaning: true, example: true },
+      });
+      if (fallback.length < 4) throw { statusCode: 404, message: 'Không đủ từ vựng để tạo câu hỏi' };
+      pool.push(...fallback);
+    }
+
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, n);
+
+    const questions = shuffled.map((item) => {
+      const others = pool.filter((x) => x.id !== item.id);
+      const distractors = [...others].sort(() => Math.random() - 0.5).slice(0, 3).map((x) => x.meaning);
+      const options = [...distractors, item.meaning].sort(() => Math.random() - 0.5);
+      return { id: item.id, word: item.word, example: item.example, options, correctAnswer: item.meaning };
+    });
+
+    return { questions };
+  });
+
+  app.post('/game/flash-quiz/submit', { preHandler: requireAuth }, async (req) => {
+    const { sub } = req.user as { sub: string };
+    const { answers, streak } = z.object({
+      answers: z.array(z.object({
+        questionId: z.string(),
+        answer: z.string(),
+        correct: z.boolean(),
+        timeMs: z.number().optional(),
+      })),
+      streak: z.number().default(0),
+    }).parse(req.body);
+
+    const correct = answers.filter((a) => a.correct).length;
+    const total = answers.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const baseXp = correct * 5;
+    const streakBonus = streak >= 5 ? Math.floor(streak / 5) * 5 : 0;
+    const perfectBonus = score === 100 ? 30 : 0;
+    const xpEarned = baseXp + streakBonus + perfectBonus;
+
+    if (xpEarned > 0) {
+      await addXP(sub, xpEarned);
+      await prisma.vietUserStats.upsert({
+        where: { userId: sub },
+        create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+        update: { exercisesDone: { increment: 1 } },
+      });
+    }
+
+    return { correct, total, score, xpEarned };
+  });
+
+  // ─── GAME: ĐIỀN TỪ (Fill in the blank) ───────────────────────────────────
+  app.get('/game/dien-tu', { preHandler: requireAuth }, async (req) => {
+    const { count, grade, category } = req.query as { count?: string; grade?: string; category?: string };
+    const n = Math.min(15, Math.max(5, parseInt(count || '10')));
+
+    const setFilter: any = { isPublic: true };
+    if (grade) setFilter.grade = parseInt(grade);
+    if (category) setFilter.category = category;
+
+    const items = await prisma.vietItem.findMany({
+      where: { set: setFilter, example: { not: null } },
+      take: n * 5,
+      orderBy: { id: 'asc' },
+      select: { id: true, word: true, meaning: true, example: true, note: true },
+    });
+
+    const questions: any[] = [];
+    const shuffled = [...items].sort(() => Math.random() - 0.5);
+
+    for (const item of shuffled) {
+      if (questions.length >= n) break;
+      const sentence = item.example!;
+      const wordLower = item.word.toLowerCase();
+      const escaped = item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      if (!regex.test(sentence)) continue;
+      const blanked = sentence.replace(regex, '______');
+      if (blanked === sentence) continue;
+      questions.push({ id: item.id, sentence: blanked, hint: item.meaning, answer: item.word, note: item.note });
+    }
+
+    if (questions.length < 3) {
+      // fallback: generate from any public items
+      const fallback = await prisma.vietItem.findMany({
+        where: { set: { isPublic: true }, example: { not: null } },
+        take: 100,
+        select: { id: true, word: true, meaning: true, example: true, note: true },
+      });
+      for (const item of fallback.sort(() => Math.random() - 0.5)) {
+        if (questions.length >= n) break;
+        if (questions.some((q) => q.id === item.id)) continue;
+        const sentence = item.example!;
+        const escaped = item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, 'i');
+        if (!regex.test(sentence)) continue;
+        const blanked = sentence.replace(regex, '______');
+        if (blanked !== sentence) {
+          questions.push({ id: item.id, sentence: blanked, hint: item.meaning, answer: item.word, note: item.note });
+        }
+      }
+    }
+
+    if (questions.length === 0) throw { statusCode: 404, message: 'Không đủ câu ví dụ để tạo bài tập. Hãy thêm câu ví dụ vào bộ từ vựng.' };
+
+    return { questions };
+  });
+
+  app.post('/game/dien-tu/submit', { preHandler: requireAuth }, async (req, reply) => {
+    const { sub } = req.user as { sub: string };
+    const { answers } = z.object({
+      answers: z.array(z.object({
+        questionId: z.string(),
+        typed: z.string(),
+        answer: z.string(),
+      })),
+    }).parse(req.body);
+
+    const results = answers.map((a) => {
+      const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+      const correct = norm(a.typed) === norm(a.answer);
+      return { id: a.questionId, correct, typed: a.typed, expected: a.answer };
+    });
+
+    const correct = results.filter((r) => r.correct).length;
+    const total = results.length;
+    const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+    const xpEarned = correct * 8 + (score === 100 ? 30 : 0);
+
+    if (xpEarned > 0) {
+      await addXP(sub, xpEarned);
+      await prisma.vietUserStats.upsert({
+        where: { userId: sub },
+        create: { userId: sub, exercisesDone: 1, lastStudied: new Date() },
+        update: { exercisesDone: { increment: 1 } },
+      });
+    }
+
+    return reply.send({ results, correct, total, score, xpEarned });
+  });
 }

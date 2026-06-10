@@ -158,6 +158,8 @@ export default function VietPage() {
           { href: '/viet/game/chinh-ta', icon: Zap, label: 'Chính Tả', desc: 'Nghe & gõ lại', color: 'bg-violet-600' },
           { href: '/viet/game/ghep-tu', icon: Zap, label: 'Ghép Từ', desc: 'Ghép âm tiết', color: 'bg-rose-600' },
           { href: '/viet/game/nhan-van-nhi', icon: BookMarked, label: 'Nhà Văn Nhí', desc: 'Viết + AI chấm', color: 'bg-amber-600' },
+          { href: '/viet/game/flash-quiz', icon: Zap, label: 'Trắc Nghiệm', desc: 'Chớp nhoáng', color: 'bg-orange-500' },
+          { href: '/viet/game/dien-tu', icon: Brain, label: 'Điền Từ', desc: 'Điền chỗ trống', color: 'bg-teal-600' },
           { href: '/viet/leaderboard', icon: Trophy, label: 'Bảng xếp hạng', desc: 'Top học viên', color: 'bg-amber-600' },
           { href: '/viet/profile', icon: TrendingUp, label: 'Hồ sơ học tập', desc: 'Điểm mạnh / yếu', color: 'bg-emerald-600' },
         ].map((a) => (
