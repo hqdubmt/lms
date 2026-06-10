@@ -112,11 +112,19 @@ if (cluster.isPrimary) {
 
     // Redis-backed rate limit: shared counter across all worker processes
     await app.register(rateLimit, {
-      max: 200,
+      max: 300,
       timeWindow: '1 minute',
       redis,
-      keyGenerator: (req) => req.ip,
-      errorResponseBuilder: () => ({ error: 'Too many requests, please try again later.' }),
+      keyGenerator: (req) => {
+        // Dùng user ID nếu đã auth (mỗi user có bucket riêng), fallback về IP
+        const user = (req as any).user as { sub?: string } | undefined;
+        return user?.sub ?? req.ip;
+      },
+      errorResponseBuilder: (_req, context) => ({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: `Rate limit exceeded, retry in ${context.after}`,
+      }),
     });
 
     await app.register(compress, { global: true, threshold: 1024 });
