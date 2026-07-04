@@ -1,8 +1,7 @@
 // MasterLMS Service Worker — Phase 17 PWA
-const CACHE_NAME = 'masterlms-v3';
+const CACHE_NAME = 'masterlms-v4';
 const OFFLINE_URL = '/offline';
 
-// Static assets to pre-cache
 const PRECACHE_ASSETS = [
   '/',
   '/offline',
@@ -25,15 +24,22 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Khi server trả 404 cho một chunk → build mới đã deploy → xóa cache + reload clients
+function handleNewDeployment() {
+  caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+  self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+    clients.forEach(client => client.postMessage({ type: 'RELOAD' }));
+  });
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET, API calls, and socket.io
   if (request.method !== 'GET') return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
 
-  // Navigation requests: network-first, offline fallback
+  // Navigation: network-first, offline fallback
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() =>
@@ -43,21 +49,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // JS/CSS chunks (_next/static/chunks): network-first, cache fallback
-  // Chunks have content-hash in filename so stale cache = wrong version → always try network first
+  // JS/CSS chunks: network-first
+  // 404 từ server = deployment mới, xóa cache + reload
+  // Network fail = offline, dùng cache
   if (url.pathname.startsWith('/_next/static/chunks/')) {
     event.respondWith(
       fetch(request).then((response) => {
         if (response.ok) {
           caches.open(CACHE_NAME).then(c => c.put(request, response.clone()));
+          return response;
+        }
+        if (response.status === 404) {
+          handleNewDeployment();
         }
         return response;
-      }).catch(() => caches.match(request).then(r => r ?? new Response('', { status: 404 })))
+      }).catch(() =>
+        caches.match(request).then(r => r ?? new Response('', { status: 404 }))
+      )
     );
     return;
   }
 
-  // Other static assets (fonts, images, manifests): cache-first
+  // Other static assets: cache-first
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/fonts/') ||
@@ -78,7 +91,6 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// Push notification handler
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   try {
